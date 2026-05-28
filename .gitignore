@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Env
+.env
+*.local
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# macOS
+.DS_Store
+
+# Alembic
+alembic/versions/*.py
+!alembic/versions/.gitkeep
