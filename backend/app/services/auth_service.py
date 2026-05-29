@@ -1,17 +1,20 @@
+import asyncio
 import hashlib
+import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from jose import JWTError, jwt
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models.user import OtpCode, Session, User
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -31,12 +34,21 @@ def verify_otp_hash(code: str, hashed: str) -> bool:
     return bcrypt.checkpw(code.encode(), hashed.encode())
 
 
+async def _hash_otp_async(code: str) -> str:
+    """Run bcrypt hashing in a thread to avoid blocking the event loop."""
+    return await asyncio.to_thread(hash_otp, code)
+
+
+async def _verify_otp_hash_async(code: str, hashed: str) -> bool:
+    return await asyncio.to_thread(verify_otp_hash, code, hashed)
+
+
 async def create_otp(db: AsyncSession, user: User) -> str:
     code = generate_otp()
     now = datetime.now(tz=timezone.utc)
     otp = OtpCode(
         user_id=user.id,
-        code_hash=hash_otp(code),
+        code_hash=await _hash_otp_async(code),
         expires_at=now + timedelta(minutes=settings.otp_expire_minutes),
     )
     db.add(otp)
@@ -45,22 +57,45 @@ async def create_otp(db: AsyncSession, user: User) -> str:
 
 
 async def verify_otp(db: AsyncSession, user: User, code: str) -> bool:
+    """Verify a 6-digit OTP for the user.
+
+    Defenses:
+      - Cheap format check first (avoid bcrypt on malformed input)
+      - Per-OTP attempt counter (lockout after MAX_ATTEMPTS failures)
+      - Atomic "consume" via conditional UPDATE — prevents race condition
+        where the same OTP could be accepted by two concurrent requests
+    """
+    if not code.isdigit() or len(code) != 6:
+        return False
+
     now = datetime.now(tz=timezone.utc)
     result = await db.execute(
         select(OtpCode)
         .where(OtpCode.user_id == user.id)
         .where(OtpCode.used_at.is_(None))
         .where(OtpCode.expires_at > now)
+        .where(OtpCode.attempt_count < OtpCode.MAX_ATTEMPTS)
         .order_by(OtpCode.created_at.desc())
         .limit(1)
+        .with_for_update()
     )
     otp = result.scalar_one_or_none()
     if otp is None:
         return False
-    if not verify_otp_hash(code, otp.code_hash):
+
+    if not await _verify_otp_hash_async(code, otp.code_hash):
+        otp.attempt_count += 1
+        await db.flush()
         return False
-    otp.used_at = now
-    return True
+
+    # Atomic consume: only one concurrent request will succeed.
+    consume = await db.execute(
+        update(OtpCode)
+        .where(OtpCode.id == otp.id)
+        .where(OtpCode.used_at.is_(None))
+        .values(used_at=now)
+    )
+    return consume.rowcount == 1
 
 
 # ---------------------------------------------------------------------------
@@ -99,25 +134,38 @@ async def create_session(db: AsyncSession, user: User, remember_me: bool) -> tup
 
 
 async def validate_token(db: AsyncSession, token: str) -> User | None:
+    """Validate a JWT-bound session and return the active user, or None.
+
+    Checks (in order):
+      1. JWT signature/exp (jose)
+      2. Both `jti` and `sub` claims present
+      3. `sub` is a parseable UUID
+      4. A non-expired Session row exists with matching jti_hash AND user_id
+      5. User is active
+    """
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
     except JWTError:
         return None
 
     jti = payload.get("jti")
-    user_id = payload.get("sub")
-    if not jti or not user_id:
+    user_id_raw = payload.get("sub")
+    if not jti or not user_id_raw:
         return None
 
-    result = await db.execute(
-        select(Session).where(Session.jti_hash == _jti_hash(jti))
-    )
-    session = result.scalar_one_or_none()
-    if session is None:
+    try:
+        user_uuid = uuid.UUID(user_id_raw)
+    except (TypeError, ValueError):
         return None
 
+    now = datetime.now(tz=timezone.utc)
     result = await db.execute(
-        select(User).where(User.id == uuid.UUID(user_id)).where(User.is_active == True)
+        select(User)
+        .join(Session, Session.user_id == User.id)
+        .where(Session.jti_hash == _jti_hash(jti))
+        .where(Session.user_id == user_uuid)
+        .where(Session.expires_at > now)
+        .where(User.is_active.is_(True))
     )
     return result.scalar_one_or_none()
 
@@ -125,8 +173,11 @@ async def validate_token(db: AsyncSession, token: str) -> User | None:
 async def revoke_session(db: AsyncSession, token: str) -> bool:
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
-        jti = payload.get("jti")
     except JWTError:
+        return False
+
+    jti = payload.get("jti")
+    if not jti:
         return False
 
     result = await db.execute(

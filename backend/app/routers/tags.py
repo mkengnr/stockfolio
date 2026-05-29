@@ -10,7 +10,7 @@ from app.database import get_db
 from app.models.holding import Holding
 from app.models.tag import HoldingTag, Tag
 from app.models.user import User
-from app.routers.deps import get_current_user
+from app.routers.deps import get_current_user, get_current_user_optional
 from app.schemas.tag import (
     TagCreateIn, TagDetailOut, TagOut, TagShareUpdateIn, TagSummary, TagUpdateIn,
 )
@@ -183,8 +183,15 @@ async def remove_holding_from_tag(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Ownership check via join — prevents deletion of associations belonging to other users
     result = await db.execute(
-        select(HoldingTag).where(HoldingTag.holding_id == holding_id).where(HoldingTag.tag_id == tag_id)
+        select(HoldingTag)
+        .join(Tag, HoldingTag.tag_id == Tag.id)
+        .join(Holding, HoldingTag.holding_id == Holding.id)
+        .where(HoldingTag.tag_id == tag_id)
+        .where(HoldingTag.holding_id == holding_id)
+        .where(Tag.user_id == current_user.id)
+        .where(Holding.user_id == current_user.id)
     )
     ht = result.scalar_one_or_none()
     if ht is None:
@@ -238,7 +245,7 @@ share_router = APIRouter(prefix="/api/share", tags=["share"])
 @share_router.get("/{token}", response_model=TagDetailOut)
 async def get_shared_tag(
     token: str,
-    current_user: User | None = None,
+    current_user: User | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(

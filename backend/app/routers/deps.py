@@ -1,4 +1,6 @@
 """Shared FastAPI dependencies."""
+from __future__ import annotations
+
 from fastapi import Cookie, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,3 +25,17 @@ async def get_admin_user(current_user: User = Depends(get_current_user)) -> User
     if not current_user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return current_user
+
+
+async def get_current_user_optional(
+    access_token: str | None = Cookie(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    """Returns the user if a valid cookie is present, otherwise None.
+
+    Used by endpoints (like /api/share/{token}) that allow both authenticated
+    and anonymous access depending on resource configuration.
+    """
+    if not access_token:
+        return None
+    return await validate_token(db, access_token)

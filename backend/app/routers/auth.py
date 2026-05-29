@@ -40,10 +40,18 @@ async def request_otp(body: OtpRequestIn, db: AsyncSession = Depends(get_db)):
 @router.post("/verify-otp", response_model=TokenOut)
 async def verify_otp(body: OtpVerifyIn, response: Response, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
-        select(User).where(User.email == body.email).where(User.is_active == True)
+        select(User).where(User.email == body.email).where(User.is_active.is_(True))
     )
     user = result.scalar_one_or_none()
-    if user is None or not await auth_service.verify_otp(db, user, body.code):
+
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired OTP")
+
+    verified = await auth_service.verify_otp(db, user, body.code)
+    if not verified:
+        # Persist attempt_count increment before responding with the error,
+        # otherwise the lockout counter is rolled back by HTTPException.
+        await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired OTP")
 
     token, expires_at = await auth_service.create_session(db, user, body.remember_me)

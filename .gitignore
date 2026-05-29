@@ -23,6 +23,16 @@ out/
 # macOS
 .DS_Store
 
-# Alembic
-alembic/versions/*.py
+# Alembic — keep migration scripts committed (they ARE source code).
+# Just preserve .gitkeep for the empty placeholder pattern.
 !alembic/versions/.gitkeep
+
+# Local environment files
+backend/.env
+frontend/.env.local
+
+# Generated review artifacts
+codex_review_*.md
+
+# Next.js auto-generated
+frontend/next-env.d.ts
