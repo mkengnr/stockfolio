@@ -60,3 +60,17 @@ class TagOut(BaseModel):
 
 class TagDetailOut(TagOut):
     summary: TagSummary | None = None
+
+
+class SharedTagOut(BaseModel):
+    """Public-facing payload for /api/share/{token}.
+
+    Intentionally omits internal identifiers (tag id, holding ids,
+    share_token, share_requires_auth) so that share consumers can't
+    enumerate underlying resources.
+    """
+    name: str
+    color: str
+    description: str | None
+    summary: TagSummary | None = None
+    holding_count: int

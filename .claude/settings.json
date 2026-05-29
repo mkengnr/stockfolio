@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/python:*)",
+      "Bash(.venv/bin/pytest:*)",
+      "Bash(.venv/bin/alembic:*)",
+      "Bash(.venv/bin/uvicorn:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run test:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx jest:*)",
+      "Bash(git status)",
+      "Bash(git status:*)",
+      "Bash(git diff)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)",
+      "Bash(curl http://127.0.0.1:8000/*)",
+      "Bash(curl http://127.0.0.1:3000/*)",
+      "Bash(curl -s http://127.0.0.1:8000/*)",
+      "Bash(curl -s http://127.0.0.1:3000/*)",
+      "Bash(brew services list)",
+      "Bash(brew services list:*)",
+      "Bash(redis-cli ping)",
+      "Bash(pg_isready)",
+      "Bash(pg_isready:*)",
+      "Bash(psql -U stockfolio:*)"
+    ]
+  }
+}

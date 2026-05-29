@@ -1,8 +1,11 @@
+import asyncio
+import logging
 import uuid
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -12,27 +15,52 @@ from app.models.tag import HoldingTag, Tag
 from app.models.user import User
 from app.routers.deps import get_current_user, get_current_user_optional
 from app.schemas.tag import (
-    TagCreateIn, TagDetailOut, TagOut, TagShareUpdateIn, TagSummary, TagUpdateIn,
+    SharedTagOut, TagCreateIn, TagDetailOut, TagOut, TagShareUpdateIn, TagSummary, TagUpdateIn,
 )
 from app.services.price_cache import get_price
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/tags", tags=["tags"])
 
 
 async def _compute_summary(holdings: list[Holding]) -> TagSummary:
-    total_cost = Decimal(0)
+    """Compute portfolio summary across the given holdings.
+
+    Performance:
+      - Deduplicates tickers before fetching prices.
+      - Issues all price lookups in parallel via asyncio.gather.
+
+    Failure mode:
+      - If any individual price lookup fails, current-value-derived
+        fields collapse to None and the failing ticker is logged.
+        The summary's total_cost_basis and holding_count stay accurate.
+    """
+    active = [h for h in holdings if h.is_active]
+
+    total_cost = sum((h.quantity * h.avg_price for h in active), Decimal(0))
+
+    tickers = {h.ticker for h in active}
+    if tickers:
+        results = await asyncio.gather(
+            *(get_price(t) for t in tickers),
+            return_exceptions=True,
+        )
+        prices: dict[str, Decimal | None] = {}
+        for ticker, res in zip(tickers, results):
+            if isinstance(res, BaseException):
+                logger.warning("price lookup failed for ticker=%s: %r", ticker, res)
+                prices[ticker] = None
+            else:
+                prices[ticker] = res.price
+    else:
+        prices = {}
+
+    has_prices = bool(prices) and all(p is not None for p in prices.values())
     total_current = Decimal(0)
-    has_prices = True
-    for h in holdings:
-        if not h.is_active:
-            continue
-        cost = h.quantity * h.avg_price
-        total_cost += cost
-        try:
-            pr = await get_price(h.ticker)
-            total_current += h.quantity * pr.price
-        except Exception:
-            has_prices = False
+    if has_prices:
+        for h in active:
+            total_current += h.quantity * prices[h.ticker]
 
     pl = (total_current - total_cost) if has_prices else None
     pl_pct = (pl / total_cost * 100) if (pl is not None and total_cost > 0) else None
@@ -41,7 +69,7 @@ async def _compute_summary(holdings: list[Holding]) -> TagSummary:
         total_current_value=total_current if has_prices else None,
         total_profit_loss=pl,
         total_profit_loss_pct=pl_pct,
-        holding_count=sum(1 for h in holdings if h.is_active),
+        holding_count=len(active),
     )
 
 
@@ -94,7 +122,7 @@ async def get_tag(
         select(Tag)
         .where(Tag.id == tag_id)
         .where(Tag.user_id == current_user.id)
-        .options(selectinload(Tag.holding_tags).selectinload(HoldingTag.holding).selectinload(Holding.transactions))
+        .options(selectinload(Tag.holding_tags).selectinload(HoldingTag.holding))
     )
     tag = result.scalar_one_or_none()
     if tag is None:
@@ -173,6 +201,13 @@ async def add_holding_to_tag(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Holding already in tag")
 
     db.add(HoldingTag(holding_id=holding_id, tag_id=tag_id))
+    try:
+        await db.flush()
+    except IntegrityError:
+        # Two concurrent requests racing past the existence check — convert
+        # the unique-constraint violation into a 409 instead of a 500.
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Holding already in tag")
     return {"status": "added"}
 
 
@@ -242,16 +277,22 @@ async def disable_share(
 share_router = APIRouter(prefix="/api/share", tags=["share"])
 
 
-@share_router.get("/{token}", response_model=TagDetailOut)
+@share_router.get("/{token}", response_model=SharedTagOut)
 async def get_shared_tag(
-    token: str,
+    token: uuid.UUID,
     current_user: User | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
+    """Public-facing share endpoint.
+
+    Returns SharedTagOut (no internal IDs / share token / holding IDs) so
+    that share consumers cannot enumerate underlying resources. Token is
+    typed as UUID to reject malformed input before any DB lookup.
+    """
     result = await db.execute(
         select(Tag)
-        .where(Tag.share_token == token)
-        .options(selectinload(Tag.holding_tags).selectinload(HoldingTag.holding).selectinload(Holding.transactions))
+        .where(Tag.share_token == str(token))
+        .options(selectinload(Tag.holding_tags).selectinload(HoldingTag.holding))
     )
     tag = result.scalar_one_or_none()
     if tag is None:
@@ -261,4 +302,10 @@ async def get_shared_tag(
 
     holdings = [ht.holding for ht in tag.holding_tags]
     summary = await _compute_summary(holdings)
-    return TagDetailOut(**_tag_to_out(tag).model_dump(), summary=summary)
+    return SharedTagOut(
+        name=tag.name,
+        color=tag.color,
+        description=tag.description,
+        summary=summary,
+        holding_count=summary.holding_count,
+    )
