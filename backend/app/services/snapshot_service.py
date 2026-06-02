@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Iterable
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.holding import Holding, Transaction, TransactionType
@@ -102,3 +102,40 @@ async def backfill_holding_snapshots(
     if added:
         await db.flush()
     return added
+
+
+async def rebuild_holding_snapshots(
+    db: AsyncSession,
+    holding: Holding,
+    *,
+    start: date | None,
+    invalidate_start: date | None = None,
+    end: date | None = None,
+) -> int:
+    """Rebuild derived values after a backdated transaction mutation."""
+    invalidate_start = invalidate_start or start
+    end = end or date.today()
+    values = []
+    if start is not None and start <= end:
+        bars = await asyncio.to_thread(stock_fetcher.get_price_history, holding.ticker, start, end)
+        values = _build_snapshot_values(holding.transactions, bars)
+
+    if invalidate_start is not None:
+        await db.execute(
+            delete(DailySnapshot)
+            .where(DailySnapshot.holding_id == holding.id)
+            .where(DailySnapshot.snapshot_date >= invalidate_start)
+        )
+
+    for value in values:
+        db.add(
+            DailySnapshot(
+                holding_id=holding.id,
+                snapshot_date=value.snapshot_date,
+                close_price=value.close_price,
+                total_value=value.total_value,
+            )
+        )
+    if values:
+        await db.flush()
+    return len(values)
