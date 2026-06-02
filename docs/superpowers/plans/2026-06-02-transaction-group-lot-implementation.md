@@ -315,8 +315,9 @@ cd backend
 - [ ] **Step 3: Implement schemas and router**
 
 Add `/api/groups/sources`, `/api/groups/rollups`, `/api/groups/labels`, and
-`/api/groups/share/{token}` endpoints. Enforce owner checks on every mutation.
-Use a shared public payload without internal IDs.
+`/api/groups/share/{token}` endpoints. Add `POST` and `DELETE`
+`/api/groups/{kind}/{id}/share` mutations. Enforce owner checks on every
+mutation. Use a shared public payload without internal IDs.
 
 - [ ] **Step 4: Run API tests and confirm GREEN**
 
@@ -396,6 +397,15 @@ Create buy lots on buys, validate and persist sell allocations on sells, expose
 available lots, and allow classification edits. Lock the affected holding and
 replay subsequent activity before flush. Rebuild derived snapshots after
 backdated edits and deletes.
+
+Expose:
+
+```text
+GET   /api/holdings/{holding_id}/lots?scope_kind=source&scope_id={source_group_id}
+GET   /api/holdings/{holding_id}/lots?scope_kind=unclassified
+PATCH /api/holdings/{holding_id}/transactions/{tx_id}/classification
+      { "source_group_id": "uuid-or-null", "label_ids": ["label-uuid"] }
+```
 
 - [ ] **Step 4: Run mutation tests and confirm GREEN**
 
