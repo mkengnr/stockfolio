@@ -401,10 +401,56 @@ def test_share_mutations_support_every_group_kind(client, user, db, kind, entity
         ("label", _label(uuid.uuid4()), [_Result(), _Result()]),
     ],
 )
-def test_anonymous_public_share_omits_internal_ids_and_token(client, db, kind, entity, lookup_results):
+def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
+    client,
+    db,
+    monkeypatch,
+    kind,
+    entity,
+    lookup_results,
+):
     entity.share_token = str(uuid.uuid4())
     entity.share_requires_auth = False
     db.queue(*lookup_results, _Result(one=entity))
+    scope = object()
+    calls = []
+
+    async def _resolve_portfolio_scope(actual_db, user_id, scope_kind, scope_id):
+        calls.append(("scope", actual_db, user_id, scope_kind, scope_id))
+        return scope
+
+    async def _build_scoped_portfolio_dashboard(actual_db, user_id, actual_scope):
+        calls.append(("dashboard", actual_db, user_id, actual_scope))
+        return (
+            {
+                "currencies": {},
+                "holding_count": 0,
+                "accounting_status": "ok",
+                "warnings": [],
+            },
+            {
+                "holdings": [],
+                "accounting_status": "ok",
+                "warnings": [],
+            },
+        )
+
+    async def _build_scoped_portfolio_history(actual_db, user_id, actual_scope):
+        calls.append(("history", actual_db, user_id, actual_scope))
+        return {"series": {}}
+
+    monkeypatch.setattr(
+        "app.routers.groups.resolve_portfolio_scope",
+        _resolve_portfolio_scope,
+    )
+    monkeypatch.setattr(
+        "app.routers.groups.build_scoped_portfolio_dashboard",
+        _build_scoped_portfolio_dashboard,
+    )
+    monkeypatch.setattr(
+        "app.routers.groups.build_scoped_portfolio_history",
+        _build_scoped_portfolio_history,
+    )
 
     response = client.get(f"/api/groups/share/{entity.share_token}")
     assert response.status_code == 200
@@ -413,7 +459,24 @@ def test_anonymous_public_share_omits_internal_ids_and_token(client, db, kind, e
         "name": entity.name,
         "color": "#6366f1",
         "description": None,
+        "summary": {
+            "currencies": {},
+            "holding_count": 0,
+            "accounting_status": "ok",
+            "warnings": [],
+        },
+        "holdings": {
+            "holdings": [],
+            "accounting_status": "ok",
+            "warnings": [],
+        },
+        "history": {"series": {}},
     }
+    assert calls == [
+        ("scope", db, entity.user_id, kind, entity.id),
+        ("dashboard", db, entity.user_id, scope),
+        ("history", db, entity.user_id, scope),
+    ]
 
 
 def test_public_share_honors_authentication_gate(client, user, db):

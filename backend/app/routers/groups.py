@@ -19,6 +19,11 @@ from app.models.group import (
 from app.models.holding import Transaction
 from app.models.user import User
 from app.routers.deps import get_current_user, get_current_user_optional
+from app.routers.portfolio import (
+    build_scoped_portfolio_dashboard,
+    build_scoped_portfolio_history,
+    resolve_portfolio_scope,
+)
 from app.schemas.group import (
     GroupMetadataUpdateIn,
     LabelCreateIn,
@@ -377,9 +382,15 @@ async def get_shared_group(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share link not found")
     if entity.share_requires_auth and current_user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    scope = await resolve_portfolio_scope(db, entity.user_id, public_kind, entity.id)
+    summary, holdings = await build_scoped_portfolio_dashboard(db, entity.user_id, scope)
+    history = await build_scoped_portfolio_history(db, entity.user_id, scope)
     return SharedGroupOut(
         kind=public_kind,
         name=entity.name,
         color=entity.color,
         description=entity.description,
+        summary=summary,
+        holdings=holdings,
+        history=history,
     )

@@ -5,6 +5,12 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.portfolio import (
+    PortfolioSummaryOut,
+    ScopedPortfolioHistoryOut,
+    ScopedPortfolioHoldingsOut,
+)
+
 
 DEFAULT_COLOR = "#6366f1"
 
@@ -135,3 +141,6 @@ class SharedGroupOut(BaseModel):
     name: str
     color: str
     description: str | None
+    summary: PortfolioSummaryOut
+    holdings: ScopedPortfolioHoldingsOut
+    history: ScopedPortfolioHistoryOut

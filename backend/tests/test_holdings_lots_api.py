@@ -287,6 +287,7 @@ def test_add_buy_creates_classified_lot_and_labels(client, user, db):
     assert payload["source_group_id"] == str(source.id)
     assert payload["label_ids"] == [str(label.id)]
     assert payload["buy_lot"]["remaining_quantity"] == "2"
+    assert payload["buy_lot"]["label_ids"] == [str(label.id)]
     assert any(isinstance(entity, BuyLot) for entity in db.added)
     assert any(isinstance(entity, TransactionLabel) for entity in db.added)
 
@@ -391,7 +392,9 @@ def test_lots_endpoint_validates_scope_shape(client, user, db):
 
 def test_lots_endpoint_lists_unclassified_available_lots(client, user, db):
     holding = _holding(user.id)
-    _, available = _buy(holding)
+    tx, available = _buy(holding)
+    label = _label(user.id)
+    tx.transaction_labels.append(TransactionLabel(transaction_id=tx.id, label_id=label.id))
     db.queue(_Result(one=holding), _Result(many=[available]))
 
     response = client.get(
@@ -401,6 +404,7 @@ def test_lots_endpoint_lists_unclassified_available_lots(client, user, db):
 
     assert response.status_code == 200
     assert [item["id"] for item in response.json()] == [str(available.id)]
+    assert response.json()[0]["label_ids"] == [str(label.id)]
 
 
 def test_buy_classification_updates_lot_source_and_replaces_labels(client, user, db):

@@ -21,6 +21,7 @@ class BuyLotOut(BaseModel):
     id: uuid.UUID
     transaction_id: uuid.UUID
     source_group_id: uuid.UUID | None
+    label_ids: list[uuid.UUID]
     original_quantity: Decimal
     remaining_quantity: Decimal
     unit_price: Decimal

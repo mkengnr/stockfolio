@@ -162,6 +162,7 @@ def _buy_lot_to_out(lot: BuyLot) -> BuyLotOut:
         id=lot.id,
         transaction_id=lot.transaction_id,
         source_group_id=lot.source_group_id,
+        label_ids=_transaction_label_ids(lot.transaction),
         original_quantity=lot.original_quantity,
         remaining_quantity=lot.remaining_quantity,
         unit_price=lot.unit_price,
@@ -631,7 +632,7 @@ async def list_available_lots(
         .where(BuyLot.holding_id == holding_id)
         .where(BuyLot.user_id == current_user.id)
         .where(BuyLot.remaining_quantity > ZERO)
-        .options(selectinload(BuyLot.transaction))
+        .options(selectinload(BuyLot.transaction).selectinload(Transaction.transaction_labels))
         .order_by(BuyLot.created_at, BuyLot.id)
     )
     if scope_kind == "source":
