@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import useSWR from 'swr'
 import { HoldingForm } from '@/components/holdings/HoldingForm'
 import { holdingsApi } from '@/lib/api'
 
@@ -9,24 +10,52 @@ jest.mock('next/navigation', () => ({
 
 jest.mock('swr', () => ({
   __esModule: true,
-  default: jest.fn().mockReturnValue({ data: [], isLoading: false }),
+  default: jest.fn(),
 }))
 
 jest.mock('@/lib/api', () => ({
   holdingsApi: { create: jest.fn() },
-  tagsApi: { addHolding: jest.fn() },
   stocksApi: { search: jest.fn().mockResolvedValue([]) },
   fetcher: jest.fn(),
 }))
 
+const mockedUseSWR = useSWR as jest.Mock
 const mockedHoldingsApi = holdingsApi as jest.Mocked<typeof holdingsApi>
+const sourceGroups = [
+  {
+    id: 'source-1',
+    name: '연금 계좌',
+    color: '#2563eb',
+    description: null,
+    share_token: null,
+    share_requires_auth: true,
+    created_at: '2024-01-01T00:00:00Z',
+  },
+]
+const labels = [
+  {
+    id: 'label-1',
+    name: '장기 투자',
+    color: '#16a34a',
+    description: null,
+    share_token: null,
+    share_requires_auth: true,
+    created_at: '2024-01-01T00:00:00Z',
+  },
+]
 
 function fillField(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } })
 }
 
 describe('HoldingForm', () => {
-  beforeEach(() => jest.clearAllMocks())
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockedUseSWR.mockImplementation((url: string) => ({
+      data: url === '/api/groups/sources' ? sourceGroups : labels,
+      isLoading: false,
+    }))
+  })
 
   it('renders all required fields', () => {
     render(<HoldingForm />)
@@ -64,7 +93,7 @@ describe('HoldingForm', () => {
     expect(screen.queryByText(/해외 주식/)).not.toBeInTheDocument()
   })
 
-  it('calls holdingsApi.create on submit', async () => {
+  it('submits the initial buy as unclassified with no labels by default', async () => {
     mockedHoldingsApi.create.mockResolvedValue({ id: 'new-id', tags: [] } as never)
     render(<HoldingForm />)
 
@@ -82,9 +111,52 @@ describe('HoldingForm', () => {
           ticker: '005930',
           quantity: '10',
           price: '75000',
+          source_group_id: null,
+          label_ids: [],
         }),
       )
     })
+  })
+
+  it('submits the selected source group and labels directly with the holding', async () => {
+    mockedHoldingsApi.create.mockResolvedValue({ id: 'new-id', tags: [] } as never)
+    render(<HoldingForm />)
+
+    fillField('종목 코드 또는 종목명', '005930')
+    fillField('매수 수량', '10')
+    fillField('매수 단가', '75000')
+    fireEvent.change(screen.getByLabelText('출처 그룹'), { target: { value: 'source-1' } })
+    fireEvent.click(screen.getByRole('button', { name: '장기 투자' }))
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '등록하기' }))
+    })
+
+    expect(mockedHoldingsApi.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source_group_id: 'source-1',
+        label_ids: ['label-1'],
+      }),
+    )
+  })
+
+  it('blocks submission while source and label metadata is loading', () => {
+    mockedUseSWR.mockReturnValue({ data: undefined, isLoading: true })
+    render(<HoldingForm />)
+
+    expect(screen.getByRole('button', { name: '등록하기' })).toBeDisabled()
+  })
+
+  it('shows metadata load failures and blocks submission', () => {
+    mockedUseSWR.mockReturnValue({
+      data: undefined,
+      error: new Error('metadata unavailable'),
+      isLoading: false,
+    })
+    render(<HoldingForm />)
+
+    expect(screen.getByText('출처/라벨 정보를 불러오지 못했습니다.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '등록하기' })).toBeDisabled()
   })
 
   it('shows error message on API failure', async () => {

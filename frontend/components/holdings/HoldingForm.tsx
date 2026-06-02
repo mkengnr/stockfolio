@@ -3,28 +3,41 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
+import { LabelMultiSelect } from '@/components/groups/LabelMultiSelect'
+import { SourceGroupSelect } from '@/components/groups/SourceGroupSelect'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
-import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
-import { holdingsApi, stocksApi, tagsApi, fetcher } from '@/lib/api'
+import { holdingsApi, stocksApi, fetcher } from '@/lib/api'
 import { today } from '@/lib/utils'
-import type { StockSearchResult, Tag } from '@/lib/types'
+import type { Label, SourceGroup, StockSearchResult } from '@/lib/types'
 
 export function HoldingForm() {
   const router = useRouter()
-  const { data: tags } = useSWR<Tag[]>('/api/tags', fetcher)
+  const {
+    data: sourceGroups = [],
+    error: sourceGroupsError,
+    isLoading: sourceGroupsLoading,
+  } = useSWR<SourceGroup[]>('/api/groups/sources', fetcher)
+  const {
+    data: labels = [],
+    error: labelsError,
+    isLoading: labelsLoading,
+  } = useSWR<Label[]>('/api/groups/labels', fetcher)
 
   const [ticker, setTicker] = useState('')
   const [quantity, setQuantity] = useState('')
   const [price, setPrice] = useState('')
   const [txDate, setTxDate] = useState(today())
   const [notes, setNotes] = useState('')
-  const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [sourceGroupId, setSourceGroupId] = useState<string | null>(null)
+  const [labelIds, setLabelIds] = useState<string[]>([])
   const [searchResults, setSearchResults] = useState<StockSearchResult[]>([])
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const metadataLoading = sourceGroupsLoading || labelsLoading
+  const metadataError = sourceGroupsError || labelsError
 
   const normalizedTicker = ticker.trim()
   const market = /^\d{6}$/.test(normalizedTicker)
@@ -57,17 +70,25 @@ export function HoldingForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    if (metadataLoading) {
+      setError('출처/라벨 정보를 불러오는 중입니다.')
+      return
+    }
+    if (metadataError) {
+      setError('출처/라벨 정보를 불러오지 못했습니다.')
+      return
+    }
     setLoading(true)
     try {
-      const holding = await holdingsApi.create({
+      await holdingsApi.create({
         ticker: ticker.trim().toUpperCase(),
         quantity,
         price,
         transaction_date: txDate,
         notes: notes.trim() || undefined,
+        source_group_id: sourceGroupId,
+        label_ids: labelIds,
       })
-      // attach tags
-      await Promise.all(selectedTags.map((tid) => tagsApi.addHolding(tid, holding.id)))
       router.push('/')
       router.refresh()
     } catch (err: unknown) {
@@ -75,10 +96,6 @@ export function HoldingForm() {
     } finally {
       setLoading(false)
     }
-  }
-
-  function toggleTag(id: string) {
-    setSelectedTags((prev) => prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id])
   }
 
   return (
@@ -157,36 +174,14 @@ export function HoldingForm() {
           onChange={(e) => setNotes(e.target.value)}
         />
 
-        {tags && tags.length > 0 && (
-          <div>
-            <p className="mb-2 text-sm font-medium text-gray-700">그룹 선택 (선택)</p>
-            <div className="flex flex-wrap gap-2">
-              {tags.map((tag) => (
-                <button
-                  key={tag.id}
-                  type="button"
-                  onClick={() => toggleTag(tag.id)}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
-                    selectedTags.includes(tag.id) ? 'ring-2 ring-offset-1' : 'opacity-70 hover:opacity-100'
-                  }`}
-                  style={{
-                    backgroundColor: `${tag.color}20`,
-                    color: tag.color,
-                    borderColor: `${tag.color}50`,
-                    ...(selectedTags.includes(tag.id) ? { ringColor: tag.color } : {}),
-                  }}
-                >
-                  {tag.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        <SourceGroupSelect groups={sourceGroups} value={sourceGroupId} onChange={setSourceGroupId} />
+        <LabelMultiSelect labels={labels} selectedIds={labelIds} onChange={setLabelIds} />
 
+        {metadataError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">출처/라벨 정보를 불러오지 못했습니다.</p>}
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" loading={loading} className="flex-1">
+          <Button type="submit" loading={loading} disabled={metadataLoading || Boolean(metadataError)} className="flex-1">
             등록하기
           </Button>
           <Button type="button" variant="secondary" onClick={() => router.back()}>

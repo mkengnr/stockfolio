@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { HoldingsTable } from '@/components/dashboard/HoldingsTable'
-import type { Holding } from '@/lib/types'
+import type { Holding, ScopedPortfolioHolding } from '@/lib/types'
 
 // next/link is a server component wrapper — mock it for tests
 jest.mock('next/link', () => {
@@ -33,6 +33,25 @@ const makeHolding = (overrides: Partial<Holding> = {}): Holding => ({
 })
 
 describe('HoldingsTable', () => {
+  it('renders a scoped public holding without exposing a detail link', () => {
+    const scopedHolding: ScopedPortfolioHolding = {
+      ticker: 'AAPL',
+      name: 'Apple',
+      currency: 'USD',
+      remaining_quantity: '2',
+      remaining_cost_basis: '200',
+      current_price: '120',
+      current_value: '240',
+      unrealized_profit_loss: '40',
+    }
+
+    render(<HoldingsTable holdings={[scopedHolding]} />)
+
+    expect(screen.getByText('Apple')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Apple/ })).not.toBeInTheDocument()
+    expect(screen.getByText('$40.00')).toBeInTheDocument()
+  })
+
   it('renders empty state with link when no holdings', () => {
     render(<HoldingsTable holdings={[]} />)
     expect(screen.getByText('보유 종목이 없습니다.')).toBeInTheDocument()

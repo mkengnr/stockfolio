@@ -1,66 +1,50 @@
-import { buildChartData } from '@/components/dashboard/PortfolioChart'
-import type { Snapshot } from '@/lib/types'
+import { buildChartSeries } from '@/components/dashboard/PortfolioChart'
+import type { ScopedPortfolioHistory } from '@/lib/types'
 
-const makeSnapshots = (dates: string[], price: number): Snapshot[] =>
-  dates.map((d) => ({
-    snapshot_date: d,
-    close_price: String(price),
-    total_value: String(price * 10),
-  }))
+const history: ScopedPortfolioHistory = {
+  series: {
+    KRW: [{
+      snapshot_date: '2026-06-01',
+      total_value: '750000',
+      total_cost_basis: '700000',
+      total_profit_loss: '50000',
+      unavailable_price_count: 0,
+      accounting_status: 'ok',
+      warnings: [],
+    }],
+    USD: [{
+      snapshot_date: '2026-06-01',
+      total_value: '120',
+      total_cost_basis: '100',
+      total_profit_loss: '20',
+      unavailable_price_count: 0,
+      accounting_status: 'ok',
+      warnings: [],
+    }],
+  },
+}
 
-describe('buildChartData', () => {
-  it('returns empty array for no holdings', () => {
-    expect(buildChartData([])).toEqual([])
+describe('buildChartSeries', () => {
+  it('keeps KRW and USD series separate instead of adding currencies', () => {
+    const series = buildChartSeries(history.series)
+
+    expect(series.KRW.value).toEqual([{ time: '2026-06-01', value: 750000 }])
+    expect(series.USD.value).toEqual([{ time: '2026-06-01', value: 120 }])
   })
 
-  it('returns empty array for holdings with no snapshots', () => {
-    expect(buildChartData([{ cost_basis: '100000', quantity: '10', snapshots: [] }])).toEqual([])
+  it('maps value, remaining cost, and profit for each currency', () => {
+    const series = buildChartSeries(history.series)
+
+    expect(series.KRW.cost).toEqual([{ time: '2026-06-01', value: 700000 }])
+    expect(series.KRW.profit).toEqual([{ time: '2026-06-01', value: 50000 }])
   })
 
-  it('maps snapshots to date points', () => {
-    const result = buildChartData([
-      {
-        cost_basis: '700000',
-        quantity: '10',
-        snapshots: makeSnapshots(['2024-01-10', '2024-01-11'], 75000),
-      },
-    ])
-    expect(result).toHaveLength(2)
-    expect(result[0]).toMatchObject({
-      date: '2024-01-10',
-      totalValue: 750000,
-      totalCost: 700000,
+  it('omits unavailable values', () => {
+    const series = buildChartSeries({
+      KRW: [{ ...history.series.KRW[0], total_value: null }],
+      USD: [],
     })
-  })
 
-  it('aggregates multiple holdings by date', () => {
-    const result = buildChartData([
-      {
-        cost_basis: '700000',
-        quantity: '10',
-        snapshots: makeSnapshots(['2024-01-10'], 75000),
-      },
-      {
-        cost_basis: '300000',
-        quantity: '10',
-        snapshots: makeSnapshots(['2024-01-10'], 32000),
-      },
-    ])
-    expect(result).toHaveLength(1)
-    expect(result[0].totalValue).toBe(750000 + 320000)
-    expect(result[0].totalCost).toBe(700000 + 300000)
-  })
-
-  it('sorts result by date ascending', () => {
-    const result = buildChartData([
-      {
-        cost_basis: '100000',
-        quantity: '10',
-        snapshots: makeSnapshots(['2024-01-15', '2024-01-10', '2024-01-12'], 10000),
-      },
-    ])
-    expect(result[0].date).toBe('2024-01-10')
-    expect(result[1].date).toBe('2024-01-12')
-    expect(result[2].date).toBe('2024-01-15')
+    expect(series.KRW.value).toEqual([])
   })
 })

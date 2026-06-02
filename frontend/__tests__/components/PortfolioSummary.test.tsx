@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom'
 import { render, screen } from '@testing-library/react'
 import { PortfolioSummary } from '@/components/dashboard/PortfolioSummary'
-import type { Holding } from '@/lib/types'
+import type { Holding, PortfolioSummary as PortfolioSummaryPayload } from '@/lib/types'
 
 const makeHolding = (overrides: Partial<Holding> = {}): Holding => ({
   id: '1',
@@ -24,6 +24,38 @@ const makeHolding = (overrides: Partial<Holding> = {}): Holding => ({
 })
 
 describe('PortfolioSummary', () => {
+  const scopedSummary: PortfolioSummaryPayload = {
+    currencies: {
+      KRW: {
+        total_cost_basis: '700000',
+        total_current_value: '750000',
+        total_profit_loss: '50000',
+        total_profit_loss_pct: '7.142857',
+        holding_count: 1,
+      },
+      USD: {
+        total_cost_basis: '100',
+        total_current_value: '120',
+        total_profit_loss: '20',
+        total_profit_loss_pct: '20',
+        holding_count: 1,
+      },
+    },
+    holding_count: 2,
+    accounting_status: 'ok',
+    warnings: [],
+  }
+
+  it('renders scoped remaining cost, current value, and profit without mixing currencies', () => {
+    render(<PortfolioSummary summary={scopedSummary} />)
+
+    expect(screen.getAllByText('잔여원금')).toHaveLength(2)
+    expect(screen.getAllByText('평가금액')).toHaveLength(2)
+    expect(screen.getAllByText('평가손익')).toHaveLength(2)
+    expect(screen.getByText(/\$100/)).toBeInTheDocument()
+    expect(screen.getByText(/700,000/)).toBeInTheDocument()
+  })
+
   it('renders four summary cards', () => {
     render(<PortfolioSummary holdings={[makeHolding()]} />)
     expect(screen.getByText('총 투자원금')).toBeInTheDocument()

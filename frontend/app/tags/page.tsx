@@ -1,10 +1,10 @@
 import { AuthGuard } from '@/components/layout/AuthGuard'
-import { TagManager } from '@/components/tags/TagManager'
+import { GroupManager } from '@/components/groups/GroupManager'
 
 export default function TagsPage() {
   return (
     <AuthGuard>
-      <TagManager />
+      <GroupManager />
     </AuthGuard>
   )
 }

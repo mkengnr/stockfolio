@@ -1,5 +1,7 @@
 import type {
-  Holding, HoldingDetail, SharedTag, StockSearchResult, Tag, TagDetail, User, Transaction,
+  BuyLot, GroupKind, Holding, HoldingDetail, Label, PortfolioScope, PortfolioSummary,
+  RollupGroup, ScopedPortfolioHistory, ScopedPortfolioHoldings, SharedGroup, SharedTag,
+  SourceGroup, StockSearchResult, Tag, TagDetail, Transaction, User,
 } from './types'
 
 const BASE = ''  // rewritten to backend by next.config.ts rewrites
@@ -51,6 +53,8 @@ export const holdingsApi = {
     price: string
     transaction_date: string
     notes?: string
+    source_group_id: string | null
+    label_ids: string[]
   }) => request<HoldingDetail>('/api/holdings', { method: 'POST', body: JSON.stringify(data) }),
 
   get: (id: string) => request<HoldingDetail>(`/api/holdings/${id}`),
@@ -65,6 +69,9 @@ export const holdingsApi = {
     quantity: string
     price: string
     transaction_date: string
+    source_group_id: string | null
+    label_ids: string[]
+    sell_allocations: { buy_lot_id: string; quantity: string }[]
   }) =>
     request<Transaction>(`/api/holdings/${holdingId}/transactions`, {
       method: 'POST',
@@ -73,6 +80,83 @@ export const holdingsApi = {
 
   deleteTransaction: (holdingId: string, txId: string) =>
     request(`/api/holdings/${holdingId}/transactions/${txId}`, { method: 'DELETE' }),
+
+  listLots: (
+    holdingId: string,
+    scope: { scope_kind: 'source'; scope_id: string } | { scope_kind: 'unclassified' },
+  ) => {
+    const params = new URLSearchParams({ scope_kind: scope.scope_kind })
+    if (scope.scope_kind === 'source') params.set('scope_id', scope.scope_id)
+    return request<BuyLot[]>(`/api/holdings/${holdingId}/lots?${params}`)
+  },
+
+  updateTransactionClassification: (
+    holdingId: string,
+    txId: string,
+    data: { source_group_id: string | null; label_ids: string[] },
+  ) =>
+    request<Transaction>(`/api/holdings/${holdingId}/transactions/${txId}/classification`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+}
+
+// ── Groups ───────────────────────────────────────────────────────────────────
+export const groupsApi = {
+  listSources: () => request<SourceGroup[]>('/api/groups/sources'),
+
+  listRollups: () => request<RollupGroup[]>('/api/groups/rollups'),
+
+  listLabels: () => request<Label[]>('/api/groups/labels'),
+
+  create: (
+    kind: GroupKind,
+    data: { name: string; color?: string; description?: string; source_group_ids?: string[] },
+  ) => request<SourceGroup | RollupGroup | Label>(`/api/groups/${kind}`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
+  update: (
+    kind: GroupKind,
+    id: string,
+    data: { name?: string; color?: string; description?: string; source_group_ids?: string[] },
+  ) => request<SourceGroup | RollupGroup | Label>(`/api/groups/${kind}/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
+
+  delete: (kind: GroupKind, id: string) =>
+    request(`/api/groups/${kind}/${id}`, { method: 'DELETE' }),
+
+  enableShare: (kind: GroupKind, id: string, requiresAuth: boolean) =>
+    request<SourceGroup | RollupGroup | Label>(`/api/groups/${kind}/${id}/share`, {
+      method: 'POST',
+      body: JSON.stringify({ requires_auth: requiresAuth }),
+    }),
+
+  disableShare: (kind: GroupKind, id: string) =>
+    request(`/api/groups/${kind}/${id}/share`, { method: 'DELETE' }),
+}
+
+// ── Scoped portfolio ─────────────────────────────────────────────────────────
+export function portfolioScopeQuery(scope: PortfolioScope) {
+  const params = new URLSearchParams({ scope_kind: scope.kind })
+  if ('id' in scope) params.set('scope_id', scope.id)
+  return params.toString()
+}
+
+function portfolioPath(resource: 'summary' | 'holdings' | 'history', scope: PortfolioScope) {
+  return `/api/portfolio/${resource}?${portfolioScopeQuery(scope)}`
+}
+
+export const portfolioApi = {
+  summaryPath: (scope: PortfolioScope) => portfolioPath('summary', scope),
+  holdingsPath: (scope: PortfolioScope) => portfolioPath('holdings', scope),
+  historyPath: (scope: PortfolioScope) => portfolioPath('history', scope),
+  summary: (scope: PortfolioScope) => request<PortfolioSummary>(portfolioPath('summary', scope)),
+  holdings: (scope: PortfolioScope) => request<ScopedPortfolioHoldings>(portfolioPath('holdings', scope)),
+  history: (scope: PortfolioScope) => request<ScopedPortfolioHistory>(portfolioPath('history', scope)),
 }
 
 // ── Stocks ───────────────────────────────────────────────────────────────────
@@ -113,7 +197,8 @@ export const tagsApi = {
 
 // ── Share (public) ───────────────────────────────────────────────────────────
 export const shareApi = {
-  get: (token: string) => request<SharedTag>(`/api/share/${token}`),
+  getGroup: (token: string) => request<SharedGroup>(`/api/groups/share/${token}`),
+  getLegacy: (token: string) => request<SharedTag>(`/api/share/${token}`),
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────

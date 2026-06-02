@@ -1,32 +1,61 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import type { Snapshot } from '@/lib/types'
+import { useEffect, useMemo, useRef } from 'react'
+import type { Currency, ScopedPortfolioHistory } from '@/lib/types'
 
-interface DayPoint {
-  date: string        // YYYY-MM-DD
-  totalValue: number
-  totalCost: number
+type Measure = 'value' | 'cost' | 'profit'
+type ChartPoint = { time: string; value: number }
+type CurrencyChartSeries = Record<Measure, ChartPoint[]>
+
+const currencies: Currency[] = ['KRW', 'USD']
+const measures: Measure[] = ['value', 'cost', 'profit']
+
+const colors: Record<Currency, Record<Measure, string>> = {
+  KRW: { value: '#4f46e5', cost: '#a5b4fc', profit: '#818cf8' },
+  USD: { value: '#059669', cost: '#a7f3d0', profit: '#34d399' },
 }
+
+const fieldByMeasure = {
+  value: 'total_value',
+  cost: 'total_cost_basis',
+  profit: 'total_profit_loss',
+} as const
 
 interface Props {
-  /** Pre-aggregated day points from all holdings */
-  data: DayPoint[]
+  series: ScopedPortfolioHistory['series']
 }
 
-export function PortfolioChart({ data }: Props) {
+export function buildChartSeries(series: ScopedPortfolioHistory['series']): Record<Currency, CurrencyChartSeries> {
+  return Object.fromEntries(currencies.map((currency) => [
+    currency,
+    Object.fromEntries(measures.map((measure) => [
+      measure,
+      (series[currency] ?? [])
+        .filter((point) => point[fieldByMeasure[measure]] !== null)
+        .map((point) => ({
+          time: point.snapshot_date,
+          value: parseFloat(point[fieldByMeasure[measure]]!),
+        })),
+    ])),
+  ])) as Record<Currency, CurrencyChartSeries>
+}
+
+export function PortfolioChart({ series }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const chartSeries = useMemo(() => buildChartSeries(series), [series])
+  const hasData = currencies.some((currency) => measures.some((measure) => chartSeries[currency][measure].length > 0))
 
   useEffect(() => {
-    if (!containerRef.current || data.length === 0) return
-
+    if (!containerRef.current || !hasData) return
+    let cancelled = false
     let chart: ReturnType<typeof import('lightweight-charts')['createChart']> | null = null
+    let handleResize: (() => void) | null = null
 
     import('lightweight-charts').then(({ createChart, ColorType, LineStyle }) => {
-      if (!containerRef.current) return
+      if (cancelled || !containerRef.current) return
       chart = createChart(containerRef.current, {
         width: containerRef.current.clientWidth,
-        height: 240,
+        height: 280,
         layout: {
           background: { type: ColorType.Solid, color: 'white' },
           textColor: '#6b7280',
@@ -36,85 +65,71 @@ export function PortfolioChart({ data }: Props) {
           vertLines: { color: '#f3f4f6' },
           horzLines: { color: '#f3f4f6' },
         },
-        rightPriceScale: { borderColor: '#e5e7eb' },
+        leftPriceScale: { visible: true, borderColor: '#e5e7eb' },
+        rightPriceScale: { visible: true, borderColor: '#e5e7eb' },
         timeScale: { borderColor: '#e5e7eb', fixLeftEdge: true, fixRightEdge: true },
       })
 
-      const valueSeries = chart.addLineSeries({
-        color: '#6366f1',
-        lineWidth: 2,
-        priceLineVisible: false,
-        lastValueVisible: true,
-      })
-      const costSeries = chart.addLineSeries({
-        color: '#d1d5db',
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        priceLineVisible: false,
-        lastValueVisible: false,
-      })
-
-      valueSeries.setData(data.map((d) => ({ time: d.date as import('lightweight-charts').Time, value: d.totalValue })))
-      costSeries.setData(data.map((d) => ({ time: d.date as import('lightweight-charts').Time, value: d.totalCost })))
-
-      chart.timeScale().fitContent()
-
-      const handleResize = () => {
-        if (containerRef.current && chart) {
-          chart.applyOptions({ width: containerRef.current.clientWidth })
+      for (const currency of currencies) {
+        for (const measure of measures) {
+          const lineSeries = chart.addLineSeries({
+            color: colors[currency][measure],
+            lineWidth: measure === 'value' ? 2 : 1,
+            lineStyle: measure === 'value' ? LineStyle.Solid : measure === 'cost' ? LineStyle.Dashed : LineStyle.Dotted,
+            priceScaleId: currency === 'KRW' ? 'left' : 'right',
+            priceLineVisible: false,
+            lastValueVisible: measure === 'value',
+          })
+          lineSeries.setData(chartSeries[currency][measure].map((point) => ({
+            time: point.time as import('lightweight-charts').Time,
+            value: point.value,
+          })))
         }
       }
-      window.addEventListener('resize', handleResize)
 
-      return () => window.removeEventListener('resize', handleResize)
+      chart.timeScale().fitContent()
+      handleResize = () => {
+        if (containerRef.current && chart) chart.applyOptions({ width: containerRef.current.clientWidth })
+      }
+      window.addEventListener('resize', handleResize)
     })
 
     return () => {
+      cancelled = true
+      if (handleResize) window.removeEventListener('resize', handleResize)
       chart?.remove()
     }
-  }, [data])
+  }, [chartSeries, hasData])
 
-  if (data.length === 0) {
-    return (
-      <div className="flex h-60 items-center justify-center text-sm text-gray-400">
-        차트 데이터를 불러오는 중...
-      </div>
-    )
+  if (!hasData) {
+    return <div className="flex h-60 items-center justify-center text-sm text-gray-400">차트 데이터가 없습니다.</div>
   }
 
   return (
     <div>
-      <div className="mb-2 flex items-center gap-4 text-xs text-gray-500">
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-4 rounded bg-brand-500" /> 평가금액
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-px w-4 border-t-2 border-dashed border-gray-300" /> 투자원금
-        </span>
+      <div className="mb-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-500">
+        {currencies.map((currency) => (
+          <div key={currency} className="flex items-center gap-3">
+            <strong className="text-gray-600">{currency}</strong>
+            <Legend color={colors[currency].value} label="평가금액" />
+            <Legend color={colors[currency].cost} label="잔여원금" dashed />
+            <Legend color={colors[currency].profit} label="평가손익" dotted />
+          </div>
+        ))}
       </div>
       <div ref={containerRef} className="w-full" />
     </div>
   )
 }
 
-/** Aggregate per-holding snapshots into daily portfolio totals */
-export function buildChartData(
-  holdings: Array<{ cost_basis: string | null; quantity: string; snapshots: Snapshot[] }>,
-): DayPoint[] {
-  const byDate = new Map<string, { value: number; cost: number }>()
-
-  for (const h of holdings) {
-    const cost = parseFloat(h.cost_basis ?? '0')
-    for (const s of h.snapshots) {
-      const existing = byDate.get(s.snapshot_date) ?? { value: 0, cost: 0 }
-      byDate.set(s.snapshot_date, {
-        value: existing.value + parseFloat(s.total_value),
-        cost: existing.cost + cost,
-      })
-    }
-  }
-
-  return Array.from(byDate.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, { value, cost }]) => ({ date, totalValue: value, totalCost: cost }))
+function Legend({ color, label, dashed, dotted }: { color: string; label: string; dashed?: boolean; dotted?: boolean }) {
+  return (
+    <span className="flex items-center gap-1">
+      <span
+        className={`inline-block w-4 border-t-2 ${dashed ? 'border-dashed' : dotted ? 'border-dotted' : ''}`}
+        style={{ borderColor: color }}
+      />
+      {label}
+    </span>
+  )
 }
