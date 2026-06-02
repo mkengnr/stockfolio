@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, date
 from decimal import Decimal
-from sqlalchemy import String, Boolean, DateTime, Date, Numeric, ForeignKey, Enum as SAEnum, func, Text
+from sqlalchemy import String, Boolean, DateTime, Date, Numeric, ForeignKey, Enum as SAEnum, func, false, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import enum
 from app.database import Base
@@ -53,6 +53,7 @@ class Holding(Base):
     snapshots: Mapped[list["DailySnapshot"]] = relationship(
         back_populates="holding", cascade="all, delete-orphan"
     )
+    buy_lots: Mapped[list["BuyLot"]] = relationship(back_populates="holding", passive_deletes="all")
 
 
 class Transaction(Base):
@@ -61,10 +62,22 @@ class Transaction(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     holding_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("holdings.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    source_group_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("source_groups.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     type: Mapped[TransactionType] = mapped_column(SAEnum(TransactionType), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
     price: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
     transaction_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    requires_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     holding: Mapped["Holding"] = relationship(back_populates="transactions")
+    source_group: Mapped["SourceGroup | None"] = relationship(back_populates="transactions")
+    buy_lot: Mapped["BuyLot | None"] = relationship(back_populates="transaction", passive_deletes="all")
+    sell_allocations: Mapped[list["SellLotAllocation"]] = relationship(
+        back_populates="sell_transaction", passive_deletes="all"
+    )
+    transaction_labels: Mapped[list["TransactionLabel"]] = relationship(
+        back_populates="transaction", passive_deletes="all"
+    )

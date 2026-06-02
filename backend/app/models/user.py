@@ -21,6 +21,14 @@ class User(Base):
     sessions: Mapped[list["Session"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     holdings: Mapped[list["Holding"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     tags: Mapped[list["Tag"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    source_groups: Mapped[list["SourceGroup"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    rollup_groups: Mapped[list["RollupGroup"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    labels: Mapped[list["Label"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    buy_lots: Mapped[list["BuyLot"]] = relationship(back_populates="user", passive_deletes="all")
 
 
 class OtpCode(Base):
