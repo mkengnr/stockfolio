@@ -26,18 +26,35 @@ interface Props {
 export function PortfolioSummary({ holdings }: Props) {
   const active = holdings.filter((h) => h.is_active)
 
-  const totalCost = active.reduce((s, h) => s + parseFloat(h.cost_basis ?? '0'), 0)
-  const totalValue = active.reduce((s, h) => {
+  const groups = (['KRW', 'USD'] as const)
+    .map((currency) => ({ currency, holdings: active.filter((h) => h.currency === currency) }))
+    .filter(({ holdings: currencyHoldings }) => currencyHoldings.length > 0)
+
+  if (groups.length === 0) {
+    return <CurrencySummary currency="KRW" holdings={[]} />
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {groups.map(({ currency, holdings: currencyHoldings }) => (
+        <div key={currency}>
+          {groups.length > 1 && <p className="mb-2 text-xs font-semibold text-gray-400">{currency}</p>}
+          <CurrencySummary currency={currency} holdings={currencyHoldings} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function CurrencySummary({ currency, holdings }: { currency: 'KRW' | 'USD'; holdings: Holding[] }) {
+  const totalCost = holdings.reduce((s, h) => s + parseFloat(h.cost_basis ?? '0'), 0)
+  const totalValue = holdings.reduce((s, h) => {
     const v = h.current_value ? parseFloat(h.current_value) : parseFloat(h.cost_basis ?? '0')
     return s + v
   }, 0)
   const totalPL = totalValue - totalCost
   const totalPLPct = totalCost > 0 ? (totalPL / totalCost) * 100 : 0
-  const hasPrices = active.some((h) => h.current_price !== null)
-
-  // KRW dominant: use KRW if more than half of holdings are KRW
-  const krwCount = active.filter((h) => h.currency === 'KRW').length
-  const currency = krwCount >= active.length / 2 ? 'KRW' : 'USD'
+  const hasPrices = holdings.length > 0 && holdings.every((h) => h.current_price !== null)
 
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

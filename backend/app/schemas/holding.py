@@ -1,14 +1,14 @@
 import uuid
 from datetime import datetime, date
 from decimal import Decimal
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from app.models.holding import Market, Currency, TransactionType
 
 
 class TransactionIn(BaseModel):
     type: TransactionType
-    quantity: Decimal
-    price: Decimal
+    quantity: Decimal = Field(gt=0)
+    price: Decimal = Field(gt=0)
     transaction_date: date
 
 
@@ -25,8 +25,8 @@ class TransactionOut(BaseModel):
 
 class HoldingCreateIn(BaseModel):
     ticker: str
-    quantity: Decimal
-    price: Decimal  # 최초 매수 단가
+    quantity: Decimal = Field(gt=0)
+    price: Decimal = Field(gt=0)  # 최초 매수 단가
     transaction_date: date
     notes: str | None = None
 

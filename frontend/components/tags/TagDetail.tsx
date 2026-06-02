@@ -26,7 +26,6 @@ export function TagDetailView({ tagId, allHoldings }: Props) {
   if (!tag) return null
 
   const tagHoldings = allHoldings.filter((h) => tag.holding_ids.includes(h.id))
-  const currency = tagHoldings.some((h) => h.currency === 'KRW') ? 'KRW' as const : 'USD' as const
 
   async function handleShare(requiresAuth: boolean) {
     setSharingLoading(true)
@@ -69,34 +68,17 @@ export function TagDetailView({ tagId, allHoldings }: Props) {
       </div>
 
       {/* Summary cards */}
-      {summary && (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <Card>
-            <CardTitle>투자원금</CardTitle>
-            <p className="mt-2 text-xl font-bold text-gray-900 tabular-nums">
-              {formatCurrency(summary.total_cost_basis, currency)}
-            </p>
-          </Card>
-          <Card>
-            <CardTitle>평가금액</CardTitle>
-            <p className="mt-2 text-xl font-bold text-gray-900 tabular-nums">
-              {summary.total_current_value ? formatCurrency(summary.total_current_value, currency) : '—'}
-            </p>
-          </Card>
-          <Card>
-            <CardTitle>평가손익</CardTitle>
-            <p className={`mt-2 text-xl font-bold tabular-nums ${profitColor(summary.total_profit_loss)}`}>
-              {summary.total_profit_loss ? formatCurrency(summary.total_profit_loss, currency) : '—'}
-            </p>
-          </Card>
-          <Card>
-            <CardTitle>수익률</CardTitle>
-            <p className={`mt-2 text-xl font-bold tabular-nums ${profitColor(summary.total_profit_loss_pct)}`}>
-              {formatPercent(summary.total_profit_loss_pct)}
-            </p>
-          </Card>
+      {summary && Object.entries(summary.currencies).map(([currency, currencySummary]) => (
+        <div key={currency}>
+          <p className="mb-2 text-xs font-semibold text-gray-400">{currency}</p>
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <SummaryCards
+              currency={currency as 'KRW' | 'USD'}
+              summary={currencySummary}
+            />
+          </div>
         </div>
-      )}
+      ))}
 
       {/* Holdings */}
       <div>
@@ -133,12 +115,50 @@ export function TagDetailView({ tagId, allHoldings }: Props) {
                 공개 링크 생성 (인증 불필요)
               </Button>
               <Button variant="secondary" size="sm" loading={sharingLoading} onClick={() => handleShare(true)}>
-                비공개 링크 생성 (로그인 필요)
+                로그인 사용자용 링크 생성
               </Button>
             </div>
           )}
         </div>
       </Card>
     </div>
+  )
+}
+
+function SummaryCards({
+  currency,
+  summary,
+}: {
+  currency: 'KRW' | 'USD'
+  summary: NonNullable<TagDetailType['summary']>['currencies']['KRW']
+}) {
+  if (!summary) return null
+  return (
+    <>
+      <Card>
+        <CardTitle>투자원금</CardTitle>
+        <p className="mt-2 text-xl font-bold text-gray-900 tabular-nums">
+          {formatCurrency(summary.total_cost_basis, currency)}
+        </p>
+      </Card>
+      <Card>
+        <CardTitle>평가금액</CardTitle>
+        <p className="mt-2 text-xl font-bold text-gray-900 tabular-nums">
+          {summary.total_current_value ? formatCurrency(summary.total_current_value, currency) : '—'}
+        </p>
+      </Card>
+      <Card>
+        <CardTitle>평가손익</CardTitle>
+        <p className={`mt-2 text-xl font-bold tabular-nums ${profitColor(summary.total_profit_loss)}`}>
+          {summary.total_profit_loss ? formatCurrency(summary.total_profit_loss, currency) : '—'}
+        </p>
+      </Card>
+      <Card>
+        <CardTitle>수익률</CardTitle>
+        <p className={`mt-2 text-xl font-bold tabular-nums ${profitColor(summary.total_profit_loss_pct)}`}>
+          {formatPercent(summary.total_profit_loss_pct)}
+        </p>
+      </Card>
+    </>
   )
 }

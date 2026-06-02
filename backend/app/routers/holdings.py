@@ -1,6 +1,7 @@
 import uuid
+import logging
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -17,29 +18,37 @@ from app.schemas.holding import (
 )
 from app.services import stock_fetcher
 from app.services.price_cache import get_price
+from app.services.snapshot_service import backfill_holding_snapshots
 
 router = APIRouter(prefix="/api/holdings", tags=["holdings"])
+logger = logging.getLogger(__name__)
 
 
 def _recalculate_holding(holding: Holding) -> None:
-    """Recompute avg_price and net quantity from transactions.
-
-    avg_price is the weighted average of all BUY transactions only —
-    it does not change when shares are sold (FIFO cost basis).
-    net_qty = sum(BUY) - sum(SELL).
-    """
-    net_qty = Decimal(0)
-    total_buy_qty = Decimal(0)
-    total_buy_cost = Decimal(0)
-    for tx in holding.transactions:
+    """Recompute the remaining position using the moving-average method."""
+    quantity = Decimal(0)
+    avg_price = Decimal(0)
+    for tx in sorted(holding.transactions, key=_transaction_sort_key):
         if tx.type == TransactionType.BUY:
-            net_qty += tx.quantity
-            total_buy_qty += tx.quantity
-            total_buy_cost += tx.quantity * tx.price
+            total_cost = quantity * avg_price + tx.quantity * tx.price
+            quantity += tx.quantity
+            avg_price = total_cost / quantity
         elif tx.type == TransactionType.SELL:
-            net_qty -= tx.quantity
-    holding.quantity = net_qty
-    holding.avg_price = (total_buy_cost / total_buy_qty) if total_buy_qty > 0 else Decimal(0)
+            if tx.quantity > quantity:
+                raise ValueError("Sell quantity exceeds available holding quantity")
+            quantity -= tx.quantity
+            if quantity == 0:
+                avg_price = Decimal(0)
+    holding.quantity = quantity
+    holding.avg_price = avg_price
+
+
+def _transaction_sort_key(transaction: Transaction) -> tuple[date, str]:
+    created_at = transaction.created_at if isinstance(transaction.created_at, datetime) else None
+    return (
+        transaction.transaction_date,
+        created_at.isoformat() if created_at else "9999-12-31T23:59:59",
+    )
 
 
 async def _enrich_with_price(holding: Holding, current_price: Decimal | None) -> HoldingOut:
@@ -141,11 +150,17 @@ async def create_holding(
     db.add(tx)
     await db.flush()
 
-    await db.refresh(holding, ["transactions", "holding_tags", "snapshots"])
+    await db.refresh(holding, ["transactions"])
+    try:
+        await backfill_holding_snapshots(db, holding)
+    except Exception:
+        logger.exception("Failed to backfill snapshots for holding_id=%s", holding.id)
+
+    await db.refresh(holding, ["holding_tags", "snapshots"])
     out = HoldingDetailOut(
         **( await _enrich_with_price(holding, None)).model_dump(),
         transactions=[TransactionOut.model_validate(tx)],
-        snapshots=[],
+        snapshots=[SnapshotOut.model_validate(s) for s in sorted(holding.snapshots, key=lambda x: x.snapshot_date)],
         tags=[],
     )
     return out
@@ -273,13 +288,17 @@ async def add_transaction(
         price=body.price,
         transaction_date=body.transaction_date,
     )
+    holding.transactions.append(tx)
+    try:
+        _recalculate_holding(holding)
+    except ValueError as exc:
+        holding.transactions.remove(tx)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
     db.add(tx)
     await db.flush()
 
-    holding.transactions.append(tx)
-    _recalculate_holding(holding)
-
-    if holding.first_buy_date > body.transaction_date:
+    if body.type == TransactionType.BUY and holding.first_buy_date > body.transaction_date:
         holding.first_buy_date = body.transaction_date
 
     return TransactionOut.model_validate(tx)
@@ -301,8 +320,6 @@ async def delete_transaction(
     tx = result.scalar_one_or_none()
     if tx is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
-    await db.delete(tx)
-
     # Recalculate holding
     holding_result = await db.execute(
         select(Holding)
@@ -311,4 +328,14 @@ async def delete_transaction(
     )
     holding = holding_result.scalar_one_or_none()
     if holding:
-        _recalculate_holding(holding)
+        original_transactions = holding.transactions
+        holding.transactions = [item for item in holding.transactions if item.id != tx_id]
+        try:
+            _recalculate_holding(holding)
+        except ValueError as exc:
+            holding.transactions = original_transactions
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        buy_dates = [item.transaction_date for item in holding.transactions if item.type == TransactionType.BUY]
+        if buy_dates:
+            holding.first_buy_date = min(buy_dates)
+    await db.delete(tx)

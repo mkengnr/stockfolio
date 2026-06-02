@@ -1,5 +1,5 @@
 import type {
-  Holding, HoldingDetail, Tag, TagDetail, User, Transaction,
+  Holding, HoldingDetail, SharedTag, StockSearchResult, Tag, TagDetail, User, Transaction,
 } from './types'
 
 const BASE = ''  // rewritten to backend by next.config.ts rewrites
@@ -75,6 +75,12 @@ export const holdingsApi = {
     request(`/api/holdings/${holdingId}/transactions/${txId}`, { method: 'DELETE' }),
 }
 
+// ── Stocks ───────────────────────────────────────────────────────────────────
+export const stocksApi = {
+  search: (query: string) =>
+    request<StockSearchResult[]>(`/api/stocks/search?q=${encodeURIComponent(query)}`),
+}
+
 // ── Tags ─────────────────────────────────────────────────────────────────────
 export const tagsApi = {
   list: () => request<Tag[]>('/api/tags'),
@@ -107,7 +113,7 @@ export const tagsApi = {
 
 // ── Share (public) ───────────────────────────────────────────────────────────
 export const shareApi = {
-  get: (token: string) => request<TagDetail>(`/api/share/${token}`),
+  get: (token: string) => request<SharedTag>(`/api/share/${token}`),
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────

@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     # OTP
     otp_expire_minutes: int = 10
+    otp_request_cooldown_seconds: int = 60
 
     # Email
     smtp_host: str = "localhost"
@@ -33,6 +34,8 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from: str = "noreply@stockfolio.local"
+    smtp_starttls: bool = True
+    smtp_timeout: float | None = 30.0
     email_console_fallback: bool = True  # dev: print to console
 
     # Scheduler

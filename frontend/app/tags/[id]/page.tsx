@@ -1,6 +1,5 @@
 'use client'
 
-import { use } from 'react'
 import useSWR from 'swr'
 import { AuthGuard } from '@/components/layout/AuthGuard'
 import { TagDetailView } from '@/components/tags/TagDetail'
@@ -18,8 +17,8 @@ function TagPageContent({ id }: { id: string }) {
   return <TagDetailView tagId={id} allHoldings={holdings} />
 }
 
-export default function TagPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
+export default function TagPage({ params }: { params: { id: string } }) {
+  const { id } = params
   return (
     <AuthGuard>
       <TagPageContent id={id} />

@@ -33,6 +33,7 @@ frontend/.env.local
 
 # Generated review artifacts
 codex_review_*.md
+logs/
 
 # Next.js auto-generated
 frontend/next-env.d.ts

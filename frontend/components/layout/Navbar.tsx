@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/Button'
 const navLinks = [
   { href: '/', label: '대시보드' },
   { href: '/holdings/new', label: '종목 등록' },
+  { href: '/tags', label: '그룹 관리' },
 ]
 
 export function Navbar() {
@@ -44,7 +45,7 @@ export function Navbar() {
                 href={href}
                 className={cn(
                   'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                  pathname === href
+                  pathname === href || (href === '/tags' && pathname.startsWith('/tags/'))
                     ? 'bg-brand-50 text-brand-700'
                     : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
                 )}

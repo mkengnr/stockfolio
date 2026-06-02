@@ -15,7 +15,7 @@ from app.models.tag import HoldingTag, Tag
 from app.models.user import User
 from app.routers.deps import get_current_user, get_current_user_optional
 from app.schemas.tag import (
-    SharedTagOut, TagCreateIn, TagDetailOut, TagOut, TagShareUpdateIn, TagSummary, TagUpdateIn,
+    SharedTagOut, TagCreateIn, TagCurrencySummary, TagDetailOut, TagOut, TagShareUpdateIn, TagSummary, TagUpdateIn,
 )
 from app.services.price_cache import get_price
 
@@ -38,8 +38,6 @@ async def _compute_summary(holdings: list[Holding]) -> TagSummary:
     """
     active = [h for h in holdings if h.is_active]
 
-    total_cost = sum((h.quantity * h.avg_price for h in active), Decimal(0))
-
     tickers = {h.ticker for h in active}
     if tickers:
         results = await asyncio.gather(
@@ -56,19 +54,28 @@ async def _compute_summary(holdings: list[Holding]) -> TagSummary:
     else:
         prices = {}
 
-    has_prices = bool(prices) and all(p is not None for p in prices.values())
-    total_current = Decimal(0)
-    if has_prices:
-        for h in active:
-            total_current += h.quantity * prices[h.ticker]
+    currencies = {}
+    for currency in {h.currency for h in active}:
+        currency_holdings = [h for h in active if h.currency == currency]
+        total_cost = sum((h.quantity * h.avg_price for h in currency_holdings), Decimal(0))
+        has_prices = all(prices[h.ticker] is not None for h in currency_holdings)
+        total_current = (
+            sum((h.quantity * prices[h.ticker] for h in currency_holdings), Decimal(0))
+            if has_prices
+            else None
+        )
+        pl = (total_current - total_cost) if total_current is not None else None
+        pl_pct = (pl / total_cost * 100) if (pl is not None and total_cost > 0) else None
+        currencies[currency] = TagCurrencySummary(
+            total_cost_basis=total_cost,
+            total_current_value=total_current,
+            total_profit_loss=pl,
+            total_profit_loss_pct=pl_pct,
+            holding_count=len(currency_holdings),
+        )
 
-    pl = (total_current - total_cost) if has_prices else None
-    pl_pct = (pl / total_cost * 100) if (pl is not None and total_cost > 0) else None
     return TagSummary(
-        total_cost_basis=total_cost,
-        total_current_value=total_current if has_prices else None,
-        total_profit_loss=pl,
-        total_profit_loss_pct=pl_pct,
+        currencies=currencies,
         holding_count=len(active),
     )
 

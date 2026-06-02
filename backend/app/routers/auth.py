@@ -1,6 +1,10 @@
+import logging
+import hashlib
 from datetime import datetime, timezone
+from email.message import EmailMessage
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+import aiosmtplib
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,20 +14,72 @@ from app.models.user import User
 from app.routers.deps import get_current_user
 from app.schemas.auth import OtpRequestIn, OtpRequestOut, OtpVerifyIn, TokenOut, UserOut
 from app.services import auth_service
+from app.services.price_cache import get_redis
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+
+def _mask_email(email: str) -> str:
+    local, separator, domain = email.partition("@")
+    if not separator:
+        return "***"
+    return f"{local[:1]}***@{domain}"
+
+
+async def _allow_otp_request(email: str, client_ip: str) -> bool:
+    digest = hashlib.sha256(email.strip().lower().encode()).hexdigest()
+    keys = [f"otp:request:email:{digest}", f"otp:request:ip:{client_ip}"]
+    try:
+        pipeline = get_redis().pipeline(transaction=True)
+        for key in keys:
+            pipeline.set(key, "1", ex=settings.otp_request_cooldown_seconds, nx=True)
+        return all(await pipeline.execute())
+    except Exception:
+        logger.warning("OTP request rate limiter unavailable", exc_info=True)
+        return True
 
 
 async def _send_otp(email: str, code: str) -> None:
     if settings.email_console_fallback:
         print(f"\n[DEV OTP] {email} → {code}\n")
         return
-    # TODO: aiosmtplib integration for production
+
+    message = EmailMessage()
+    message["From"] = settings.smtp_from or settings.smtp_user
+    message["To"] = email
+    message["Subject"] = "Your Stockfolio verification code"
+    message.set_content(
+        f"Your Stockfolio verification code is: {code}\n\n"
+        f"This code expires in {settings.otp_expire_minutes} minutes."
+    )
+
+    try:
+        await aiosmtplib.send(
+            message,
+            hostname=settings.smtp_host,
+            port=settings.smtp_port,
+            username=settings.smtp_user or None,
+            password=settings.smtp_password or None,
+            start_tls=settings.smtp_starttls,
+            timeout=settings.smtp_timeout,
+        )
+        logger.info("OTP email sent to %s", _mask_email(email))
+    except Exception as exc:
+        logger.exception("Failed to send OTP email to %s", _mask_email(email))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to send OTP email",
+        ) from exc
 
 
 @router.post("/request-otp", response_model=OtpRequestOut)
-async def request_otp(body: OtpRequestIn, db: AsyncSession = Depends(get_db)):
+async def request_otp(body: OtpRequestIn, request: Request, db: AsyncSession = Depends(get_db)):
+    client_ip = request.client.host if request.client else "unknown"
+    if not await _allow_otp_request(body.email, client_ip):
+        return OtpRequestOut()
+
     result = await db.execute(
         select(User).where(User.email == body.email).where(User.is_active == True)
     )
@@ -33,7 +89,12 @@ async def request_otp(body: OtpRequestIn, db: AsyncSession = Depends(get_db)):
         return OtpRequestOut()
 
     code = await auth_service.create_otp(db, user)
-    await _send_otp(user.email, code)
+    try:
+        await _send_otp(user.email, code)
+    except HTTPException:
+        # Keep the public response identical for registered and unknown emails.
+        # Delivery failures stay visible through server logs.
+        pass
     return OtpRequestOut()
 
 

@@ -46,6 +46,12 @@ async def _verify_otp_hash_async(code: str, hashed: str) -> bool:
 async def create_otp(db: AsyncSession, user: User) -> str:
     code = generate_otp()
     now = datetime.now(tz=timezone.utc)
+    await db.execute(
+        update(OtpCode)
+        .where(OtpCode.user_id == user.id)
+        .where(OtpCode.used_at.is_(None))
+        .values(used_at=now)
+    )
     otp = OtpCode(
         user_id=user.id,
         code_hash=await _hash_otp_async(code),

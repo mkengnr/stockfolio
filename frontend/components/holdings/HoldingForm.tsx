@@ -7,9 +7,9 @@ import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
-import { holdingsApi, tagsApi, fetcher } from '@/lib/api'
-import { detectMarket, today } from '@/lib/utils'
-import type { Tag } from '@/lib/types'
+import { holdingsApi, stocksApi, tagsApi, fetcher } from '@/lib/api'
+import { today } from '@/lib/utils'
+import type { StockSearchResult, Tag } from '@/lib/types'
 
 export function HoldingForm() {
   const router = useRouter()
@@ -21,10 +21,38 @@ export function HoldingForm() {
   const [txDate, setTxDate] = useState(today())
   const [notes, setNotes] = useState('')
   const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [searchResults, setSearchResults] = useState<StockSearchResult[]>([])
+  const [searching, setSearching] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const market = ticker.trim() ? detectMarket(ticker) : null
+  const normalizedTicker = ticker.trim()
+  const market = /^\d{6}$/.test(normalizedTicker)
+    ? 'KRX'
+    : /^[A-Za-z][A-Za-z0-9.-]*$/.test(normalizedTicker)
+      ? 'US'
+      : null
+
+  useEffect(() => {
+    const query = ticker.trim()
+    if (!query) {
+      setSearchResults([])
+      return
+    }
+
+    const timer = window.setTimeout(async () => {
+      setSearching(true)
+      try {
+        setSearchResults(await stocksApi.search(query))
+      } catch {
+        setSearchResults([])
+      } finally {
+        setSearching(false)
+      }
+    }, 250)
+
+    return () => window.clearTimeout(timer)
+  }, [ticker])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -39,7 +67,7 @@ export function HoldingForm() {
         notes: notes.trim() || undefined,
       })
       // attach tags
-      await Promise.all(selectedTags.map((tid) => tagsApi.addHolding(holding.id, tid)))
+      await Promise.all(selectedTags.map((tid) => tagsApi.addHolding(tid, holding.id)))
       router.push('/')
       router.refresh()
     } catch (err: unknown) {
@@ -59,14 +87,36 @@ export function HoldingForm() {
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
           <Input
-            label="종목 코드"
-            placeholder="005930  또는  AAPL"
+            label="종목 코드 또는 종목명"
+            placeholder="005930, 삼성전자 또는 AAPL"
             value={ticker}
             onChange={(e) => setTicker(e.target.value)}
             required
             hint={market ? (market === 'KRX' ? '🇰🇷 한국 주식 (KRX)' : '🇺🇸 해외 주식 (US)') : undefined}
           />
         </div>
+        {(searching || searchResults.length > 0) && (
+          <div className="-mt-3 rounded-lg border border-gray-200 bg-white p-2 shadow-sm">
+            {searching ? (
+              <p className="px-2 py-1 text-xs text-gray-400">종목 검색 중...</p>
+            ) : (
+              searchResults.map((stock) => (
+                <button
+                  key={`${stock.market}:${stock.ticker}`}
+                  type="button"
+                  onClick={() => {
+                    setTicker(stock.ticker)
+                    setSearchResults([])
+                  }}
+                  className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm hover:bg-gray-50"
+                >
+                  <span className="font-medium text-gray-900">{stock.name}</span>
+                  <span className="text-xs text-gray-400">{stock.ticker} · {stock.market}</span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <Input
@@ -109,7 +159,7 @@ export function HoldingForm() {
 
         {tags && tags.length > 0 && (
           <div>
-            <p className="mb-2 text-sm font-medium text-gray-700">태그 선택 (선택)</p>
+            <p className="mb-2 text-sm font-medium text-gray-700">그룹 선택 (선택)</p>
             <div className="flex flex-wrap gap-2">
               {tags.map((tag) => (
                 <button

@@ -2,11 +2,11 @@
 
 import useSWR from 'swr'
 import Link from 'next/link'
-import { use } from 'react'
 import { AuthGuard } from '@/components/layout/AuthGuard'
 import { PriceChart } from '@/components/holdings/PriceChart'
 import { TransactionList } from '@/components/holdings/TransactionList'
 import { AddTransactionForm } from '@/components/holdings/AddTransactionForm'
+import { HoldingTagEditor } from '@/components/holdings/HoldingTagEditor'
 import { Card } from '@/components/ui/Card'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
 import { fetcher, holdingsApi } from '@/lib/api'
@@ -75,6 +75,16 @@ function HoldingDetailContent({ id }: { id: string }) {
         ))}
       </div>
 
+      {/* Groups */}
+      <Card>
+        <h2 className="mb-4 font-semibold text-gray-900">그룹</h2>
+        <HoldingTagEditor
+          holdingId={holding.id}
+          selectedTagIds={holding.tags}
+          onRefresh={() => mutate()}
+        />
+      </Card>
+
       {/* Price chart */}
       <Card>
         <h2 className="mb-4 font-semibold text-gray-900">가격 차트</h2>
@@ -100,8 +110,8 @@ function HoldingDetailContent({ id }: { id: string }) {
   )
 }
 
-export default function HoldingPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
+export default function HoldingPage({ params }: { params: { id: string } }) {
+  const { id } = params
   return (
     <AuthGuard>
       <HoldingDetailContent id={id} />

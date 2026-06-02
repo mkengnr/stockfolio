@@ -2,6 +2,7 @@
 Redis-backed price cache. Cache key: price:{ticker}
 Falls back to stock_fetcher on miss.
 """
+import asyncio
 import json
 from decimal import Decimal
 from datetime import date
@@ -59,7 +60,7 @@ async def get_price(ticker: str) -> PriceResult:
     if raw:
         return _deserialize(raw)
 
-    result = get_current_price(ticker)
+    result = await asyncio.to_thread(get_current_price, ticker)
     await r.setex(key, settings.price_cache_ttl, _serialize(result))
     return result
 

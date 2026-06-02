@@ -73,4 +73,22 @@ describe('PortfolioSummary', () => {
     // Should show 100,000 for cost, not 1,099,999
     expect(screen.getByText(/100,000/)).toBeInTheDocument()
   })
+
+  it('keeps KRW and USD summaries separate', () => {
+    const krw = makeHolding({ cost_basis: '700000', current_value: '750000' })
+    const usd = makeHolding({
+      id: '2',
+      ticker: 'AAPL',
+      market: 'US',
+      currency: 'USD',
+      cost_basis: '100',
+      current_value: '120',
+    })
+    render(<PortfolioSummary holdings={[krw, usd]} />)
+
+    expect(screen.getByText('KRW')).toBeInTheDocument()
+    expect(screen.getByText('USD')).toBeInTheDocument()
+    expect(screen.getByText(/700,000/)).toBeInTheDocument()
+    expect(screen.getByText(/\$100/)).toBeInTheDocument()
+  })
 })

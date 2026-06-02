@@ -43,7 +43,9 @@ class Holding(Base):
 
     user: Mapped["User"] = relationship(back_populates="holdings")
     transactions: Mapped[list["Transaction"]] = relationship(
-        back_populates="holding", cascade="all, delete-orphan", order_by="Transaction.transaction_date"
+        back_populates="holding",
+        cascade="all, delete-orphan",
+        order_by="(Transaction.transaction_date, Transaction.created_at)",
     )
     holding_tags: Mapped[list["HoldingTag"]] = relationship(
         back_populates="holding", cascade="all, delete-orphan"

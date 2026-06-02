@@ -6,7 +6,25 @@ export interface User {
   id: string
   email: string
   is_admin: boolean
+  is_active: boolean
   created_at: string
+}
+
+export interface StockSearchResult {
+  ticker: string
+  name: string
+  market: Market
+  currency: Currency
+}
+
+export interface PortfolioHistoryPoint {
+  snapshot_date: string
+  total_value: string
+  total_cost_basis: string
+}
+
+export interface PortfolioHistory {
+  series: Record<Currency, PortfolioHistoryPoint[]>
 }
 
 export interface Transaction {
@@ -50,11 +68,16 @@ export interface HoldingDetail extends Holding {
   tags: string[]
 }
 
-export interface TagSummary {
+export interface TagCurrencySummary {
   total_cost_basis: string
   total_current_value: string | null
   total_profit_loss: string | null
   total_profit_loss_pct: string | null
+  holding_count: number
+}
+
+export interface TagSummary {
+  currencies: Partial<Record<Currency, TagCurrencySummary>>
   holding_count: number
 }
 
@@ -71,6 +94,14 @@ export interface Tag {
 
 export interface TagDetail extends Tag {
   summary: TagSummary | null
+}
+
+export interface SharedTag {
+  name: string
+  color: string
+  description: string | null
+  summary: TagSummary | null
+  holding_count: number
 }
 
 export interface ApiError {

@@ -2,7 +2,9 @@
 APScheduler tasks.
 - Daily snapshot: runs at KST 15:35 (UTC 06:35) on weekdays.
 """
-from datetime import date, timezone
+import asyncio
+import logging
+from datetime import date
 from decimal import Decimal
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -15,9 +17,28 @@ from app.database import AsyncSessionLocal
 from app.models.holding import Holding
 from app.models.snapshot import DailySnapshot
 from app.services.stock_fetcher import get_current_price
+from app.services.snapshot_service import backfill_holding_snapshots
 
 settings = get_settings()
 scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
+logger = logging.getLogger(__name__)
+
+
+async def _backfill_missing_snapshots() -> None:
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(Holding)
+            .where(Holding.is_active == True)
+            .options(selectinload(Holding.transactions))
+        )
+        for holding in result.scalars().all():
+            try:
+                added = await backfill_holding_snapshots(db, holding)
+                if added:
+                    logger.info("Backfilled %s snapshots for holding_id=%s", added, holding.id)
+            except Exception:
+                logger.exception("Failed to backfill snapshots for holding_id=%s", holding.id)
+        await db.commit()
 
 
 async def _save_daily_snapshots() -> None:
@@ -29,7 +50,7 @@ async def _save_daily_snapshots() -> None:
         holdings = result.scalars().all()
         for h in holdings:
             try:
-                pr = get_current_price(h.ticker)
+                pr = await asyncio.to_thread(get_current_price, h.ticker)
                 close_price = pr.price
             except Exception:
                 continue
@@ -56,6 +77,12 @@ async def _save_daily_snapshots() -> None:
 
 
 def start_scheduler() -> None:
+    scheduler.add_job(
+        _backfill_missing_snapshots,
+        trigger="date",
+        id="snapshot_backfill",
+        replace_existing=True,
+    )
     scheduler.add_job(
         _save_daily_snapshots,
         trigger=CronTrigger(

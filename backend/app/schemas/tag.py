@@ -3,6 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from pydantic import BaseModel, field_validator
 import re
+from app.models.holding import Currency
 
 
 class TagCreateIn(BaseModel):
@@ -37,11 +38,16 @@ class TagShareUpdateIn(BaseModel):
     requires_auth: bool = True
 
 
-class TagSummary(BaseModel):
+class TagCurrencySummary(BaseModel):
     total_cost_basis: Decimal
     total_current_value: Decimal | None
     total_profit_loss: Decimal | None
     total_profit_loss_pct: Decimal | None
+    holding_count: int
+
+
+class TagSummary(BaseModel):
+    currencies: dict[Currency, TagCurrencySummary]
     holding_count: int
 
 
