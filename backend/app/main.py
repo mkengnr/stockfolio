@@ -10,6 +10,7 @@ from app.routers.tags import router as tags_router, share_router
 from app.routers.admin import router as admin_router
 from app.routers.stocks import router as stocks_router
 from app.routers.portfolio import router as portfolio_router
+from app.routers.groups import router as groups_router
 from app.tasks.scheduler import start_scheduler
 
 settings = get_settings()
@@ -42,6 +43,7 @@ app.include_router(share_router)
 app.include_router(admin_router)
 app.include_router(stocks_router)
 app.include_router(portfolio_router)
+app.include_router(groups_router)
 
 
 @app.get("/health")
