@@ -1,59 +1,59 @@
-# Dashboard Group, Currency, and Transaction Redesign
+# 대시보드 그룹, 통화, 거래내역 개선 설계
 
-## Context
+## 배경
 
-Stockfolio already supports transaction-level source groups, rollup groups, labels, principal-flow accounting, scoped dashboard summary, scoped holdings, and scoped history. The current dashboard is still optimized for one selected scope at a time. The next redesign should let a user keep the whole portfolio in view while comparing groups, seeing KRW-converted totals, and navigating to a complete transaction management screen.
+Stockfolio는 이미 거래 단위 자금 출처 그룹, 통합 그룹, 라벨, 투자원금처리 회계, 범위별 대시보드 요약, 범위별 보유종목, 범위별 이력 조회를 지원한다. 다만 현재 대시보드는 한 번에 하나의 조회 범위를 선택해서 보는 구조에 가깝다. 이번 개선은 전체 포트폴리오를 기본으로 유지하면서 그룹별 성과를 같이 비교하고, 달러 자산을 원화로 환산해서 합산하며, 전체 거래내역 조회/수정 화면으로 자연스럽게 이동할 수 있게 만드는 것이 목적이다.
 
-The user approved the A layout direction from the visual mockups:
+사용자는 시각 mockup에서 A안을 승인했다.
 
-- Dashboard: keep the whole-portfolio summary as the primary view, then add a group comparison section using the same summary metrics.
-- Holding detail: remove duplicate-looking charts and use a single price chart with dashboard-like performance summary cards.
+- 대시보드: 전체 포트폴리오 요약을 기본 화면으로 유지하고, 같은 지표 세트를 사용하는 그룹별 수익현황 영역을 추가한다.
+- 종목 상세: 중복처럼 보이는 차트를 제거하고, 가격 차트 1개와 대시보드와 같은 방식의 수익현황 카드를 제공한다.
 
-## Goals
+## 목표
 
-1. Show whole-portfolio and group-level performance together on the dashboard.
-2. Use the same metric vocabulary everywhere: invested principal, remaining cost basis, current value, profit/loss, profit/loss percentage.
-3. Show all default dashboard amounts in KRW by converting USD assets with exchange-rate data.
-4. Allow a USD-only mode that shows USD metrics and charts separately.
-5. Add group visibility to the holdings table.
-6. Add a complete transaction list/editing screen.
-7. Simplify holding detail charts and add performance summary information there.
+1. 대시보드에서 전체 포트폴리오 성과와 그룹별 성과를 함께 보여준다.
+2. 모든 화면에서 같은 지표 표현을 사용한다: 투자원금, 잔여원금, 평가금액, 손익, 손익률.
+3. 기본 대시보드 금액은 모두 원화로 보여준다. 달러 자산은 환율 정보를 사용해 원화로 환산한다.
+4. 달러 표시를 선택하면 달러 자산만 별도 수치와 차트로 보여준다.
+5. 보유종목 표에 그룹 열을 추가한다.
+6. 전체 거래내역 조회/수정 화면을 추가한다.
+7. 종목 상세화면의 차트를 단순화하고 종목 단위 수익현황 정보를 추가한다.
 
-## Non-Goals
+## 이번 범위에서 제외할 것
 
-- Do not add broker integration or Toss Securities API integration in this pass.
-- Do not add advanced analytics such as benchmark comparison, tax lots beyond the existing buy-lot model, or risk metrics.
-- Do not redesign authentication or sharing in this pass.
-- Do not support direct sell lot allocation editing inside a dense global table row. Sell allocation changes require the existing lot-selection UI pattern and should open an expanded edit panel or route to the holding detail transaction editor.
+- 증권사 연동이나 토스증권 API 연동은 이번 범위에 포함하지 않는다.
+- 벤치마크 비교, 기존 buy-lot 모델을 넘어서는 세금 lot, 위험 지표 같은 고급 분석은 이번 범위에 포함하지 않는다.
+- 인증이나 공유 기능 구조는 이번 범위에서 재설계하지 않는다.
+- 전체 거래내역의 좁은 표 행 안에서 매도 lot 배정을 직접 수정하는 기능은 제공하지 않는다. 매도 lot 배정 변경은 기존 lot 선택 UI 패턴이 필요하므로 확장 편집 패널을 열거나 종목 상세의 거래 편집 흐름으로 이동시킨다.
 
-## Dashboard Design
+## 대시보드 설계
 
-### Overall Layout
+### 전체 배치
 
-The dashboard uses the approved A layout:
+대시보드는 승인된 A안 구조를 사용한다.
 
-1. Header with page title, display currency toggle, and add-holding action.
-2. Whole-portfolio summary cards.
-3. Group performance table using the same metrics as the whole summary.
-4. Chart area with a view-mode toggle.
-5. Holdings table with a group column.
-6. Recent transactions preview and link to the full transaction management screen.
+1. 페이지 제목, 표시 통화 토글, 종목 등록 액션을 포함한 헤더.
+2. 전체 포트폴리오 수익현황 카드.
+3. 전체 수익현황과 같은 지표를 사용하는 그룹별 수익현황 표.
+4. 보기 방식 토글이 있는 차트 영역.
+5. 그룹 열이 추가된 보유종목 표.
+6. 최근 거래 미리보기와 전체 거래내역 화면 링크.
 
-### Whole-Portfolio Summary
+### 전체 포트폴리오 수익현황
 
-Cards:
+카드 항목은 다음과 같다.
 
-- 투자원금: net external invested principal.
-- 잔여원금: remaining lot cost basis.
-- 평가금액: current market value.
-- 손익: current value minus invested principal.
-- 손익률: 손익 divided by invested principal.
+- 투자원금: 외부에서 실제로 넣은 순투입원금이다.
+- 잔여원금: 현재 남아 있는 buy lot의 원가 기준 금액이다.
+- 평가금액: 현재 시세 기준 시장 평가금액이다.
+- 손익: 평가금액에서 투자원금을 뺀 금액이다.
+- 손익률: 손익을 투자원금으로 나눈 비율이다.
 
-Default display mode is KRW-converted, including USD assets converted into KRW.
+기본 표시 방식은 원화 환산이다. 달러 자산도 원화로 환산해서 합산한다.
 
-### Group Performance
+### 그룹별 수익현황
 
-The group section is not just “group name plus return.” Each row uses the same metric set:
+그룹별 수익현황은 단순히 “그룹명 + 수익률”만 보여주지 않는다. 각 그룹 행은 전체 수익현황과 같은 지표 세트를 사용한다.
 
 - 그룹
 - 투자원금
@@ -62,71 +62,71 @@ The group section is not just “group name plus return.” Each row uses the sa
 - 손익
 - 손익률
 
-Rows include:
+표시 행은 다음을 포함한다.
 
-- Source groups.
-- Rollup groups.
-- Unclassified, when unclassified lots or transactions exist.
+- 자금 출처 그룹.
+- 통합 그룹.
+- 미분류 lot 또는 미분류 거래가 있는 경우 미분류 행.
 
-Labels are not shown in the default group performance table in this implementation. Source and rollup groups are the user’s primary “fund source / combined family view” model. Showing labels here by default would create too much overlap.
+라벨은 이번 구현의 기본 그룹별 수익현황 표에 포함하지 않는다. 사용자의 핵심 모델은 자금 출처 그룹과 “가족” 같은 통합 그룹이다. 라벨까지 기본으로 섞으면 중복 관점이 많아져 화면 해석이 어려워진다.
 
-Rollup rows can overlap source rows. The UI must show a small note that group rows are for comparison and are not meant to be summed together.
+통합 그룹 행은 자금 출처 그룹 행과 범위가 겹칠 수 있다. 따라서 UI에는 “그룹 행은 비교용이며 행들을 단순 합산하면 중복될 수 있다”는 짧은 안내를 표시한다.
 
-### Chart Modes
+### 차트 보기 방식
 
-The chart area supports:
+차트 영역은 두 가지 보기 방식을 지원한다.
 
-- 하나의 차트: plot whole portfolio and selected group rows together on one chart.
-- 그룹별 각각: render one small chart per selected group.
+- 하나의 차트: 전체 포트폴리오와 선택된 그룹들을 하나의 차트에 함께 표시한다.
+- 그룹별 각각: 선택된 그룹별로 작은 차트를 각각 표시한다.
 
-Chart metric selector:
+차트 지표 선택지는 다음과 같다.
 
 - 평가금액
 - 투자원금
 - 손익
 
-Default chart:
+기본 차트는 다음 원칙을 따른다.
 
-- KRW display mode: one KRW-converted chart.
-- USD display mode: USD-only chart.
+- 원화 환산 표시: 원화로 환산된 하나의 차트를 보여준다.
+- 달러 별도 표시: 달러 자산만 포함한 달러 차트를 보여준다.
 
-The existing mixed KRW/USD dual-axis chart should be replaced for the dashboard default because the user explicitly wants all amounts in KRW by default. USD-only remains available via display mode.
+현재의 KRW/USD 이중 축 차트는 기본 대시보드 차트에서 제거한다. 사용자는 기본 금액을 모두 원화로 보길 원했고, 달러 자산은 별도 표시 모드에서 확인할 수 있다.
 
-### Currency Display
+### 통화 표시
 
-Display modes:
+표시 방식은 다음 두 가지다.
 
-- KRW 환산: default. KRW assets are unchanged; USD assets are converted using exchange-rate data.
-- USD 별도: only USD assets are included, with USD formatting and USD chart values.
+- 원화 환산: 기본값이다. 원화 자산은 그대로 사용하고, 달러 자산은 환율 정보로 원화 환산한다.
+- 달러 별도: 달러 자산만 포함하고 달러 형식의 수치와 차트를 보여준다.
 
-The UI must show the exchange-rate basis near the toggle:
+UI는 토글 근처에 환율 기준을 함께 표시한다.
 
-- Example: `기준통화: KRW 환산 · 1 USD = 1,380 KRW · 2026-06-04 기준`.
+- 예: `기준통화: KRW 환산 · 1 USD = 1,380 KRW · 2026-06-04 기준`
 
-If exchange-rate lookup fails:
+환율 조회가 실패한 경우:
 
-- KRW-only values remain visible.
-- Converted KRW totals that depend on USD are marked unavailable.
-- A warning explains that USD conversion is temporarily unavailable.
+- 원화 자산만으로 계산 가능한 값은 계속 보여준다.
+- 달러 환산이 필요한 원화 합산 값은 사용할 수 없음으로 표시한다.
+- 달러 환산 정보를 일시적으로 가져오지 못했다는 경고를 표시한다.
 
-### Holdings Table
+### 보유종목 표
 
-Add a group column.
+보유종목 표에 그룹 열을 추가한다.
 
-For a holding with remaining lots in multiple source groups, show compact badges:
+한 종목의 남은 lot이 여러 자금 출처 그룹에 걸쳐 있으면 간결한 배지로 보여준다.
 
 - `모음통장 7주`
 - `긴급통장 13주`
 
-For rollups, the holdings table does not need to show rollup membership by default because rollups are derived. Source group badges are the clearest representation of where remaining lots belong.
+통합 그룹은 보유종목 표의 기본 그룹 배지에 표시하지 않는다. 통합 그룹은 파생 관점이므로, 남은 lot이 실제로 속한 자금 출처 그룹을 보여주는 것이 가장 명확하다.
 
-## Transaction Management Screen
+## 전체 거래내역 화면
 
-Add a full transaction management page, recommended route:
+전체 거래내역 관리 페이지를 추가한다. 권장 경로는 다음과 같다.
 
 - `/transactions`
 
-Default columns:
+기본 열은 다음과 같다.
 
 - 주문일
 - 종목
@@ -140,53 +140,53 @@ Default columns:
 - 상태
 - 작업
 
-Filters:
+필터는 다음을 제공한다.
 
-- Date range.
-- Ticker/name search.
-- Source group.
-- Transaction type.
-- Principal flow.
-- Review status.
+- 날짜 범위.
+- 종목 코드/종목명 검색.
+- 자금 출처 그룹.
+- 거래 유형.
+- 투자원금처리.
+- 검토 필요 상태.
 
-Actions:
+지원 액션은 다음과 같다.
 
-- Delete transaction through the existing backend transaction delete behavior.
-- Edit transaction group, labels, and principal-flow in place.
-- Edit BUY transaction date, quantity, and price through a tested update endpoint that replays lots, recalculates the holding, and rebuilds snapshots.
-- Edit SELL transaction price and principal-flow in place because these do not change selected lot quantities.
-- Edit SELL transaction quantity or selected lots only through an expanded lot-allocation editor because selected buy lots are required and oversell must be prevented.
+- 기존 백엔드 거래 삭제 동작을 사용해 거래를 삭제한다.
+- 거래의 그룹, 라벨, 투자원금처리를 화면에서 직접 수정한다.
+- 매수 거래의 주문일, 수량, 단가는 테스트된 수정 endpoint를 통해 수정한다. 수정 시 lot을 다시 재생하고, 보유종목 값을 재계산하며, 스냅샷을 재생성한다.
+- 매도 거래의 단가와 투자원금처리는 선택된 lot 수량을 바꾸지 않으므로 화면에서 직접 수정한다.
+- 매도 거래의 수량이나 선택 lot 변경은 확장 lot 배정 편집기를 통해서만 수정한다. 선택된 매수 lot이 필요하고 부족 수량 매도를 막아야 하기 때문이다.
 
-## Holding Detail Design
+## 종목 상세화면 설계
 
-Use the approved A layout:
+종목 상세는 승인된 A안 구조를 사용한다.
 
-1. Header with breadcrumb, ticker, market, currency, delete action.
-2. 종목 수익현황 cards:
+1. 대시보드 breadcrumb, 종목 코드, 시장, 통화, 삭제 액션을 포함한 헤더.
+2. 종목 수익현황 카드:
    - 투자원금
    - 잔여원금
    - 평가금액
    - 손익
    - 손익률
-3. Single price chart.
-4. Group-level holding panel for this ticker.
-5. Add transaction form and transaction list.
+3. 가격 차트 1개.
+4. 해당 종목의 그룹별 보유 현황 패널.
+5. 거래 추가 폼과 거래 목록.
 
-The duplicate-looking second chart should be removed. A separate performance chart is outside this implementation; if a future implementation adds one, it must be visually and semantically distinct from the price chart.
+중복처럼 보이는 두 번째 차트는 제거한다. 별도 성과 차트는 이번 구현 범위에 포함하지 않는다. 향후 별도 성과 차트를 추가한다면 가격 차트와 시각적으로도, 의미적으로도 명확히 달라야 한다.
 
-The holding detail should compute invested principal using only transactions for that holding and the same principal-flow semantics as the dashboard.
+종목 상세의 투자원금은 해당 종목의 거래만 사용해 계산한다. 투자원금처리 의미는 대시보드와 동일하다.
 
-## Backend Design
+## 백엔드 설계
 
-### Portfolio Aggregates
+### 포트폴리오 통합 집계
 
-Add a backend dashboard aggregate endpoint that returns whole summary, group summaries, chart series, and holdings enriched with group information in one stable shape.
+전체 요약, 그룹별 요약, 차트 series, 그룹 정보가 포함된 보유종목을 한 번에 반환하는 대시보드 통합 endpoint를 추가한다.
 
-Recommended endpoint:
+권장 endpoint:
 
 - `GET /api/portfolio/dashboard?display_currency=KRW|USD`
 
-Response sections:
+응답 섹션:
 
 - `display_currency`
 - `exchange_rate`
@@ -196,73 +196,73 @@ Response sections:
 - `holdings`
 - `warnings`
 
-The existing scoped endpoints can remain for sharing and explicit scope views.
+기존 범위별 endpoint는 공유 기능과 명시적 범위 조회를 위해 유지한다.
 
-### Exchange Rates
+### 환율
 
-Create an exchange-rate service with a small cache. Use the existing `yfinance` dependency to fetch `USDKRW=X` for current USD-to-KRW conversion. If network lookup is unavailable in tests, tests should inject fixed rates.
+작은 캐시를 가진 환율 서비스를 만든다. 현재 스택에 이미 포함된 `yfinance`를 사용해 현재 USD/KRW 환율인 `USDKRW=X`를 조회한다. 테스트에서는 네트워크 조회 대신 고정 환율을 주입한다.
 
-Minimum behavior:
+최소 동작:
 
-- `USD -> KRW` rate for current dashboard.
-- Historical chart conversion in this implementation uses the latest available rate for clarity and performance, and the response must name that rate basis. Historical daily FX conversion is outside this implementation.
+- 현재 대시보드를 위한 `USD -> KRW` 환율을 제공한다.
+- 이번 구현의 과거 차트 환산은 성능과 명확성을 위해 최신 가용 환율을 사용한다. 응답에는 이 환율 기준을 반드시 명시한다. 일별 과거 환율 환산은 이번 구현 범위 밖이다.
 
-### Transactions
+### 거래내역
 
-Add a user-owned transaction listing endpoint:
+사용자 소유 거래내역 목록 endpoint를 추가한다.
 
 - `GET /api/transactions`
 
-Transaction update endpoint:
+거래 수정 endpoint를 추가한다.
 
 - `PATCH /api/transactions/{transaction_id}`
 
-The listing endpoint should return holding metadata, source group metadata, label metadata, principal flow, review status, and computed amount. The update endpoint should enforce the edit boundaries described in the Transaction Management Screen section.
+목록 endpoint는 보유종목 메타데이터, 자금 출처 그룹 메타데이터, 라벨 메타데이터, 투자원금처리, 검토 필요 상태, 계산된 거래 금액을 반환한다. 수정 endpoint는 전체 거래내역 화면 섹션에서 정의한 수정 범위를 강제한다.
 
-## Frontend Design
+## 프론트엔드 설계
 
-New or changed components:
+새로 만들거나 수정할 컴포넌트는 다음과 같다.
 
-- `DashboardOverview`: orchestrates the new dashboard aggregate payload.
-- `DisplayCurrencyToggle`: controls KRW-converted vs USD-only mode.
-- `GroupPerformanceTable`: renders group rows with the full metric set.
-- `DashboardChartControls`: controls chart mode and metric.
-- `HoldingsTable`: add source group badges column.
-- `TransactionsPage`: full transaction list, filters, and actions.
-- `HoldingPerformanceSummary`: holding-detail summary cards.
-- `HoldingGroupBreakdown`: group-level breakdown for one ticker.
+- `DashboardOverview`: 새 대시보드 통합 payload를 받아 화면 전체를 구성한다.
+- `DisplayCurrencyToggle`: 원화 환산/달러 별도 표시를 전환한다.
+- `GroupPerformanceTable`: 전체 수익현황과 같은 지표 세트로 그룹 행을 렌더링한다.
+- `DashboardChartControls`: 차트 보기 방식과 차트 지표를 제어한다.
+- `HoldingsTable`: 자금 출처 그룹 배지 열을 추가한다.
+- `TransactionsPage`: 전체 거래내역 목록, 필터, 수정/삭제 액션을 제공한다.
+- `HoldingPerformanceSummary`: 종목 상세 수익현황 카드를 제공한다.
+- `HoldingGroupBreakdown`: 한 종목의 그룹별 보유 현황을 제공한다.
 
-Prefer reusing existing formatting helpers and card/table styles.
+기존 포맷팅 helper, 카드 스타일, 표 스타일을 최대한 재사용한다.
 
-## Error Handling
+## 오류 처리
 
-- If group accounting requires review, affected group metrics show unavailable values and warnings.
-- If a current price is unavailable, affected current value/profit fields are unavailable.
-- If USD conversion is unavailable in KRW display mode, show KRW-only data where possible and mark converted whole totals unavailable.
-- Transaction edit/delete errors should be shown inline in the row or panel that initiated the action.
+- 그룹 회계 상태가 검토 필요이면 영향을 받은 그룹 지표를 사용할 수 없음으로 표시하고 경고를 보여준다.
+- 현재가를 가져오지 못한 경우 영향을 받은 평가금액/손익 필드를 사용할 수 없음으로 표시한다.
+- 원화 환산 모드에서 달러 환산을 사용할 수 없으면 원화 자산만으로 계산 가능한 값은 보여주고, 달러 환산이 필요한 전체 합산 값은 사용할 수 없음으로 표시한다.
+- 거래 수정/삭제 오류는 해당 행이나 편집 패널 안에 인라인으로 표시한다.
 
-## Testing Strategy
+## 테스트 전략
 
-Backend:
+백엔드:
 
-- Unit tests for KRW conversion aggregation.
-- Unit tests for group summary metrics matching whole summary fields.
-- API tests for `/api/portfolio/dashboard`.
-- API tests for transaction listing ownership and filters.
-- Regression tests for principal-flow profit calculation.
+- 원화 환산 집계 단위 테스트.
+- 그룹별 요약 지표가 전체 요약과 같은 필드셋을 사용하는지 확인하는 단위 테스트.
+- `/api/portfolio/dashboard` API 테스트.
+- 거래내역 목록의 소유자 검증과 필터 테스트.
+- 투자원금처리 기반 손익 계산 회귀 테스트.
 
-Frontend:
+프론트엔드:
 
-- Component tests for group performance table columns.
-- Component tests for KRW/USD display toggle behavior.
-- Component tests for holdings table group badges.
-- Page tests for transaction management filters/actions.
-- Holding page test that only one price chart is rendered and summary cards are visible.
+- 그룹별 수익현황 표 열 구성 컴포넌트 테스트.
+- 원화/달러 표시 토글 동작 컴포넌트 테스트.
+- 보유종목 표 그룹 배지 컴포넌트 테스트.
+- 전체 거래내역 화면 필터/액션 페이지 테스트.
+- 종목 상세 페이지에 가격 차트가 하나만 렌더링되고 수익현황 카드가 보이는지 확인하는 테스트.
 
-## Open Decisions Fixed By This Spec
+## 이 설계에서 확정한 결정
 
-- Dashboard default is KRW-converted, not dual-axis KRW/USD.
-- Group performance rows use the exact same metric set as the whole summary.
-- Source groups and rollups are shown in group performance; labels are not included by default.
-- Holding detail uses one price chart by default.
-- Global transaction edit supports group, labels, principal-flow, BUY date/quantity/price, and SELL price. SELL quantity or selected-lot changes use an expanded lot-allocation editor instead of a dense row edit.
+- 대시보드 기본값은 KRW/USD 이중 축이 아니라 원화 환산이다.
+- 그룹별 수익현황 행은 전체 수익현황과 정확히 같은 지표 세트를 사용한다.
+- 그룹별 수익현황에는 자금 출처 그룹과 통합 그룹을 표시한다. 라벨은 기본 표시하지 않는다.
+- 종목 상세는 기본적으로 가격 차트 1개만 사용한다.
+- 전체 거래내역 수정은 그룹, 라벨, 투자원금처리, 매수 주문일/수량/단가, 매도 단가를 지원한다. 매도 수량이나 선택 lot 변경은 좁은 행 편집이 아니라 확장 lot 배정 편집기를 사용한다.
