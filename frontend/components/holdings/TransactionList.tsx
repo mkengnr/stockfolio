@@ -3,6 +3,7 @@
 import { Fragment, useState } from 'react'
 import useSWR from 'swr'
 import { TransactionClassificationEditor } from '@/components/groups/TransactionClassificationEditor'
+import { ReviewedSellRepairEditor } from '@/components/holdings/ReviewedSellRepairEditor'
 import { holdingsApi, fetcher } from '@/lib/api'
 import { formatCurrency, formatDate, formatNumber } from '@/lib/utils'
 import { Badge } from '@/components/ui/Badge'
@@ -21,13 +22,17 @@ export function TransactionList({ holdingId, transactions, currency, onRefresh }
   const { data: labels = [] } = useSWR<Label[]>('/api/groups/labels', fetcher)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState('')
 
   async function handleDelete(txId: string) {
     if (!confirm('이 거래를 삭제하시겠습니까?')) return
     setDeleting(txId)
+    setDeleteError('')
     try {
       await holdingsApi.deleteTransaction(holdingId, txId)
       onRefresh()
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : '거래를 삭제하지 못했습니다.')
     } finally {
       setDeleting(null)
     }
@@ -38,8 +43,10 @@ export function TransactionList({ holdingId, transactions, currency, onRefresh }
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-sm">
+    <>
+      {deleteError && <p className="mb-3 text-sm text-red-500">{deleteError}</p>}
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
         <thead>
           <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
             <th className="px-3 py-2">구분</th>
@@ -92,7 +99,7 @@ export function TransactionList({ holdingId, transactions, currency, onRefresh }
                     <td className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => setEditingId(tx.id)}>
-                          분류 수정
+                          {tx.type === 'SELL' && tx.requires_review ? '매도 검토' : '분류 수정'}
                         </Button>
                         <Button
                           variant="ghost"
@@ -109,16 +116,26 @@ export function TransactionList({ holdingId, transactions, currency, onRefresh }
                   {editingId === tx.id && (
                     <tr>
                       <td colSpan={7} className="px-3 py-3">
-                        <TransactionClassificationEditor
-                          holdingId={holdingId}
-                          transactionId={tx.id}
-                          sourceGroups={sourceGroups}
-                          labels={labels}
-                          sourceGroupId={tx.source_group_id}
-                          labelIds={tx.label_ids}
-                          onRefresh={onRefresh}
-                          onCancel={() => setEditingId(null)}
-                        />
+                        {tx.type === 'SELL' && tx.requires_review ? (
+                          <ReviewedSellRepairEditor
+                            holdingId={holdingId}
+                            transaction={tx}
+                            currency={currency}
+                            onRefresh={onRefresh}
+                            onCancel={() => setEditingId(null)}
+                          />
+                        ) : (
+                          <TransactionClassificationEditor
+                            holdingId={holdingId}
+                            transactionId={tx.id}
+                            sourceGroups={sourceGroups}
+                            labels={labels}
+                            sourceGroupId={tx.source_group_id}
+                            labelIds={tx.label_ids}
+                            onRefresh={onRefresh}
+                            onCancel={() => setEditingId(null)}
+                          />
+                        )}
                       </td>
                     </tr>
                   )}
@@ -126,7 +143,8 @@ export function TransactionList({ holdingId, transactions, currency, onRefresh }
               )
             })}
         </tbody>
-      </table>
-    </div>
+        </table>
+      </div>
+    </>
   )
 }

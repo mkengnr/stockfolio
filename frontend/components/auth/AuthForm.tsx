@@ -8,7 +8,21 @@ import { Button } from '@/components/ui/Button'
 
 type Step = 'email' | 'otp'
 
-export function AuthForm() {
+const RETURN_ORIGIN = 'http://stockfolio.local'
+
+function safeInternalReturnTo(returnTo?: string) {
+  if (!returnTo?.startsWith('/') || returnTo.startsWith('//')) return '/'
+
+  try {
+    const url = new URL(returnTo, RETURN_ORIGIN)
+    if (url.origin !== RETURN_ORIGIN) return '/'
+    return `${url.pathname}${url.search}${url.hash}`
+  } catch {
+    return '/'
+  }
+}
+
+export function AuthForm({ returnTo }: { returnTo?: string }) {
   const router = useRouter()
   const [step, setStep] = useState<Step>('email')
   const [email, setEmail] = useState('')
@@ -51,7 +65,7 @@ export function AuthForm() {
     setLoading(true)
     try {
       await authApi.verifyOtp(email, code, rememberMe)
-      router.replace('/')
+      router.replace(safeInternalReturnTo(returnTo))
     } catch {
       setError('코드가 올바르지 않거나 만료되었습니다.')
       setOtp(Array(6).fill(''))

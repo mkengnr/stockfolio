@@ -176,14 +176,17 @@ def upgrade() -> None:
             """
             WITH legacy_holding_tag_counts AS (
                 SELECT
-                    holding_id,
+                    holding_tags.holding_id,
                     COUNT(*) AS tag_count,
-                    (array_agg(tag_id))[1] AS tag_id
+                    BOOL_AND(tags.user_id = holdings.user_id) AS owners_match,
+                    (array_agg(holding_tags.tag_id))[1] AS tag_id
                 FROM holding_tags
-                GROUP BY holding_id
+                JOIN holdings ON holdings.id = holding_tags.holding_id
+                JOIN tags ON tags.id = holding_tags.tag_id
+                GROUP BY holding_tags.holding_id
             )
             UPDATE transactions AS legacy_transactions
-            SET source_group_id = CASE WHEN legacy_tags.tag_count = 1 THEN legacy_tags.tag_id ELSE NULL END
+            SET source_group_id = CASE WHEN legacy_tags.tag_count = 1 AND legacy_tags.owners_match THEN legacy_tags.tag_id ELSE NULL END
             FROM legacy_holding_tag_counts AS legacy_tags
             WHERE legacy_tags.holding_id = legacy_transactions.holding_id
             """

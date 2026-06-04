@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -15,12 +15,20 @@ from app.services.snapshot_service import (
 from app.services.stock_fetcher import OHLCBar
 
 
-def _tx(type_: TransactionType, quantity: str, transaction_date: date):
+def _tx(
+    type_: TransactionType,
+    quantity: str,
+    transaction_date: date,
+    *,
+    transaction_id: uuid.UUID | None = None,
+    created_at: datetime | None = None,
+):
     return SimpleNamespace(
+        id=transaction_id or uuid.uuid4(),
         type=type_,
         quantity=Decimal(quantity),
         transaction_date=transaction_date,
-        created_at=None,
+        created_at=created_at,
     )
 
 
@@ -54,6 +62,33 @@ def test_build_snapshot_values_uses_historical_quantity():
         (date(2024, 1, 3), Decimal("1100")),
         (date(2024, 1, 4), Decimal("720")),
     ]
+
+
+def test_build_snapshot_values_uses_transaction_id_to_break_creation_time_ties():
+    transaction_date = date(2024, 1, 2)
+    created_at = datetime(2024, 1, 2, 12, 0)
+
+    values = _build_snapshot_values(
+        [
+            _tx(
+                TransactionType.SELL,
+                "1",
+                transaction_date,
+                transaction_id=uuid.UUID(int=2),
+                created_at=created_at,
+            ),
+            _tx(
+                TransactionType.BUY,
+                "1",
+                transaction_date,
+                transaction_id=uuid.UUID(int=1),
+                created_at=created_at,
+            ),
+        ],
+        [_bar(transaction_date, "100")],
+    )
+
+    assert values[0].total_value == Decimal("0")
 
 
 @pytest.mark.asyncio

@@ -23,6 +23,7 @@ from app.schemas.holding import (
     TransactionClassificationIn,
     TransactionIn,
     TransactionOut,
+    ReviewedSellRepairIn,
 )
 from app.services import stock_fetcher
 from app.services.lot_accounting import (
@@ -60,11 +61,13 @@ def _recalculate_holding(
     holding.avg_price = avg_price
 
 
-def _transaction_sort_key(transaction: Transaction) -> tuple[date, str]:
+def _transaction_sort_key(transaction: Transaction) -> tuple[date, str, str]:
     created_at = transaction.created_at if isinstance(transaction.created_at, datetime) else None
+    transaction_id = transaction.id if isinstance(transaction.id, uuid.UUID) else None
     return (
         transaction.transaction_date,
         created_at.isoformat() if created_at else "9999-12-31T23:59:59",
+        str(transaction_id) if transaction_id else "",
     )
 
 
@@ -248,11 +251,62 @@ def _replay_and_update_lots(
     transactions: list[Transaction] | None = None,
 ) -> None:
     replay_result = _ensure_lot_accounting_ready(holding, transactions)
+    _update_lot_mirrors(holding, replay_result)
+
+
+def _update_lot_mirrors(holding: Holding, replay_result) -> None:
     lots_by_id = {lot.id: lot for lot in holding.buy_lots}
     for lot_id, lot_state in replay_result.all_lots.items():
         lot = lots_by_id.get(lot_id)
         if lot is not None:
             lot.remaining_quantity = lot_state.remaining_quantity
+
+
+def _oldest_reviewed_sell(holding: Holding) -> Transaction | None:
+    return next(
+        (
+            transaction
+            for transaction in sorted(holding.transactions, key=_transaction_sort_key)
+            if transaction.type == TransactionType.SELL and transaction.requires_review
+        ),
+        None,
+    )
+
+
+def _get_reviewed_sell(holding: Holding, tx_id: uuid.UUID) -> Transaction:
+    transaction = next(
+        (
+            item
+            for item in holding.transactions
+            if item.id == tx_id and item.type == TransactionType.SELL and item.requires_review
+        ),
+        None,
+    )
+    if transaction is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reviewed sell not found")
+    oldest = _oldest_reviewed_sell(holding)
+    if oldest is None or oldest.id != transaction.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Resolve earlier reviewed sells first",
+        )
+    return transaction
+
+
+def _validate_lot_scope(
+    scope_kind: Literal["source", "unclassified"],
+    scope_id: uuid.UUID | None,
+) -> None:
+    if scope_kind == "source" and scope_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="source scope requires scope_id",
+        )
+    if scope_kind == "unclassified" and scope_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="unclassified scope does not accept scope_id",
+        )
 
 
 async def _replace_transaction_labels(
@@ -296,6 +350,10 @@ async def _rebuild_snapshots_after_mutation(
             "Failed to rebuild snapshots for holding_id=%s from %s",
             holding.id,
             invalidate_start or start,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Price history rebuild failed; retry the transaction",
         )
 
 
@@ -374,7 +432,10 @@ async def create_holding(
         price_result = stock_fetcher.get_current_price(body.ticker)
         name = price_result.name
     except Exception:
-        name = body.ticker
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Ticker could not be verified",
+        )
 
     holding = Holding(
         user_id=current_user.id,
@@ -615,16 +676,7 @@ async def list_available_lots(
     holding = await _get_owned_holding(db, holding_id, current_user.id)
     _ensure_active_holding(holding)
     _ensure_lot_accounting_ready(holding)
-    if scope_kind == "source" and scope_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="source scope requires scope_id",
-        )
-    if scope_kind == "unclassified" and scope_id is not None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="unclassified scope does not accept scope_id",
-        )
+    _validate_lot_scope(scope_kind, scope_id)
     await _validate_source_group_id(db, current_user.id, scope_id)
 
     query = (
@@ -641,6 +693,106 @@ async def list_available_lots(
         query = query.where(BuyLot.source_group_id.is_(None))
     result = await db.execute(query)
     return [_buy_lot_to_out(lot) for lot in result.scalars().all()]
+
+
+@router.get("/{holding_id}/transactions/{tx_id}/review-lots", response_model=list[BuyLotOut])
+async def list_review_lots(
+    holding_id: uuid.UUID,
+    tx_id: uuid.UUID,
+    scope_kind: Literal["source", "unclassified"],
+    scope_id: uuid.UUID | None = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    holding = await _get_owned_holding(db, holding_id, current_user.id)
+    _ensure_active_holding(holding)
+    transaction = _get_reviewed_sell(holding, tx_id)
+    _validate_lot_scope(scope_kind, scope_id)
+    await _validate_source_group_id(db, current_user.id, scope_id)
+
+    ordered_transactions = sorted(holding.transactions, key=_transaction_sort_key)
+    transaction_index = next(
+        index for index, item in enumerate(ordered_transactions) if item.id == transaction.id
+    )
+    replay_result = replay(
+        [
+            _to_accounting_transaction(holding, item)
+            for item in ordered_transactions[:transaction_index]
+        ]
+    )
+    lots_by_id = {lot.id: lot for lot in holding.buy_lots}
+    lots = []
+    for lot_id, lot_state in replay_result.all_lots.items():
+        if lot_state.remaining_quantity <= ZERO:
+            continue
+        if scope_kind == "source" and lot_state.source_group_id != scope_id:
+            continue
+        if scope_kind == "unclassified" and lot_state.source_group_id is not None:
+            continue
+        lot = lots_by_id.get(lot_id)
+        if lot is not None:
+            lots.append(
+                _buy_lot_to_out(lot).model_copy(
+                    update={"remaining_quantity": lot_state.remaining_quantity}
+                )
+            )
+    return sorted(lots, key=lambda lot: (lot.transaction_date, str(lot.id)))
+
+
+@router.patch("/{holding_id}/transactions/{tx_id}/review", response_model=TransactionOut)
+async def repair_reviewed_sell(
+    holding_id: uuid.UUID,
+    tx_id: uuid.UUID,
+    body: ReviewedSellRepairIn,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    holding = await _get_owned_holding(db, holding_id, current_user.id, lock=True)
+    _ensure_active_holding(holding)
+    transaction = _get_reviewed_sell(holding, tx_id)
+    await _validate_source_group_id(db, current_user.id, body.source_group_id)
+    await _validate_label_ids(db, current_user.id, body.label_ids)
+    await _lock_owned_buy_lots(
+        db,
+        current_user.id,
+        holding.id,
+        [allocation.buy_lot_id for allocation in body.sell_allocations],
+    )
+
+    allocations = [
+        SellLotAllocation(
+            sell_transaction_id=transaction.id,
+            sell_transaction=transaction,
+            buy_lot_id=allocation.buy_lot_id,
+            quantity=allocation.quantity,
+        )
+        for allocation in body.sell_allocations
+    ]
+    original_source_group_id = transaction.source_group_id
+    transaction.source_group_id = body.source_group_id
+    transaction.requires_review = False
+    transaction.sell_allocations = allocations
+    try:
+        replay_result = replay(
+            [
+                _to_accounting_transaction(holding, item)
+                for item in holding.transactions
+            ]
+        )
+    except ValueError as exc:
+        transaction.source_group_id = original_source_group_id
+        transaction.requires_review = True
+        transaction.sell_allocations = []
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+    for allocation in allocations:
+        db.add(allocation)
+    await _replace_transaction_labels(db, transaction, body.label_ids)
+    await db.flush()
+    _update_lot_mirrors(holding, replay_result)
+    _recalculate_holding(holding)
+    await _rebuild_snapshots_after_mutation(db, holding, start=transaction.transaction_date)
+    return _transaction_to_out(transaction)
 
 
 @router.patch("/{holding_id}/transactions/{tx_id}/classification", response_model=TransactionOut)

@@ -76,6 +76,12 @@ const transactions: Transaction[] = [
     sell_allocations: [],
   },
 ]
+const reviewedSell: Transaction = {
+  ...transactions[0],
+  id: 'sell-1',
+  type: 'SELL',
+  requires_review: true,
+}
 
 describe('TransactionList', () => {
   beforeEach(() => {
@@ -125,5 +131,30 @@ describe('TransactionList', () => {
       { source_group_id: 'source-2', label_ids: ['label-1', 'label-2'] },
     )
     expect(onRefresh).toHaveBeenCalled()
+  })
+
+  it('shows the API error when a transaction cannot be deleted', async () => {
+    jest.spyOn(window, 'confirm').mockReturnValue(true)
+    mockedHoldingsApi.deleteTransaction.mockRejectedValue(new Error('Sell quantity exceeds available holding quantity'))
+    render(
+      <TransactionList holdingId="holding-1" transactions={transactions} currency="KRW" onRefresh={onRefresh} />,
+    )
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '삭제' }))
+    })
+
+    expect(screen.getByText('Sell quantity exceeds available holding quantity')).toBeInTheDocument()
+    expect(onRefresh).not.toHaveBeenCalled()
+  })
+
+  it('opens the reviewed sell repair editor for a migrated sell', () => {
+    render(
+      <TransactionList holdingId="holding-1" transactions={[reviewedSell]} currency="KRW" onRefresh={onRefresh} />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '매도 검토' }))
+
+    expect(screen.getByRole('button', { name: '매도 검토 저장' })).toBeInTheDocument()
   })
 })

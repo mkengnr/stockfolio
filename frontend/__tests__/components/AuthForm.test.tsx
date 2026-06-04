@@ -4,8 +4,10 @@ import userEvent from '@testing-library/user-event'
 import { AuthForm } from '@/components/auth/AuthForm'
 import { authApi } from '@/lib/api'
 
+const replace = jest.fn()
+
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: jest.fn() }),
+  useRouter: () => ({ replace }),
 }))
 
 jest.mock('@/lib/api', () => ({
@@ -53,12 +55,22 @@ describe('AuthForm — email step', () => {
 })
 
 describe('AuthForm — OTP step', () => {
-  async function renderAtOtpStep() {
+  async function renderAtOtpStep(returnTo?: string) {
     mockedAuthApi.requestOtp.mockResolvedValue({} as never)
-    render(<AuthForm />)
+    render(<AuthForm returnTo={returnTo} />)
     await userEvent.type(screen.getByLabelText('이메일'), 'test@example.com')
     await userEvent.click(screen.getByRole('button', { name: '인증 코드 받기' }))
     await waitFor(() => screen.getByText(/6자리 인증 코드/))
+  }
+
+  async function submitOtp() {
+    const digitInputs = screen.getAllByRole('textbox').filter(
+      (i) => i.getAttribute('aria-label')?.includes('자리'),
+    )
+    for (const input of digitInputs) {
+      await userEvent.type(input, '1')
+    }
+    await userEvent.click(screen.getByRole('button', { name: '로그인' }))
   }
 
   it('renders 6 digit inputs', async () => {
@@ -78,19 +90,29 @@ describe('AuthForm — OTP step', () => {
     mockedAuthApi.verifyOtp.mockRejectedValue(new Error('Invalid OTP'))
     await renderAtOtpStep()
 
-    // Fill 6 digits
-    const digitInputs = screen.getAllByRole('textbox').filter(
-      (i) => i.getAttribute('aria-label')?.includes('자리'),
-    )
-    for (const input of digitInputs) {
-      await userEvent.type(input, '1')
-    }
-
-    await userEvent.click(screen.getByRole('button', { name: '로그인' }))
+    await submitOtp()
 
     await waitFor(() => {
       expect(screen.getByText(/올바르지 않거나 만료/)).toBeInTheDocument()
     })
+  })
+
+  it('returns to a safe internal path after OTP verification', async () => {
+    mockedAuthApi.verifyOtp.mockResolvedValue({} as never)
+    await renderAtOtpStep('/share/token-3')
+
+    await submitOtp()
+
+    expect(replace).toHaveBeenCalledWith('/share/token-3')
+  })
+
+  it('falls back to the dashboard for an unsafe return path', async () => {
+    mockedAuthApi.verifyOtp.mockResolvedValue({} as never)
+    await renderAtOtpStep('//evil.example/share/token-3')
+
+    await submitOtp()
+
+    expect(replace).toHaveBeenCalledWith('/')
   })
 
   it('can go back to email step', async () => {

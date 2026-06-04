@@ -1,3 +1,4 @@
+import re
 import uuid
 from typing import Literal
 
@@ -50,6 +51,10 @@ _GROUP_MODELS = {
     "rollups": RollupGroup,
     "labels": Label,
 }
+_UUID_PATTERN = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+)
 
 
 def _not_found() -> HTTPException:
@@ -86,6 +91,37 @@ def _entity_to_out(entity: GroupEntity) -> GroupOut:
     if isinstance(entity, SourceGroup):
         return SourceGroupOut.model_validate(entity)
     return LabelOut.model_validate(entity)
+
+
+def _redact_public_warning(warning: str) -> str:
+    return _UUID_PATTERN.sub("[redacted]", warning)
+
+
+def _redact_public_warnings(payload: SharedGroupOut) -> SharedGroupOut:
+    def redact(warnings: list[str]) -> list[str]:
+        return [_redact_public_warning(warning) for warning in warnings]
+
+    return payload.model_copy(
+        update={
+            "summary": payload.summary.model_copy(
+                update={"warnings": redact(payload.summary.warnings)}
+            ),
+            "holdings": payload.holdings.model_copy(
+                update={"warnings": redact(payload.holdings.warnings)}
+            ),
+            "history": payload.history.model_copy(
+                update={
+                    "series": {
+                        currency: [
+                            point.model_copy(update={"warnings": redact(point.warnings)})
+                            for point in points
+                        ]
+                        for currency, points in payload.history.series.items()
+                    }
+                }
+            ),
+        }
+    )
 
 
 async def _get_owned_entity(
@@ -385,12 +421,14 @@ async def get_shared_group(
     scope = await resolve_portfolio_scope(db, entity.user_id, public_kind, entity.id)
     summary, holdings = await build_scoped_portfolio_dashboard(db, entity.user_id, scope)
     history = await build_scoped_portfolio_history(db, entity.user_id, scope)
-    return SharedGroupOut(
-        kind=public_kind,
-        name=entity.name,
-        color=entity.color,
-        description=entity.description,
-        summary=summary,
-        holdings=holdings,
-        history=history,
+    return _redact_public_warnings(
+        SharedGroupOut(
+            kind=public_kind,
+            name=entity.name,
+            color=entity.color,
+            description=entity.description,
+            summary=summary,
+            holdings=holdings,
+            history=history,
+        )
     )

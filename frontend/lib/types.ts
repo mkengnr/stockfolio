@@ -71,7 +71,7 @@ export interface PortfolioSummary {
   warnings: string[]
 }
 
-export interface ScopedPortfolioHolding {
+export interface PublicScopedPortfolioHolding {
   ticker: string
   name: string | null
   currency: Currency
@@ -80,6 +80,16 @@ export interface ScopedPortfolioHolding {
   current_price: string | null
   current_value: string | null
   unrealized_profit_loss: string | null
+}
+
+export interface ScopedPortfolioHolding extends PublicScopedPortfolioHolding {
+  holding_id: string
+}
+
+export interface PublicScopedPortfolioHoldings {
+  holdings: PublicScopedPortfolioHolding[]
+  accounting_status: AccountingStatus
+  warnings: string[]
 }
 
 export interface ScopedPortfolioHoldings {
@@ -206,7 +216,7 @@ export interface SharedGroup {
   color: string
   description: string | null
   summary: PortfolioSummary
-  holdings: ScopedPortfolioHoldings
+  holdings: PublicScopedPortfolioHoldings
   history: ScopedPortfolioHistory
 }
 

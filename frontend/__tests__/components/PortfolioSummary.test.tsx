@@ -56,6 +56,12 @@ describe('PortfolioSummary', () => {
     expect(screen.getByText(/700,000/)).toBeInTheDocument()
   })
 
+  it('shows scoped data quality warnings', () => {
+    render(<PortfolioSummary summary={{ ...scopedSummary, warnings: ['Current price unavailable for AAPL'] }} />)
+
+    expect(screen.getByText('Current price unavailable for AAPL')).toBeInTheDocument()
+  })
+
   it('renders four summary cards', () => {
     render(<PortfolioSummary holdings={[makeHolding()]} />)
     expect(screen.getByText('총 투자원금')).toBeInTheDocument()

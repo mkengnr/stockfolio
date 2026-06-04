@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.schemas.portfolio import (
     PortfolioSummaryOut,
     ScopedPortfolioHistoryOut,
-    ScopedPortfolioHoldingsOut,
+    PublicScopedPortfolioHoldingsOut,
 )
 
 
@@ -142,5 +142,5 @@ class SharedGroupOut(BaseModel):
     color: str
     description: str | None
     summary: PortfolioSummaryOut
-    holdings: ScopedPortfolioHoldingsOut
+    holdings: PublicScopedPortfolioHoldingsOut
     history: ScopedPortfolioHistoryOut

@@ -87,6 +87,20 @@ describe('HoldingForm', () => {
     expect(screen.queryByText(/해외 주식/)).not.toBeInTheDocument()
   })
 
+  it('blocks a Korean name from being submitted before an autocomplete result is selected', async () => {
+    render(<HoldingForm />)
+    fillField('종목 코드 또는 종목명', '삼성전자')
+    fillField('매수 수량', '10')
+    fillField('매수 단가', '75000')
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '등록하기' }))
+    })
+
+    expect(mockedHoldingsApi.create).not.toHaveBeenCalled()
+    expect(screen.getByText('검색 결과에서 종목을 선택하거나 유효한 종목 코드를 입력하세요.')).toBeInTheDocument()
+  })
+
   it('shows no market hint for empty ticker', () => {
     render(<HoldingForm />)
     expect(screen.queryByText(/한국 주식/)).not.toBeInTheDocument()

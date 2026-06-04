@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { HoldingsTable } from '@/components/dashboard/HoldingsTable'
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart'
 import { PortfolioSummary } from '@/components/dashboard/PortfolioSummary'
@@ -74,17 +75,20 @@ export default function SharePage({ params }: { params: { token: string } }) {
   const [legacyTag, setLegacyTag] = useState<SharedTag | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [loginRequired, setLoginRequired] = useState(false)
 
   useEffect(() => {
     async function load() {
       setLoading(true)
       setError('')
+      setLoginRequired(false)
       try {
         setGroup(await shareApi.getGroup(params.token))
       } catch (err) {
         const status = (err as Error & { status?: number }).status
         if (status === 401) {
           setError('로그인이 필요한 공유 링크입니다.')
+          setLoginRequired(true)
           return
         }
         if (status !== 404) {
@@ -94,9 +98,12 @@ export default function SharePage({ params }: { params: { token: string } }) {
         try {
           setLegacyTag(await shareApi.getLegacy(params.token))
         } catch (legacyError) {
-          setError((legacyError as Error & { status?: number }).status === 401
-            ? '로그인이 필요한 공유 링크입니다.'
-            : '공유 링크를 찾을 수 없습니다.')
+          if ((legacyError as Error & { status?: number }).status === 401) {
+            setError('로그인이 필요한 공유 링크입니다.')
+            setLoginRequired(true)
+          } else {
+            setError('공유 링크를 찾을 수 없습니다.')
+          }
         }
       } finally {
         setLoading(false)
@@ -106,7 +113,21 @@ export default function SharePage({ params }: { params: { token: string } }) {
   }, [params.token])
 
   if (loading) return <PageLoader />
-  if (error) return <div className="flex min-h-screen items-center justify-center"><p className="text-gray-500">{error}</p></div>
+  if (error) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3">
+        <p className="text-gray-500">{error}</p>
+        {loginRequired && (
+          <Link
+            href={`/auth?returnTo=${encodeURIComponent(`/share/${params.token}`)}`}
+            className="text-sm font-medium text-brand-600 hover:text-brand-700"
+          >
+            로그인
+          </Link>
+        )}
+      </div>
+    )
+  }
   if (group) return <SharedGroupView group={group} />
   if (legacyTag) return <LegacySharedTagView tag={legacyTag} />
   return null

@@ -90,6 +90,30 @@ export const holdingsApi = {
     return request<BuyLot[]>(`/api/holdings/${holdingId}/lots?${params}`)
   },
 
+  listReviewLots: (
+    holdingId: string,
+    txId: string,
+    scope: { scope_kind: 'source'; scope_id: string } | { scope_kind: 'unclassified' },
+  ) => {
+    const params = new URLSearchParams({ scope_kind: scope.scope_kind })
+    if (scope.scope_kind === 'source') params.set('scope_id', scope.scope_id)
+    return request<BuyLot[]>(`/api/holdings/${holdingId}/transactions/${txId}/review-lots?${params}`)
+  },
+
+  repairReviewedSell: (
+    holdingId: string,
+    txId: string,
+    data: {
+      source_group_id: string | null
+      label_ids: string[]
+      sell_allocations: { buy_lot_id: string; quantity: string }[]
+    },
+  ) =>
+    request<Transaction>(`/api/holdings/${holdingId}/transactions/${txId}/review`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
   updateTransactionClassification: (
     holdingId: string,
     txId: string,

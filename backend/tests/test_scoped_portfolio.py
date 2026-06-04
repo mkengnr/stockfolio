@@ -153,6 +153,7 @@ def test_source_scope_aggregates_same_ticker_lots_from_selected_source():
     )
 
     assert holdings.holdings[0].remaining_quantity == Decimal("3")
+    assert holdings.holdings[0].holding_id == holding_id
     assert summary.currencies[Currency.KRW].total_cost_basis == Decimal("300")
 
 
@@ -273,6 +274,7 @@ def test_legacy_review_sell_returns_conservative_unavailable_dashboard():
     assert summary.currencies[Currency.USD].total_current_value is None
     assert output.accounting_status == "requires_review"
     assert output.holdings == []
+    assert str(holding.transactions[1].id) in summary.warnings[0]
 
 
 def test_review_sell_only_hides_affected_currency_dashboard_values():

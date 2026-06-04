@@ -7,6 +7,7 @@ import { HoldingsTable } from '@/components/dashboard/HoldingsTable'
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart'
 import { PortfolioSummary } from '@/components/dashboard/PortfolioSummary'
 import { ScopeFilter } from '@/components/dashboard/ScopeFilter'
+import { DashboardLoadError } from '@/components/dashboard/DashboardLoadError'
 import { AuthGuard } from '@/components/layout/AuthGuard'
 import { Card } from '@/components/ui/Card'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
@@ -21,14 +22,17 @@ function DashboardContent() {
   const { data: sources = [] } = useSWR<SourceGroup[]>('/api/groups/sources', fetcher)
   const { data: rollups = [] } = useSWR<RollupGroup[]>('/api/groups/rollups', fetcher)
   const { data: labels = [] } = useSWR<Label[]>('/api/groups/labels', fetcher)
-  const { data: summary, isLoading: summaryLoading } = useSWR<SummaryPayload>(portfolioApi.summaryPath(scope), fetcher, {
+  const { data: summary, error: summaryError, isLoading: summaryLoading, mutate: mutateSummary } = useSWR<SummaryPayload>(portfolioApi.summaryPath(scope), fetcher, {
     refreshInterval: 30_000,
   })
-  const { data: holdings, isLoading: holdingsLoading } = useSWR<ScopedPortfolioHoldings>(portfolioApi.holdingsPath(scope), fetcher, {
+  const { data: holdings, error: holdingsError, isLoading: holdingsLoading, mutate: mutateHoldings } = useSWR<ScopedPortfolioHoldings>(portfolioApi.holdingsPath(scope), fetcher, {
     refreshInterval: 30_000,
   })
-  const { data: history } = useSWR<ScopedPortfolioHistory>(portfolioApi.historyPath(scope), fetcher)
+  const { data: history, error: historyError, mutate: mutateHistory } = useSWR<ScopedPortfolioHistory>(portfolioApi.historyPath(scope), fetcher)
 
+  if (summaryError || holdingsError || historyError) {
+    return <DashboardLoadError onRetry={() => void Promise.all([mutateSummary(), mutateHoldings(), mutateHistory()])} />
+  }
   if (summaryLoading || holdingsLoading || !summary || !holdings) return <PageLoader />
 
   return (

@@ -78,13 +78,17 @@ describe('SharePage', () => {
     expect(mockedShareApi.getLegacy).toHaveBeenCalledWith('token-2')
   })
 
-  it('shows login guidance and does not fall back after a 401', async () => {
+  it('links to login with the shared page return path and does not fall back after a 401', async () => {
     mockedShareApi.getGroup.mockRejectedValue(apiError(401))
     render(<SharePage params={{ token: 'token-3' }} />)
 
     await waitFor(() => {
       expect(screen.getByText('로그인이 필요한 공유 링크입니다.')).toBeInTheDocument()
     })
+    expect(screen.getByRole('link', { name: '로그인' })).toHaveAttribute(
+      'href',
+      '/auth?returnTo=%2Fshare%2Ftoken-3',
+    )
     expect(mockedShareApi.getLegacy).not.toHaveBeenCalled()
   })
 })

@@ -3,9 +3,9 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { cn, formatCurrency, formatNumber, formatPercent, profitColor } from '@/lib/utils'
-import type { Currency, Holding, ScopedPortfolioHolding } from '@/lib/types'
+import type { Currency, Holding, PublicScopedPortfolioHolding, ScopedPortfolioHolding } from '@/lib/types'
 
-type TableHolding = Holding | ScopedPortfolioHolding
+type TableHolding = Holding | PublicScopedPortfolioHolding | ScopedPortfolioHolding
 type SortKey = 'name' | 'profitPct' | 'currentValue' | 'profit'
 type SortDir = 'asc' | 'desc'
 
@@ -35,7 +35,7 @@ function toRow(holding: TableHolding): Row {
     const profit = holding.unrealized_profit_loss
     return {
       key: `${holding.currency}:${holding.ticker}`,
-      id: null,
+      id: 'holding_id' in holding ? holding.holding_id : null,
       ticker: holding.ticker,
       name: holding.name ?? holding.ticker,
       subtitle: `${holding.ticker} · ${holding.currency}`,

@@ -404,7 +404,8 @@ def test_expand_migration_uses_conservative_legacy_backfill() -> None:
 
     assert "down_revision: Union[str, None] = '1ea62c42a6ce'" in migration
     assert "legacy_holding_tag_counts" in migration
-    assert "CASE WHEN legacy_tags.tag_count = 1 THEN legacy_tags.tag_id ELSE NULL END" in migration
+    assert "BOOL_AND(tags.user_id = holdings.user_id) AS owners_match" in migration
+    assert "CASE WHEN legacy_tags.tag_count = 1 AND legacy_tags.owners_match THEN legacy_tags.tag_id ELSE NULL END" in migration
     assert "SET source_group_id = CASE" in migration
     assert "transactions.source_group_id," in migration
     assert "WHERE transactions.type = 'BUY'" in migration

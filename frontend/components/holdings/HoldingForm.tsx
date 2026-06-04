@@ -78,6 +78,10 @@ export function HoldingForm() {
       setError('출처/라벨 정보를 불러오지 못했습니다.')
       return
     }
+    if (!market) {
+      setError('검색 결과에서 종목을 선택하거나 유효한 종목 코드를 입력하세요.')
+      return
+    }
     setLoading(true)
     try {
       await holdingsApi.create({

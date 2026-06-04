@@ -20,11 +20,12 @@ class SnapshotValue:
     total_value: Decimal
 
 
-def _transaction_sort_key(transaction: Transaction) -> tuple[date, str]:
+def _transaction_sort_key(transaction: Transaction) -> tuple[date, str, str]:
     created_at = getattr(transaction, "created_at", None)
     return (
         transaction.transaction_date,
         created_at.isoformat() if created_at else "9999-12-31T23:59:59",
+        str(transaction.id),
     )
 
 

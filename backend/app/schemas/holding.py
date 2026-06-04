@@ -101,6 +101,10 @@ class TransactionClassificationIn(BaseModel):
         return value
 
 
+class ReviewedSellRepairIn(TransactionClassificationIn):
+    sell_allocations: list[SellLotAllocationIn] = Field(min_length=1)
+
+
 class HoldingUpdateIn(BaseModel):
     notes: str | None = None
     name: str | None = None

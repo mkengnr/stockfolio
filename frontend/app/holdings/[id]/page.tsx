@@ -23,15 +23,19 @@ function HoldingDetailContent({ id }: { id: string }) {
     { refreshInterval: 30_000 },
   )
   const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
 
   if (isLoading || !holding) return <PageLoader />
 
   async function handleDelete() {
-    if (!confirm(`${holding!.name} 종목을 삭제하시겠습니까? 거래 내역도 함께 삭제됩니다.`)) return
+    if (!confirm(`${holding!.name} 종목을 목록에서 숨기시겠습니까? 거래 내역은 유지됩니다.`)) return
     setDeleting(true)
+    setDeleteError('')
     try {
       await holdingsApi.delete(holding!.id)
       router.replace('/')
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : '종목을 삭제하지 못했습니다.')
     } finally {
       setDeleting(false)
     }
@@ -54,6 +58,7 @@ function HoldingDetailContent({ id }: { id: string }) {
           종목 삭제
         </Button>
       </div>
+      {deleteError && <p className="text-sm text-red-500">{deleteError}</p>}
 
       {/* P&L Summary */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">

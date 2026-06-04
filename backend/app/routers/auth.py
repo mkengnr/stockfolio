@@ -1,5 +1,5 @@
-import logging
 import hashlib
+import logging
 from datetime import datetime, timezone
 from email.message import EmailMessage
 
@@ -19,6 +19,8 @@ from app.services.price_cache import get_redis
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 settings = get_settings()
 logger = logging.getLogger(__name__)
+OTP_VERIFICATION_MAX_ATTEMPTS = 5
+OTP_VERIFICATION_WINDOW_SECONDS = 10 * 60
 
 
 def _mask_email(email: str) -> str:
@@ -38,6 +40,21 @@ async def _allow_otp_request(email: str, client_ip: str) -> bool:
         return all(await pipeline.execute())
     except Exception:
         logger.warning("OTP request rate limiter unavailable", exc_info=True)
+        return True
+
+
+async def _allow_otp_verification(email: str, client_ip: str) -> bool:
+    digest = hashlib.sha256(email.strip().lower().encode()).hexdigest()
+    key = f"otp:verify:email-ip:{digest}:{client_ip}"
+    try:
+        pipeline = get_redis().pipeline(transaction=True)
+        pipeline.incr(key)
+        pipeline.expire(key, OTP_VERIFICATION_WINDOW_SECONDS, nx=True)
+        attempt_count, _ = await pipeline.execute()
+        return attempt_count <= OTP_VERIFICATION_MAX_ATTEMPTS
+    except Exception:
+        # Match OTP request throttling: keep auth available during Redis outages.
+        logger.warning("OTP verification rate limiter unavailable", exc_info=True)
         return True
 
 
@@ -99,7 +116,19 @@ async def request_otp(body: OtpRequestIn, request: Request, db: AsyncSession = D
 
 
 @router.post("/verify-otp", response_model=TokenOut)
-async def verify_otp(body: OtpVerifyIn, response: Response, db: AsyncSession = Depends(get_db)):
+async def verify_otp(
+    body: OtpVerifyIn,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    client_ip = request.client.host if request.client else "unknown"
+    if not await _allow_otp_verification(body.email, client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many verification attempts. Try again later.",
+        )
+
     result = await db.execute(
         select(User).where(User.email == body.email).where(User.is_active.is_(True))
     )

@@ -429,7 +429,19 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
                 "warnings": [],
             },
             {
-                "holdings": [],
+                "holdings": [
+                    {
+                        "holding_id": str(uuid.uuid4()),
+                        "ticker": "005930",
+                        "name": "삼성전자",
+                        "currency": "KRW",
+                        "remaining_quantity": "1",
+                        "remaining_cost_basis": "70000",
+                        "current_price": "75000",
+                        "current_value": "75000",
+                        "unrealized_profit_loss": "5000",
+                    }
+                ],
                 "accounting_status": "ok",
                 "warnings": [],
             },
@@ -466,7 +478,18 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
             "warnings": [],
         },
         "holdings": {
-            "holdings": [],
+            "holdings": [
+                {
+                    "ticker": "005930",
+                    "name": "삼성전자",
+                    "currency": "KRW",
+                    "remaining_quantity": "1",
+                    "remaining_cost_basis": "70000",
+                    "current_price": "75000",
+                    "current_value": "75000",
+                    "unrealized_profit_loss": "5000",
+                }
+            ],
             "accounting_status": "ok",
             "warnings": [],
         },
@@ -476,6 +499,74 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
         ("scope", db, entity.user_id, kind, entity.id),
         ("dashboard", db, entity.user_id, scope),
         ("history", db, entity.user_id, scope),
+    ]
+
+
+def test_public_share_redacts_internal_transaction_ids_from_warnings(client, user, db, monkeypatch):
+    source = _source(user.id)
+    source.share_token = str(uuid.uuid4())
+    source.share_requires_auth = False
+    db.queue(_Result(one=source))
+    transaction_id = uuid.uuid4()
+    warning = f"Sell transaction {transaction_id} requires review: lot allocations are missing"
+
+    async def _resolve_portfolio_scope(*_args):
+        return object()
+
+    async def _build_scoped_portfolio_dashboard(*_args):
+        return (
+            {
+                "currencies": {},
+                "holding_count": 0,
+                "accounting_status": "requires_review",
+                "warnings": [warning],
+            },
+            {
+                "holdings": [],
+                "accounting_status": "requires_review",
+                "warnings": [warning],
+            },
+        )
+
+    async def _build_scoped_portfolio_history(*_args):
+        return {
+            "series": {
+                "KRW": [
+                    {
+                        "snapshot_date": "2026-01-01",
+                        "total_value": None,
+                        "total_cost_basis": None,
+                        "total_profit_loss": None,
+                        "unavailable_price_count": 1,
+                        "accounting_status": "requires_review",
+                        "warnings": [warning],
+                    }
+                ]
+            }
+        }
+
+    monkeypatch.setattr("app.routers.groups.resolve_portfolio_scope", _resolve_portfolio_scope)
+    monkeypatch.setattr(
+        "app.routers.groups.build_scoped_portfolio_dashboard",
+        _build_scoped_portfolio_dashboard,
+    )
+    monkeypatch.setattr(
+        "app.routers.groups.build_scoped_portfolio_history",
+        _build_scoped_portfolio_history,
+    )
+
+    response = client.get(f"/api/groups/share/{source.share_token}")
+
+    assert response.status_code == 200
+    assert str(transaction_id) not in response.text
+    assert response.json()["summary"]["warnings"] == [
+        "Sell transaction [redacted] requires review: lot allocations are missing"
+    ]
+    assert response.json()["holdings"]["warnings"] == [
+        "Sell transaction [redacted] requires review: lot allocations are missing"
+    ]
+    assert response.json()["history"]["series"]["KRW"][0]["warnings"] == [
+        "Sell transaction [redacted] requires review: lot allocations are missing"
     ]
 
 

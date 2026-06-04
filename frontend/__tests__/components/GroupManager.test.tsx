@@ -122,4 +122,54 @@ describe('GroupManager', () => {
     })
     expect(mockedGroupsApi.disableShare).toHaveBeenCalledWith('sources', 'source-1')
   })
+
+  it('shows a section fetch failure and retries only that section', async () => {
+    mockedUseSWR.mockImplementation((key: string) => ({
+      '/api/groups/sources': { data: [source], isLoading: false, mutate: mutateSources },
+      '/api/groups/rollups': { error: new Error('network failure'), isLoading: false, mutate: mutateRollups },
+      '/api/groups/labels': { data: [label], isLoading: false, mutate: mutateLabels },
+    })[key])
+    render(<GroupManager />)
+
+    expect(screen.getByText('통합 그룹을 불러오지 못했습니다.')).toBeInTheDocument()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '통합 그룹 다시 시도' }))
+    })
+
+    expect(mutateRollups).toHaveBeenCalled()
+    expect(mutateSources).not.toHaveBeenCalled()
+    expect(mutateLabels).not.toHaveBeenCalled()
+  })
+
+  it('shows access indicators and copy and open controls for active share links', () => {
+    const writeText = jest.fn()
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    mockedUseSWR.mockImplementation((key: string) => ({
+      '/api/groups/sources': {
+        data: [{ ...source, share_token: 'public-token', share_requires_auth: false }],
+        isLoading: false,
+        mutate: mutateSources,
+      },
+      '/api/groups/rollups': {
+        data: [{ ...rollup, share_token: 'login-token', share_requires_auth: true }],
+        isLoading: false,
+        mutate: mutateRollups,
+      },
+      '/api/groups/labels': { data: [label], isLoading: false, mutate: mutateLabels },
+    })[key])
+    render(<GroupManager />)
+
+    expect(screen.getByText('누구나 접근 가능')).toBeInTheDocument()
+    expect(screen.getByText('로그인 필요')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '월급 공유 링크 복사' }))
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/share/public-token`)
+    expect(screen.getByRole('link', { name: '월급 공유 링크 열기' })).toHaveAttribute(
+      'href',
+      `${window.location.origin}/share/public-token`,
+    )
+    expect(screen.getByRole('link', { name: '월급 공유 링크 열기' })).toHaveAttribute('target', '_blank')
+  })
 })

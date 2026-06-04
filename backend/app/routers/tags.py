@@ -24,6 +24,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/tags", tags=["tags"])
 
 
+def _legacy_writes_disabled() -> None:
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Legacy tag writes are disabled; use group management",
+    )
+
+
 async def _compute_summary(holdings: list[Holding]) -> TagSummary:
     """Compute portfolio summary across the given holdings.
 
@@ -112,6 +119,7 @@ async def create_tag(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    _legacy_writes_disabled()
     tag = Tag(user_id=current_user.id, name=body.name, color=body.color, description=body.description)
     db.add(tag)
     await db.flush()
@@ -148,6 +156,7 @@ async def update_tag(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    _legacy_writes_disabled()
     result = await db.execute(
         select(Tag)
         .where(Tag.id == tag_id)
@@ -173,6 +182,7 @@ async def delete_tag(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    _legacy_writes_disabled()
     result = await db.execute(
         select(Tag).where(Tag.id == tag_id).where(Tag.user_id == current_user.id)
     )
@@ -189,6 +199,7 @@ async def add_holding_to_tag(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    _legacy_writes_disabled()
     tag_r = await db.execute(select(Tag).where(Tag.id == tag_id).where(Tag.user_id == current_user.id))
     tag = tag_r.scalar_one_or_none()
     if tag is None:
@@ -225,6 +236,7 @@ async def remove_holding_from_tag(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    _legacy_writes_disabled()
     # Ownership check via join — prevents deletion of associations belonging to other users
     result = await db.execute(
         select(HoldingTag)
@@ -248,6 +260,7 @@ async def enable_share(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    _legacy_writes_disabled()
     result = await db.execute(
         select(Tag)
         .where(Tag.id == tag_id)
@@ -268,6 +281,7 @@ async def disable_share(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    _legacy_writes_disabled()
     result = await db.execute(
         select(Tag).where(Tag.id == tag_id).where(Tag.user_id == current_user.id)
     )

@@ -328,8 +328,12 @@ def _build_scoped_dashboard_payload(
     names = {
         (holding.currency, holding.ticker): holding.name for holding in active_holdings
     }
+    holding_ids = {
+        (holding.currency, holding.ticker): holding.id for holding in active_holdings
+    }
     output_holdings = [
         ScopedPortfolioHoldingOut(
+            holding_id=holding_ids[(Currency(position.currency), position.ticker)],
             ticker=position.ticker,
             name=names.get((Currency(position.currency), position.ticker)),
             currency=Currency(position.currency),

@@ -12,7 +12,7 @@ from app.database import get_db
 from app.models.group import BuyLot, Label, SellLotAllocation, SourceGroup, TransactionLabel
 from app.models.holding import Currency, Holding, Market, Transaction, TransactionType
 from app.routers.deps import get_current_user
-from app.routers.holdings import _replay_and_update_lots, router
+from app.routers.holdings import _rebuild_snapshots_after_mutation, _replay_and_update_lots, router
 from app.schemas.holding import HoldingCreateIn, TransactionIn
 
 
@@ -239,11 +239,29 @@ def test_existing_payloads_remain_valid_and_unclassified():
     assert tx.sell_allocations == []
 
 
+@pytest.mark.asyncio
+async def test_snapshot_rebuild_failure_is_returned_as_service_unavailable(user, db):
+    holding = _holding(user.id)
+
+    with patch(
+        "app.routers.holdings.rebuild_holding_snapshots",
+        new=AsyncMock(side_effect=RuntimeError("provider unavailable")),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await _rebuild_snapshots_after_mutation(db, holding, start=date(2026, 1, 1))
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "Price history rebuild failed; retry the transaction"
+
+
 def test_create_holding_creates_initial_unclassified_buy_lot(client, db):
     db.queue(_Result())
 
     with (
-        patch("app.routers.holdings.stock_fetcher.get_current_price", side_effect=RuntimeError),
+        patch(
+            "app.routers.holdings.stock_fetcher.get_current_price",
+            return_value=SimpleNamespace(name="삼성전자"),
+        ),
         patch("app.routers.holdings.backfill_holding_snapshots", new=AsyncMock()),
     ):
         response = client.post(
@@ -261,6 +279,25 @@ def test_create_holding_creates_initial_unclassified_buy_lot(client, db):
     assert payload["transactions"][0]["source_group_id"] is None
     assert payload["transactions"][0]["buy_lot"]["remaining_quantity"] == "1"
     assert any(isinstance(entity, BuyLot) for entity in db.added)
+
+
+def test_create_holding_rejects_ticker_when_provider_lookup_fails(client, db):
+    db.queue(_Result())
+
+    with patch("app.routers.holdings.stock_fetcher.get_current_price", side_effect=RuntimeError):
+        response = client.post(
+            "/api/holdings",
+            json={
+                "ticker": "NOTREAL",
+                "quantity": "1",
+                "price": "80000",
+                "transaction_date": "2026-01-01",
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Ticker could not be verified"
+    assert db.added == []
 
 
 def test_add_buy_creates_classified_lot_and_labels(client, user, db):
@@ -405,6 +442,72 @@ def test_lots_endpoint_lists_unclassified_available_lots(client, user, db):
     assert response.status_code == 200
     assert [item["id"] for item in response.json()] == [str(available.id)]
     assert response.json()[0]["label_ids"] == [str(label.id)]
+
+
+def test_review_lots_endpoint_lists_lots_available_before_legacy_sell(client, user, db):
+    holding = _holding(user.id)
+    _, lot = _buy(holding)
+    legacy_sell = _legacy_sell_requiring_review(holding)
+    lot.remaining_quantity = Decimal("999")
+    db.queue(_Result(one=holding))
+
+    response = client.get(
+        f"/api/holdings/{holding.id}/transactions/{legacy_sell.id}/review-lots",
+        params={"scope_kind": "unclassified"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()[0]["id"] == str(lot.id)
+    assert response.json()[0]["remaining_quantity"] == "2"
+
+
+def test_repair_legacy_sell_persists_allocations_and_clears_review(client, user, db):
+    holding = _holding(user.id)
+    _, lot = _buy(holding)
+    legacy_sell = _legacy_sell_requiring_review(holding)
+    db.queue(_Result(one=holding), _Result(many=[lot.id]))
+
+    with patch("app.routers.holdings.rebuild_holding_snapshots", new=AsyncMock()):
+        response = client.patch(
+            f"/api/holdings/{holding.id}/transactions/{legacy_sell.id}/review",
+            json={
+                "source_group_id": None,
+                "label_ids": [],
+                "sell_allocations": [{"buy_lot_id": str(lot.id), "quantity": "1"}],
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["requires_review"] is False
+    assert response.json()["sell_allocations"] == [
+        {"buy_lot_id": str(lot.id), "quantity": "1"}
+    ]
+    assert legacy_sell.requires_review is False
+    assert lot.remaining_quantity == Decimal("1")
+    assert any(isinstance(entity, SellLotAllocation) for entity in db.added)
+
+
+def test_repair_legacy_sell_requires_oldest_unresolved_sell_first(client, user, db):
+    holding = _holding(user.id)
+    _, lot = _buy(holding, quantity="3")
+    _legacy_sell_requiring_review(holding)
+    later_sell = _legacy_sell_requiring_review(holding)
+    later_sell.transaction_date = date(2026, 3, 1)
+    db.queue(_Result(one=holding))
+
+    response = client.patch(
+        f"/api/holdings/{holding.id}/transactions/{later_sell.id}/review",
+        json={
+            "source_group_id": None,
+            "label_ids": [],
+            "sell_allocations": [{"buy_lot_id": str(lot.id), "quantity": "1"}],
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Resolve earlier reviewed sells first"
+    assert later_sell.requires_review is True
+    assert db.added == []
 
 
 def test_buy_classification_updates_lot_source_and_replaces_labels(client, user, db):

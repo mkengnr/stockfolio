@@ -39,10 +39,10 @@ export function GroupManager() {
   const [error, setError] = useState('')
 
   const sources = sourcesState.data ?? []
-  const sections: Array<{ kind: GroupKind; groups: Group[]; loading: boolean }> = [
-    { kind: 'sources', groups: sources, loading: sourcesState.isLoading },
-    { kind: 'rollups', groups: rollupsState.data ?? [], loading: rollupsState.isLoading },
-    { kind: 'labels', groups: labelsState.data ?? [], loading: labelsState.isLoading },
+  const sections: Array<{ kind: GroupKind; groups: Group[]; loading: boolean; error: unknown; onRetry: () => Promise<unknown> }> = [
+    { kind: 'sources', groups: sources, loading: sourcesState.isLoading, error: sourcesState.error, onRetry: sourcesState.mutate },
+    { kind: 'rollups', groups: rollupsState.data ?? [], loading: rollupsState.isLoading, error: rollupsState.error, onRetry: rollupsState.mutate },
+    { kind: 'labels', groups: labelsState.data ?? [], loading: labelsState.isLoading, error: labelsState.error, onRetry: labelsState.mutate },
   ]
 
   async function refresh(targetKind: GroupKind) {
@@ -277,6 +277,8 @@ function GroupSection({
   kind,
   groups,
   loading,
+  error,
+  onRetry,
   pendingAction,
   onEdit,
   onDelete,
@@ -286,6 +288,8 @@ function GroupSection({
   kind: GroupKind
   groups: Group[]
   loading: boolean
+  error: unknown
+  onRetry: () => Promise<unknown>
   pendingAction: string
   onEdit: (kind: GroupKind, group: Group) => void
   onDelete: (kind: GroupKind, group: Group) => void
@@ -298,7 +302,14 @@ function GroupSection({
         <h2 className="font-semibold text-gray-900">{sectionLabels[kind]}</h2>
         <span className="text-sm text-gray-400">{groups.length}개</span>
       </div>
-      {loading ? (
+      {error ? (
+        <Card className="flex items-center justify-between gap-3">
+          <p className="text-sm text-red-500">{sectionLabels[kind]}을 불러오지 못했습니다.</p>
+          <Button variant="secondary" size="sm" onClick={() => void onRetry()} aria-label={`${sectionLabels[kind]} 다시 시도`}>
+            다시 시도
+          </Button>
+        </Card>
+      ) : loading ? (
         <p className="py-4 text-sm text-gray-400">그룹을 불러오는 중입니다.</p>
       ) : groups.length === 0 ? (
         <Card><p className="text-sm text-gray-400">등록된 그룹이 없습니다.</p></Card>
@@ -342,6 +353,9 @@ function GroupCard({
   const [requiresAuth, setRequiresAuth] = useState(group.share_requires_auth)
   const sharePending = pendingAction === `share:${kind}:${group.id}`
   const deletePending = pendingAction === `delete:${kind}:${group.id}`
+  const shareUrl = group.share_token && typeof window !== 'undefined'
+    ? `${window.location.origin}/share/${group.share_token}`
+    : ''
 
   return (
     <Card className="flex flex-col gap-3">
@@ -354,17 +368,33 @@ function GroupCard({
       </div>
       {group.share_token ? (
         <div className="rounded-lg bg-gray-50 p-3 text-xs text-gray-500">
-          <p className="break-all">{typeof window !== 'undefined' && `${window.location.origin}/share/${group.share_token}`}</p>
-          <Button
-            className="mt-2"
-            variant="secondary"
-            size="sm"
-            loading={sharePending}
-            onClick={() => onDisableShare(kind, group)}
-            aria-label={`${group.name} 공유 중지`}
-          >
-            공유 중지
-          </Button>
+          <p className="break-all">{shareUrl}</p>
+          <p className="mt-2 text-gray-400">
+            {group.share_requires_auth ? '로그인 필요' : '누구나 접근 가능'}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button variant="secondary" size="sm" onClick={() => navigator.clipboard.writeText(shareUrl)} aria-label={`${group.name} 공유 링크 복사`}>
+              복사
+            </Button>
+            <a
+              className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              href={shareUrl}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`${group.name} 공유 링크 열기`}
+            >
+              열기
+            </a>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={sharePending}
+              onClick={() => onDisableShare(kind, group)}
+              aria-label={`${group.name} 공유 중지`}
+            >
+              공유 중지
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="flex flex-col gap-2 rounded-lg bg-gray-50 p-3">

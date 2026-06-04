@@ -39,6 +39,11 @@ function ScopedSummary({ summary }: { summary: SummaryPayload }) {
       {summary.accounting_status === 'requires_review' && (
         <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">거래 분류 검토가 필요합니다.</p>
       )}
+      {summary.warnings.length > 0 && (
+        <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          {summary.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+        </div>
+      )}
       {groups.map(([currency, currencySummary]) => (
         <div key={currency}>
           <p className="mb-2 text-xs font-semibold text-gray-400">{currency}</p>

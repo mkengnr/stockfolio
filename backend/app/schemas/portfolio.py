@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from typing import Literal
+import uuid
 
 from pydantic import BaseModel
 
@@ -35,7 +36,7 @@ class PortfolioSummaryOut(BaseModel):
     warnings: list[str]
 
 
-class ScopedPortfolioHoldingOut(BaseModel):
+class PublicScopedPortfolioHoldingOut(BaseModel):
     ticker: str
     name: str | None
     currency: Currency
@@ -44,6 +45,16 @@ class ScopedPortfolioHoldingOut(BaseModel):
     current_price: Decimal | None
     current_value: Decimal | None
     unrealized_profit_loss: Decimal | None
+
+
+class ScopedPortfolioHoldingOut(PublicScopedPortfolioHoldingOut):
+    holding_id: uuid.UUID
+
+
+class PublicScopedPortfolioHoldingsOut(BaseModel):
+    holdings: list[PublicScopedPortfolioHoldingOut]
+    accounting_status: AccountingStatus
+    warnings: list[str]
 
 
 class ScopedPortfolioHoldingsOut(BaseModel):

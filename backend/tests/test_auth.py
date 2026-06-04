@@ -1,12 +1,15 @@
-"""
-Unit tests for auth_service.py (no DB required — uses in-memory stubs).
-"""
+"""Auth service and router tests that do not require a database."""
+import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
+from app.database import get_db
+from app.routers import auth
 from app.services.auth_service import (
     generate_otp,
     hash_otp,
@@ -85,3 +88,79 @@ class TestJtiHash:
 
     def test_different_input_different_output(self):
         assert _jti_hash("abc") != _jti_hash("xyz")
+
+
+class _Result:
+    def scalar_one_or_none(self):
+        return None
+
+
+async def test_allow_otp_verification_uses_hashed_email_and_ip_combination(monkeypatch):
+    pipeline = MagicMock()
+    pipeline.execute = AsyncMock(return_value=[1, True])
+    redis = MagicMock()
+    redis.pipeline.return_value = pipeline
+    monkeypatch.setattr(auth, "get_redis", lambda: redis)
+
+    assert await auth._allow_otp_verification(" User@example.com ", "127.0.0.1")
+
+    digest = hashlib.sha256("user@example.com".encode()).hexdigest()
+    key = f"otp:verify:email-ip:{digest}:127.0.0.1"
+    redis.pipeline.assert_called_once_with(transaction=True)
+    pipeline.incr.assert_called_once_with(key)
+    pipeline.expire.assert_called_once_with(key, 600, nx=True)
+    assert "User@example.com" not in key
+
+
+@pytest.mark.parametrize(
+    ("attempt_count", "expected"),
+    [
+        (5, True),
+        (6, False),
+    ],
+)
+async def test_allow_otp_verification_limits_attempts_per_window(
+    monkeypatch,
+    attempt_count,
+    expected,
+):
+    pipeline = MagicMock()
+    pipeline.execute = AsyncMock(return_value=[attempt_count, False])
+    redis = MagicMock()
+    redis.pipeline.return_value = pipeline
+    monkeypatch.setattr(auth, "get_redis", lambda: redis)
+
+    assert await auth._allow_otp_verification("user@example.com", "127.0.0.1") is expected
+
+
+async def test_allow_otp_verification_fails_open_during_redis_outage(monkeypatch, caplog):
+    monkeypatch.setattr(auth, "get_redis", MagicMock(side_effect=OSError("redis unavailable")))
+
+    with caplog.at_level("WARNING"):
+        assert await auth._allow_otp_verification("user@example.com", "127.0.0.1")
+
+    assert "OTP verification rate limiter unavailable" in caplog.text
+
+
+def test_verify_otp_returns_429_before_database_lookup_when_throttled(monkeypatch):
+    app = FastAPI()
+    app.include_router(auth.router)
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=_Result())
+
+    async def _db():
+        yield db
+
+    app.dependency_overrides[get_db] = _db
+    limiter = AsyncMock(return_value=False)
+    monkeypatch.setattr(auth, "_allow_otp_verification", limiter, raising=False)
+
+    response = TestClient(app).post(
+        "/api/auth/verify-otp",
+        json={"email": "user@example.com", "code": "123456"},
+    )
+
+    assert response.status_code == 429
+    assert response.json() == {"detail": "Too many verification attempts. Try again later."}
+    limiter.assert_awaited_once_with("user@example.com", "testclient")
+    db.execute.assert_not_awaited()
