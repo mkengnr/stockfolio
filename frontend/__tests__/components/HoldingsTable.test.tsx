@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { HoldingsTable } from '@/components/dashboard/HoldingsTable'
-import type { Holding, PublicScopedPortfolioHolding, ScopedPortfolioHolding } from '@/lib/types'
+import type { DashboardHoldingRow, Holding, PublicScopedPortfolioHolding, ScopedPortfolioHolding } from '@/lib/types'
 
 // next/link is a server component wrapper — mock it for tests
 jest.mock('next/link', () => {
@@ -68,6 +68,53 @@ describe('HoldingsTable', () => {
     render(<HoldingsTable holdings={[scopedHolding]} />)
 
     expect(screen.getByRole('link', { name: /Apple/ })).toHaveAttribute('href', '/holdings/holding-1')
+  })
+
+  it('renders dashboard holding group badges with remaining quantities', () => {
+    const dashboardHolding: DashboardHoldingRow = {
+      holding_id: 'holding-1',
+      ticker: 'AAPL',
+      name: 'Apple',
+      market: 'US',
+      currency: 'USD',
+      quantity: '5',
+      remaining_cost_basis: '500',
+      current_price: '120',
+      current_value: '600',
+      unrealized_profit_loss: '100',
+      groups: [
+        { source_group_id: 'source-1', name: '모음통장', color: '#4f46e5', remaining_quantity: '3' },
+        { source_group_id: null, name: '미분류', color: null, remaining_quantity: '2' },
+      ],
+    }
+
+    render(<HoldingsTable holdings={[dashboardHolding]} displayCurrency="USD" />)
+
+    expect(screen.getByText('그룹')).toBeInTheDocument()
+    expect(screen.getByText('모음통장 3주')).toBeInTheDocument()
+    expect(screen.getByText('미분류 2주')).toBeInTheDocument()
+  })
+
+  it('formats dashboard converted values with the selected display currency', () => {
+    const dashboardHolding: DashboardHoldingRow = {
+      holding_id: 'holding-1',
+      ticker: 'AAPL',
+      name: 'Apple',
+      market: 'US',
+      currency: 'USD',
+      quantity: '5',
+      remaining_cost_basis: '650000',
+      current_price: '120',
+      current_value: '780000',
+      unrealized_profit_loss: '130000',
+      groups: [],
+    }
+
+    render(<HoldingsTable holdings={[dashboardHolding]} displayCurrency="KRW" />)
+
+    expect(screen.getByText('$120.00')).toBeInTheDocument()
+    expect(screen.getByText('₩780,000')).toBeInTheDocument()
+    expect(screen.queryByText('$780,000.00')).not.toBeInTheDocument()
   })
 
   it('renders empty state with link when no holdings', () => {

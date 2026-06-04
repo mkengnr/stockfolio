@@ -115,6 +115,75 @@ export interface ScopedPortfolioHistory {
   series: Record<Currency, ScopedPortfolioHistoryPoint[]>
 }
 
+export type DisplayCurrency = 'KRW' | 'USD'
+export type DashboardGroupKind = 'source' | 'combined' | 'unclassified'
+export type DashboardHistoryGroupKind = 'total' | DashboardGroupKind
+
+export interface DashboardExchangeRate {
+  base: string
+  quote: string
+  rate: string
+  as_of: string
+}
+
+export interface DashboardSummary {
+  total_invested_principal: string | null
+  total_cost_basis: string | null
+  total_current_value: string | null
+  total_profit_loss: string | null
+  total_profit_loss_pct: string | null
+}
+
+export interface DashboardGroupSummary {
+  kind: DashboardGroupKind
+  id: string | null
+  name: string
+  color: string | null
+  summary: DashboardSummary
+}
+
+export interface DashboardHoldingGroupBadge {
+  source_group_id: string | null
+  name: string
+  color: string | null
+  remaining_quantity: string
+}
+
+export interface DashboardHoldingRow {
+  holding_id: string
+  ticker: string
+  name: string | null
+  market: Market
+  currency: Currency
+  quantity: string
+  remaining_cost_basis: string | null
+  current_price: string | null
+  current_value: string | null
+  unrealized_profit_loss: string | null
+  groups: DashboardHoldingGroupBadge[]
+}
+
+export interface DashboardHistoryRow {
+  group_kind: DashboardHistoryGroupKind
+  group_id: string | null
+  group_name: string
+  snapshot_date: string
+  total_value: string | null
+  total_invested_principal: string | null
+  total_cost_basis: string | null
+  total_profit_loss: string | null
+}
+
+export interface DashboardResponse {
+  display_currency: DisplayCurrency
+  exchange_rate: DashboardExchangeRate | null
+  summary: DashboardSummary
+  groups: DashboardGroupSummary[]
+  history: { rows: DashboardHistoryRow[] }
+  holdings: DashboardHoldingRow[]
+  warnings: string[]
+}
+
 export interface Transaction {
   id: string
   type: TxType

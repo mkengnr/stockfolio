@@ -1,6 +1,9 @@
 import { Card, CardTitle } from '@/components/ui/Card'
 import { cn, formatCurrency, formatPercent, profitColor } from '@/lib/utils'
-import type { Currency, Holding, PortfolioCurrencySummary, PortfolioSummary as SummaryPayload } from '@/lib/types'
+import type {
+  Currency, DashboardSummary, DisplayCurrency, Holding, PortfolioCurrencySummary,
+  PortfolioSummary as SummaryPayload,
+} from '@/lib/types'
 
 interface SummaryCardProps {
   title: string
@@ -19,11 +22,37 @@ function SummaryCard({ title, value, sub, subColor }: SummaryCardProps) {
   )
 }
 
-type Props = { summary: SummaryPayload; holdings?: never } | { holdings: Holding[]; summary?: never }
+type Props =
+  | { summary: SummaryPayload; displayCurrency?: never; holdings?: never }
+  | { summary: DashboardSummary; displayCurrency: DisplayCurrency; holdings?: never }
+  | { holdings: Holding[]; summary?: never; displayCurrency?: never }
 
 export function PortfolioSummary(props: Props) {
-  if (props.summary) return <ScopedSummary summary={props.summary} />
+  if (props.summary) {
+    if ('currencies' in props.summary) return <ScopedSummary summary={props.summary} />
+    return <DashboardSummaryCards summary={props.summary} displayCurrency={props.displayCurrency ?? 'KRW'} />
+  }
   return <LegacySummary holdings={props.holdings} />
+}
+
+function DashboardSummaryCards({ summary, displayCurrency }: { summary: DashboardSummary; displayCurrency: DisplayCurrency }) {
+  return (
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+      <SummaryCard title="투자원금" value={displayCurrencyValue(summary.total_invested_principal, displayCurrency)} />
+      <SummaryCard title="잔여원금" value={displayCurrencyValue(summary.total_cost_basis, displayCurrency)} />
+      <SummaryCard title="평가금액" value={displayCurrencyValue(summary.total_current_value, displayCurrency)} />
+      <SummaryCard
+        title="손익"
+        value={displayCurrencyValue(summary.total_profit_loss, displayCurrency)}
+        subColor={profitColor(summary.total_profit_loss)}
+      />
+      <SummaryCard
+        title="손익률"
+        value={formatPercent(summary.total_profit_loss_pct)}
+        subColor={profitColor(summary.total_profit_loss_pct)}
+      />
+    </div>
+  )
 }
 
 function ScopedSummary({ summary }: { summary: SummaryPayload }) {
@@ -69,6 +98,10 @@ function ScopedSummary({ summary }: { summary: SummaryPayload }) {
 }
 
 function displayCurrency(value: string | null, currency: Currency) {
+  return value === null ? '—' : formatCurrency(value, currency)
+}
+
+function displayCurrencyValue(value: string | null, currency: DisplayCurrency) {
   return value === null ? '—' : formatCurrency(value, currency)
 }
 

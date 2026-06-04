@@ -1,5 +1,5 @@
 import type {
-  BuyLot, GroupKind, Holding, HoldingDetail, Label, PortfolioScope, PortfolioSummary, PrincipalFlow,
+  BuyLot, DashboardResponse, DisplayCurrency, GroupKind, Holding, HoldingDetail, Label, PortfolioScope, PortfolioSummary, PrincipalFlow,
   RollupGroup, ScopedPortfolioHistory, ScopedPortfolioHoldings, SharedGroup, SharedTag,
   SourceGroup, StockSearchResult, Tag, TagDetail, Transaction, User,
 } from './types'
@@ -177,6 +177,10 @@ function portfolioPath(resource: 'summary' | 'holdings' | 'history', scope: Port
 }
 
 export const portfolioApi = {
+  dashboardPath: (displayCurrency: DisplayCurrency = 'KRW') =>
+    `/api/portfolio/dashboard?display_currency=${displayCurrency}`,
+  dashboard: (displayCurrency: DisplayCurrency = 'KRW') =>
+    request<DashboardResponse>(portfolioApi.dashboardPath(displayCurrency)),
   summaryPath: (scope: PortfolioScope) => portfolioPath('summary', scope),
   holdingsPath: (scope: PortfolioScope) => portfolioPath('holdings', scope),
   historyPath: (scope: PortfolioScope) => portfolioPath('history', scope),
