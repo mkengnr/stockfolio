@@ -1,0 +1,594 @@
+import uuid
+from datetime import date, datetime, timezone
+from decimal import Decimal
+from types import SimpleNamespace
+
+import pytest
+from fastapi import FastAPI, HTTPException, status
+from fastapi.testclient import TestClient
+
+from app.database import get_db
+from app.models.group import RollupGroup, RollupGroupMember, SourceGroup
+from app.models.holding import Currency, Market, PrincipalFlow, TransactionType
+from app.routers import portfolio as portfolio_router
+from app.routers.deps import get_current_user
+from app.routers.portfolio import (
+    build_dashboard_response,
+    build_portfolio_dashboard_response,
+    get_portfolio_dashboard,
+    router,
+)
+from app.services.exchange_rate import ExchangeRate
+
+
+NOW = datetime(2026, 6, 2, tzinfo=timezone.utc)
+RATE = ExchangeRate(
+    base="USD",
+    quote="KRW",
+    rate=Decimal("1300"),
+    as_of=datetime(2026, 6, 4, tzinfo=timezone.utc),
+)
+
+
+class _Result:
+    def __init__(self, *, many=None):
+        self._many = list(many or [])
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._many
+
+
+class _QueuedSession:
+    def __init__(self):
+        self.results = []
+
+    def queue(self, *results):
+        self.results.extend(results)
+
+    async def execute(self, _query):
+        assert self.results, "unexpected database query"
+        return self.results.pop(0)
+
+
+def _source(user_id, *, name, color="#6366f1", source_id=None):
+    return SourceGroup(
+        id=source_id or uuid.uuid4(),
+        user_id=user_id,
+        name=name,
+        color=color,
+        description=None,
+        share_requires_auth=True,
+        created_at=NOW,
+    )
+
+
+def _rollup(user_id, *sources, name="통합", color="#22c55e"):
+    return RollupGroup(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        name=name,
+        color=color,
+        description=None,
+        share_requires_auth=True,
+        created_at=NOW,
+        members=[RollupGroupMember(source_group_id=source.id) for source in sources],
+    )
+
+
+def _buy(
+    holding_id,
+    ticker,
+    currency,
+    *,
+    source_group_id=None,
+    quantity="1",
+    price="100",
+    tx_date=date(2026, 1, 1),
+    principal_flow=PrincipalFlow.DEPOSIT,
+):
+    tx_id = uuid.uuid4()
+    return SimpleNamespace(
+        id=tx_id,
+        holding_id=holding_id,
+        type=TransactionType.BUY,
+        quantity=Decimal(quantity),
+        price=Decimal(price),
+        transaction_date=tx_date,
+        created_at=NOW,
+        source_group_id=source_group_id,
+        principal_flow=principal_flow,
+        requires_review=False,
+        buy_lot=SimpleNamespace(id=uuid.uuid4()),
+        sell_allocations=[],
+        transaction_labels=[],
+    )
+
+
+def _sell(
+    holding_id,
+    buy_transaction,
+    *,
+    source_group_id=None,
+    quantity="1",
+    price="120",
+    tx_date=date(2026, 2, 1),
+    principal_flow=PrincipalFlow.REINVEST,
+):
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        holding_id=holding_id,
+        type=TransactionType.SELL,
+        quantity=Decimal(quantity),
+        price=Decimal(price),
+        transaction_date=tx_date,
+        created_at=NOW,
+        source_group_id=source_group_id,
+        principal_flow=principal_flow,
+        requires_review=False,
+        buy_lot=None,
+        sell_allocations=[
+            SimpleNamespace(
+                buy_lot_id=buy_transaction.buy_lot.id,
+                quantity=Decimal(quantity),
+            )
+        ],
+        transaction_labels=[],
+    )
+
+
+def _holding(ticker, currency, *transactions, name=None, active=True, snapshots=()):
+    market = Market.KRX if currency == Currency.KRW else Market.US
+    return SimpleNamespace(
+        id=transactions[0].holding_id,
+        ticker=ticker,
+        market=market,
+        name=name or ticker,
+        currency=currency,
+        is_active=active,
+        transactions=list(transactions),
+        snapshots=list(snapshots),
+    )
+
+
+def _snapshot(snapshot_date, close_price):
+    return SimpleNamespace(snapshot_date=snapshot_date, close_price=Decimal(close_price))
+
+
+def test_krw_display_converts_usd_assets_and_includes_group_rows():
+    user_id = uuid.uuid4()
+    salary = _source(user_id, name="월급", color="#111111")
+    family = _rollup(user_id, salary, name="가족", color="#222222")
+    krw_holding_id = uuid.uuid4()
+    usd_holding_id = uuid.uuid4()
+    holdings = [
+        _holding(
+            "005930",
+            Currency.KRW,
+            _buy(krw_holding_id, "005930", Currency.KRW, quantity="2", price="1000"),
+            name="삼성전자",
+        ),
+        _holding(
+            "AAPL",
+            Currency.USD,
+            _buy(
+                usd_holding_id,
+                "AAPL",
+                Currency.USD,
+                source_group_id=salary.id,
+                quantity="3",
+                price="10",
+            ),
+            name="Apple",
+        ),
+    ]
+
+    response = build_dashboard_response(
+        holdings=holdings,
+        source_groups=[salary],
+        rollup_groups=[family],
+        current_prices={"005930": Decimal("1200"), "AAPL": Decimal("12")},
+        display_currency="KRW",
+        exchange_rate=RATE,
+    )
+
+    assert response.display_currency == "KRW"
+    assert response.summary.total_invested_principal == Decimal("41000")
+    assert response.summary.total_cost_basis == Decimal("41000")
+    assert response.summary.total_current_value == Decimal("49200")
+    assert response.summary.total_profit_loss == Decimal("8200")
+    assert response.summary.total_profit_loss_pct == Decimal("20.0")
+    assert [(group.kind, group.name) for group in response.groups] == [
+        ("source", "월급"),
+        ("combined", "가족"),
+        ("unclassified", "미분류"),
+    ]
+    assert response.groups[0].summary.total_current_value == Decimal("46800")
+    assert response.groups[1].summary.total_current_value == Decimal("46800")
+    assert response.groups[2].summary.total_current_value == Decimal("2400")
+
+
+def test_usd_display_includes_only_usd_assets():
+    user_id = uuid.uuid4()
+    salary = _source(user_id, name="월급")
+    krw_holding_id = uuid.uuid4()
+    usd_holding_id = uuid.uuid4()
+    holdings = [
+        _holding(
+            "005930",
+            Currency.KRW,
+            _buy(krw_holding_id, "005930", Currency.KRW, quantity="2", price="1000"),
+        ),
+        _holding(
+            "AAPL",
+            Currency.USD,
+            _buy(
+                usd_holding_id,
+                "AAPL",
+                Currency.USD,
+                source_group_id=salary.id,
+                quantity="3",
+                price="10",
+            ),
+        ),
+    ]
+
+    response = build_dashboard_response(
+        holdings=holdings,
+        source_groups=[salary],
+        rollup_groups=[],
+        current_prices={"005930": Decimal("1200"), "AAPL": Decimal("12")},
+        display_currency="USD",
+        exchange_rate=RATE,
+    )
+
+    assert response.summary.total_invested_principal == Decimal("30")
+    assert response.summary.total_cost_basis == Decimal("30")
+    assert response.summary.total_current_value == Decimal("36")
+    assert [holding.ticker for holding in response.holdings] == ["AAPL"]
+    assert [group.name for group in response.groups] == ["월급"]
+
+
+def test_krw_display_without_rate_nulls_usd_only_summary():
+    user_id = uuid.uuid4()
+    salary = _source(user_id, name="월급")
+    holding_id = uuid.uuid4()
+    holding = _holding(
+        "AAPL",
+        Currency.USD,
+        _buy(
+            holding_id,
+            "AAPL",
+            Currency.USD,
+            source_group_id=salary.id,
+            quantity="3",
+            price="10",
+        ),
+    )
+
+    response = build_dashboard_response(
+        holdings=[holding],
+        source_groups=[salary],
+        rollup_groups=[],
+        current_prices={"AAPL": Decimal("12")},
+        display_currency="KRW",
+        exchange_rate=None,
+    )
+
+    assert response.summary.total_invested_principal is None
+    assert response.summary.total_cost_basis is None
+    assert response.summary.total_current_value is None
+    assert response.summary.total_profit_loss is None
+    assert "USD/KRW exchange rate unavailable; USD values are omitted" in response.warnings
+
+
+def test_krw_display_without_rate_keeps_krw_values_for_mixed_summary():
+    user_id = uuid.uuid4()
+    krw_holding_id = uuid.uuid4()
+    usd_holding_id = uuid.uuid4()
+    holdings = [
+        _holding(
+            "005930",
+            Currency.KRW,
+            _buy(krw_holding_id, "005930", Currency.KRW, quantity="2", price="1000"),
+        ),
+        _holding(
+            "AAPL",
+            Currency.USD,
+            _buy(usd_holding_id, "AAPL", Currency.USD, quantity="3", price="10"),
+        ),
+    ]
+
+    response = build_dashboard_response(
+        holdings=holdings,
+        source_groups=[],
+        rollup_groups=[],
+        current_prices={"005930": Decimal("1200"), "AAPL": Decimal("12")},
+        display_currency="KRW",
+        exchange_rate=None,
+    )
+
+    assert response.summary.total_invested_principal == Decimal("2000")
+    assert response.summary.total_cost_basis == Decimal("2000")
+    assert response.summary.total_current_value == Decimal("2400")
+    assert response.summary.total_profit_loss == Decimal("400")
+    assert response.summary.total_profit_loss_pct == Decimal("20.0")
+    assert "USD/KRW exchange rate unavailable; USD values are omitted" in response.warnings
+
+
+def test_holding_group_badges_use_remaining_lot_source_groups_only():
+    user_id = uuid.uuid4()
+    salary = _source(user_id, name="월급", color="#111111")
+    bonus = _source(user_id, name="보너스", color="#222222")
+    family = _rollup(user_id, salary, bonus, name="가족")
+    holding_id = uuid.uuid4()
+    sold_salary_buy = _buy(
+        holding_id,
+        "AAPL",
+        Currency.USD,
+        source_group_id=salary.id,
+        quantity="2",
+        price="10",
+    )
+    remaining_bonus_buy = _buy(
+        holding_id,
+        "AAPL",
+        Currency.USD,
+        source_group_id=bonus.id,
+        quantity="3",
+        price="10",
+        tx_date=date(2026, 1, 2),
+    )
+    unclassified_buy = _buy(
+        holding_id,
+        "AAPL",
+        Currency.USD,
+        quantity="1",
+        price="10",
+        tx_date=date(2026, 1, 3),
+    )
+    holding = _holding(
+        "AAPL",
+        Currency.USD,
+        sold_salary_buy,
+        remaining_bonus_buy,
+        unclassified_buy,
+        _sell(
+            holding_id,
+            sold_salary_buy,
+            source_group_id=salary.id,
+            quantity="2",
+            price="11",
+        ),
+    )
+
+    response = build_dashboard_response(
+        holdings=[holding],
+        source_groups=[salary, bonus],
+        rollup_groups=[family],
+        current_prices={"AAPL": Decimal("12")},
+        display_currency="USD",
+        exchange_rate=RATE,
+    )
+
+    assert [(badge.name, badge.remaining_quantity) for badge in response.holdings[0].groups] == [
+        ("보너스", Decimal("3")),
+        ("미분류", Decimal("1")),
+    ]
+
+
+def test_holding_remaining_cost_basis_is_null_when_conversion_fails():
+    user_id = uuid.uuid4()
+    holding_id = uuid.uuid4()
+    holding = _holding(
+        "AAPL",
+        Currency.USD,
+        _buy(holding_id, "AAPL", Currency.USD, quantity="2", price="10"),
+    )
+
+    response = build_dashboard_response(
+        holdings=[holding],
+        source_groups=[],
+        rollup_groups=[],
+        current_prices={"AAPL": Decimal("12")},
+        display_currency="KRW",
+        exchange_rate=None,
+    )
+
+    assert response.holdings[0].remaining_cost_basis is None
+
+
+def test_dashboard_history_includes_inactive_holding_snapshots():
+    active_holding_id = uuid.uuid4()
+    inactive_holding_id = uuid.uuid4()
+    holdings = [
+        _holding(
+            "005930",
+            Currency.KRW,
+            _buy(active_holding_id, "005930", Currency.KRW, quantity="1", price="1000"),
+            snapshots=[_snapshot(date(2026, 1, 2), "1100")],
+        ),
+        _holding(
+            "000660",
+            Currency.KRW,
+            _buy(inactive_holding_id, "000660", Currency.KRW, quantity="2", price="500"),
+            active=False,
+            snapshots=[_snapshot(date(2026, 1, 3), "600")],
+        ),
+    ]
+
+    response = build_dashboard_response(
+        holdings=holdings,
+        source_groups=[],
+        rollup_groups=[],
+        current_prices={"005930": Decimal("1200")},
+        display_currency="KRW",
+        exchange_rate=None,
+    )
+
+    total_rows = [row for row in response.history.rows if row.group_kind == "total"]
+    assert [row.snapshot_date for row in total_rows] == [
+        date(2026, 1, 2),
+        date(2026, 1, 3),
+    ]
+    assert total_rows[1].total_value == Decimal("2300")
+    assert [holding.ticker for holding in response.holdings] == ["005930"]
+
+
+def test_krw_history_without_rate_nulls_usd_only_values():
+    holding_id = uuid.uuid4()
+    holding = _holding(
+        "AAPL",
+        Currency.USD,
+        _buy(holding_id, "AAPL", Currency.USD, quantity="2", price="10"),
+        snapshots=[_snapshot(date(2026, 1, 2), "12")],
+    )
+
+    response = build_dashboard_response(
+        holdings=[holding],
+        source_groups=[],
+        rollup_groups=[],
+        current_prices={"AAPL": Decimal("12")},
+        display_currency="KRW",
+        exchange_rate=None,
+    )
+
+    total_rows = [row for row in response.history.rows if row.group_kind == "total"]
+    assert total_rows[0].total_value is None
+    assert total_rows[0].total_invested_principal is None
+    assert "USD/KRW exchange rate unavailable; USD values are omitted" in response.warnings
+
+
+def test_krw_history_without_rate_keeps_krw_values_for_mixed_history():
+    krw_holding_id = uuid.uuid4()
+    usd_holding_id = uuid.uuid4()
+    holdings = [
+        _holding(
+            "005930",
+            Currency.KRW,
+            _buy(krw_holding_id, "005930", Currency.KRW, quantity="1", price="1000"),
+            snapshots=[_snapshot(date(2026, 1, 2), "1100")],
+        ),
+        _holding(
+            "AAPL",
+            Currency.USD,
+            _buy(usd_holding_id, "AAPL", Currency.USD, quantity="2", price="10"),
+            snapshots=[_snapshot(date(2026, 1, 2), "12")],
+        ),
+    ]
+
+    response = build_dashboard_response(
+        holdings=holdings,
+        source_groups=[],
+        rollup_groups=[],
+        current_prices={"005930": Decimal("1100"), "AAPL": Decimal("12")},
+        display_currency="KRW",
+        exchange_rate=None,
+    )
+
+    total_rows = [row for row in response.history.rows if row.group_kind == "total"]
+    assert total_rows[0].total_value == Decimal("1100")
+    assert total_rows[0].total_invested_principal == Decimal("1000")
+    assert total_rows[0].total_profit_loss == Decimal("100")
+    assert "USD/KRW exchange rate unavailable; USD values are omitted" in response.warnings
+
+
+@pytest.mark.asyncio
+async def test_dashboard_rate_lookup_runs_in_thread_for_inactive_usd_history(monkeypatch):
+    user_id = uuid.uuid4()
+    holding_id = uuid.uuid4()
+    holding = _holding(
+        "AAPL",
+        Currency.USD,
+        _buy(holding_id, "AAPL", Currency.USD),
+        active=False,
+        snapshots=[_snapshot(date(2026, 1, 2), "12")],
+    )
+    calls = []
+
+    async def _load_scoped_holdings(_db, _user_id, *, include_inactive=False):
+        return [holding]
+
+    async def _load_dashboard_groups(_db, _user_id):
+        return [], []
+
+    async def _fetch_current_prices(_tickers):
+        assert _tickers == set()
+        return {}
+
+    def _get_usd_krw_rate():
+        raise AssertionError("get_usd_krw_rate should be called through to_thread")
+
+    async def _to_thread(func, *args, **kwargs):
+        calls.append(func)
+        return RATE
+
+    monkeypatch.setattr(portfolio_router, "_load_scoped_holdings", _load_scoped_holdings)
+    monkeypatch.setattr(portfolio_router, "_load_dashboard_groups", _load_dashboard_groups)
+    monkeypatch.setattr(portfolio_router, "_fetch_current_prices", _fetch_current_prices)
+    monkeypatch.setattr(portfolio_router, "get_usd_krw_rate", _get_usd_krw_rate)
+    monkeypatch.setattr(portfolio_router.asyncio, "to_thread", _to_thread)
+
+    response = await build_portfolio_dashboard_response(
+        _QueuedSession(),
+        user_id,
+        display_currency="KRW",
+    )
+
+    assert calls == [_get_usd_krw_rate]
+    assert response.exchange_rate.rate == Decimal("1300")
+    assert response.holdings == []
+    assert response.history.rows[0].total_value == Decimal("15600")
+
+
+@pytest.mark.asyncio
+async def test_dashboard_endpoint_returns_authenticated_aggregate(monkeypatch):
+    user = SimpleNamespace(id=uuid.uuid4())
+    source = _source(user.id, name="월급")
+    holding_id = uuid.uuid4()
+    holding = _holding(
+        "AAPL",
+        Currency.USD,
+        _buy(holding_id, "AAPL", Currency.USD, source_group_id=source.id),
+        snapshots=[_snapshot(date(2026, 1, 2), "11")],
+    )
+    db = _QueuedSession()
+    db.queue(_Result(many=[holding]), _Result(many=[source]), _Result(many=[]))
+
+    async def _fetch_current_prices(tickers):
+        assert tickers == {"AAPL"}
+        return {"AAPL": Decimal("12")}
+
+    monkeypatch.setattr(portfolio_router, "_fetch_current_prices", _fetch_current_prices)
+    monkeypatch.setattr(portfolio_router, "get_usd_krw_rate", lambda: RATE)
+
+    response = await get_portfolio_dashboard(current_user=user, db=db)
+
+    assert response.display_currency == "KRW"
+    assert response.summary.total_current_value == Decimal("15600")
+    assert response.groups[0].name == "월급"
+    assert response.holdings[0].ticker == "AAPL"
+    assert response.history.rows[0].group_kind == "total"
+
+
+def test_dashboard_endpoint_requires_authentication():
+    app = FastAPI()
+    app.include_router(router)
+
+    async def _unauthenticated_user():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+
+    async def _unused_db():
+        yield _QueuedSession()
+
+    app.dependency_overrides[get_current_user] = _unauthenticated_user
+    app.dependency_overrides[get_db] = _unused_db
+
+    response = TestClient(app).get("/api/portfolio/dashboard")
+
+    assert response.status_code == 401

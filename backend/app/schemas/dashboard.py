@@ -1,0 +1,82 @@
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Literal
+import uuid
+
+from pydantic import BaseModel
+
+from app.models.holding import Currency, Market
+
+
+DisplayCurrency = Literal["KRW", "USD"]
+DashboardGroupKind = Literal["source", "combined", "unclassified"]
+DashboardHistoryGroupKind = Literal["total", "source", "combined", "unclassified"]
+
+
+class DashboardExchangeRate(BaseModel):
+    base: str
+    quote: str
+    rate: Decimal
+    as_of: datetime
+
+
+class DashboardSummary(BaseModel):
+    total_invested_principal: Decimal | None
+    total_cost_basis: Decimal | None
+    total_current_value: Decimal | None
+    total_profit_loss: Decimal | None
+    total_profit_loss_pct: Decimal | None
+
+
+class DashboardGroupSummary(BaseModel):
+    kind: DashboardGroupKind
+    id: uuid.UUID | None
+    name: str
+    color: str | None
+    summary: DashboardSummary
+
+
+class DashboardHoldingGroupBadge(BaseModel):
+    source_group_id: uuid.UUID | None
+    name: str
+    color: str | None
+    remaining_quantity: Decimal
+
+
+class DashboardHoldingRow(BaseModel):
+    holding_id: uuid.UUID
+    ticker: str
+    name: str | None
+    market: Market
+    currency: Currency
+    quantity: Decimal
+    remaining_cost_basis: Decimal | None
+    current_price: Decimal | None
+    current_value: Decimal | None
+    unrealized_profit_loss: Decimal | None
+    groups: list[DashboardHoldingGroupBadge]
+
+
+class DashboardHistoryRow(BaseModel):
+    group_kind: DashboardHistoryGroupKind
+    group_id: uuid.UUID | None
+    group_name: str
+    snapshot_date: date
+    total_value: Decimal | None
+    total_invested_principal: Decimal | None
+    total_cost_basis: Decimal | None
+    total_profit_loss: Decimal | None
+
+
+class DashboardHistorySeries(BaseModel):
+    rows: list[DashboardHistoryRow]
+
+
+class DashboardResponse(BaseModel):
+    display_currency: DisplayCurrency
+    exchange_rate: DashboardExchangeRate | None
+    summary: DashboardSummary
+    groups: list[DashboardGroupSummary]
+    history: DashboardHistorySeries
+    holdings: list[DashboardHoldingRow]
+    warnings: list[str]
