@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload, with_loader_criteria
 
 from app.database import get_db
 from app.models.group import BuyLot, Label, RollupGroup, RollupGroupMember, SourceGroup
-from app.models.holding import Currency, Holding, Transaction as OrmTransaction, TransactionType
+from app.models.holding import Currency, Holding, PrincipalFlow, Transaction as OrmTransaction, TransactionType
 from app.models.tag import HoldingTag, Tag
 from app.models.user import User
 from app.routers.deps import get_current_user
@@ -239,6 +239,7 @@ def _orm_transactions(holdings: list[Holding]) -> list[lot_accounting.Transactio
                     price=transaction.price,
                     transaction_date=transaction.transaction_date,
                     created_at=transaction.created_at,
+                    principal_flow=_transaction_principal_flow(transaction).value,
                     source_group_id=transaction.source_group_id,
                     lot_id=transaction.buy_lot.id if transaction.buy_lot is not None else None,
                     label_ids=frozenset(
@@ -255,6 +256,15 @@ def _orm_transactions(holdings: list[Holding]) -> list[lot_accounting.Transactio
                 )
             )
     return transactions
+
+
+def _transaction_principal_flow(transaction: OrmTransaction) -> PrincipalFlow:
+    flow = getattr(transaction, "principal_flow", None)
+    if isinstance(flow, PrincipalFlow):
+        return flow
+    if isinstance(flow, str):
+        return PrincipalFlow(flow)
+    return PrincipalFlow.DEPOSIT if transaction.type == TransactionType.BUY else PrincipalFlow.REINVEST
 
 
 def _replay_by_currency(
@@ -350,6 +360,7 @@ def _build_scoped_dashboard_payload(
     for currency in Currency:
         if currency in review_currencies:
             currencies[currency] = PortfolioCurrencySummary(
+                total_invested_principal=None,
                 total_cost_basis=None,
                 total_current_value=None,
                 total_profit_loss=None,
@@ -375,18 +386,27 @@ def _build_scoped_dashboard_payload(
             if has_prices
             else None
         )
+        invested_principal = lot_accounting.invested_principal_by_currency(
+            [
+                transaction
+                for transaction in _orm_transactions(active_holdings)
+                if transaction.currency == currency.value
+            ],
+            scope,
+        ).get(currency.value, Decimal(0))
         total_profit_loss = (
-            total_current_value - total_cost_basis
+            total_current_value - invested_principal
             if total_current_value is not None
             else None
         )
         currencies[currency] = PortfolioCurrencySummary(
+            total_invested_principal=invested_principal,
             total_cost_basis=total_cost_basis,
             total_current_value=total_current_value,
             total_profit_loss=total_profit_loss,
             total_profit_loss_pct=(
-                total_profit_loss / total_cost_basis * 100
-                if total_profit_loss is not None and total_cost_basis > 0
+                total_profit_loss / invested_principal * 100
+                if total_profit_loss is not None and invested_principal > 0
                 else None
             ),
             holding_count=len(currency_holdings),
@@ -485,6 +505,7 @@ def _build_scoped_history(
                 ScopedPortfolioHistoryPoint(
                     snapshot_date=point.snapshot_date,
                     total_value=None if requires_review else point.total_value,
+                    total_invested_principal=None if requires_review else point.total_invested_principal,
                     total_cost_basis=None if requires_review else point.total_cost_basis,
                     total_profit_loss=None if requires_review else point.total_profit_loss,
                     unavailable_price_count=(

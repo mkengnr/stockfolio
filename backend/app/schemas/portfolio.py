@@ -22,6 +22,7 @@ class PortfolioHistoryOut(BaseModel):
 
 
 class PortfolioCurrencySummary(BaseModel):
+    total_invested_principal: Decimal | None
     total_cost_basis: Decimal | None
     total_current_value: Decimal | None
     total_profit_loss: Decimal | None
@@ -66,6 +67,7 @@ class ScopedPortfolioHoldingsOut(BaseModel):
 class ScopedPortfolioHistoryPoint(BaseModel):
     snapshot_date: date
     total_value: Decimal | None
+    total_invested_principal: Decimal | None
     total_cost_basis: Decimal | None
     total_profit_loss: Decimal | None
     unavailable_price_count: int

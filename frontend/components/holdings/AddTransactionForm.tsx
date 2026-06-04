@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { compareFixedDecimals, isPositiveFixedDecimal, sumFixedDecimals } from '@/lib/fixedDecimal'
 import { today } from '@/lib/utils'
-import type { BuyLot, Currency, Label, SourceGroup } from '@/lib/types'
+import type { BuyLot, Currency, Label, PrincipalFlow, SourceGroup } from '@/lib/types'
 
 interface Props {
   holdingId: string
@@ -33,6 +33,7 @@ export function AddTransactionForm({ holdingId, currency = 'KRW', onSuccess }: P
   const [quantity, setQuantity] = useState('')
   const [price, setPrice] = useState('')
   const [txDate, setTxDate] = useState(today())
+  const [principalFlow, setPrincipalFlow] = useState<PrincipalFlow>('DEPOSIT')
   const [sourceGroupId, setSourceGroupId] = useState<string | null>(null)
   const [labelIds, setLabelIds] = useState<string[]>([])
   const [lots, setLots] = useState<BuyLot[]>([])
@@ -130,6 +131,7 @@ export function AddTransactionForm({ holdingId, currency = 'KRW', onSuccess }: P
         quantity,
         price,
         transaction_date: txDate,
+        principal_flow: principalFlow,
         source_group_id: sourceGroupId,
         label_ids: labelIds,
         sell_allocations: type === 'SELL' ? sellAllocations : [],
@@ -153,7 +155,10 @@ export function AddTransactionForm({ holdingId, currency = 'KRW', onSuccess }: P
           <button
             key={t}
             type="button"
-            onClick={() => setType(t)}
+            onClick={() => {
+              setType(t)
+              setPrincipalFlow(t === 'BUY' ? 'DEPOSIT' : 'REINVEST')
+            }}
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               type === t
                 ? t === 'BUY' ? 'bg-brand-500 text-white' : 'bg-red-500 text-white'
@@ -195,6 +200,26 @@ export function AddTransactionForm({ holdingId, currency = 'KRW', onSuccess }: P
         required
         className="w-40"
       />
+      <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+        투자원금처리
+        <select
+          value={principalFlow}
+          onChange={(e) => setPrincipalFlow(e.target.value as PrincipalFlow)}
+          className="w-48 rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
+        >
+          {type === 'BUY' ? (
+            <>
+              <option value="DEPOSIT">입금</option>
+              <option value="REINVEST">재투자</option>
+            </>
+          ) : (
+            <>
+              <option value="REINVEST">재투자</option>
+              <option value="WITHDRAW">출금</option>
+            </>
+          )}
+        </select>
+      </label>
       <SourceGroupSelect groups={sourceGroups} value={sourceGroupId} onChange={setSourceGroupId} />
       <Button type="submit" loading={loading} disabled={metadataLoading || Boolean(metadataError)}>추가</Button>
       <div className="w-full">

@@ -7,7 +7,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 
 from app.models.group import Label, RollupGroup, RollupGroupMember, SourceGroup
-from app.models.holding import Currency, TransactionType
+from app.models.holding import Currency, PrincipalFlow, TransactionType
 from app.routers import portfolio as portfolio_router
 from app.routers.portfolio import (
     _build_scoped_dashboard_payload,
@@ -65,6 +65,7 @@ def _buy(
     quantity="1",
     price="100",
     tx_date=date(2026, 1, 1),
+    principal_flow=PrincipalFlow.DEPOSIT,
 ):
     tx_id = uuid.uuid4()
     return SimpleNamespace(
@@ -76,12 +77,46 @@ def _buy(
         transaction_date=tx_date,
         created_at=NOW,
         source_group_id=source_group_id,
+        principal_flow=principal_flow,
         requires_review=False,
         buy_lot=SimpleNamespace(id=uuid.uuid4()),
         sell_allocations=[],
         transaction_labels=[
             SimpleNamespace(label_id=label_id) for label_id in label_ids
         ],
+    )
+
+
+def _sell(
+    holding_id,
+    buy_transaction,
+    currency,
+    *,
+    source_group_id=None,
+    quantity="1",
+    price="120",
+    tx_date=date(2026, 2, 1),
+    principal_flow=PrincipalFlow.REINVEST,
+):
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        holding_id=holding_id,
+        type=TransactionType.SELL,
+        quantity=Decimal(quantity),
+        price=Decimal(price),
+        transaction_date=tx_date,
+        created_at=NOW,
+        source_group_id=source_group_id,
+        principal_flow=principal_flow,
+        requires_review=False,
+        buy_lot=None,
+        sell_allocations=[
+            SimpleNamespace(
+                buy_lot_id=buy_transaction.buy_lot.id,
+                quantity=Decimal(quantity),
+            )
+        ],
+        transaction_labels=[],
     )
 
 
@@ -101,6 +136,7 @@ def _review_sell(
         transaction_date=date(2026, 2, 1),
         created_at=NOW,
         source_group_id=source_group_id,
+        principal_flow=PrincipalFlow.REINVEST,
         requires_review=True,
         buy_lot=None,
         sell_allocations=[],
@@ -205,6 +241,54 @@ def test_rollup_scope_counts_each_member_source_once():
 
     assert holdings.holdings[0].remaining_quantity == Decimal("3")
     assert summary.currencies[Currency.KRW].total_current_value == Decimal("360")
+
+
+def test_dashboard_tracks_invested_principal_separately_from_remaining_cost_basis():
+    source_id = uuid.uuid4()
+    holding_id = uuid.uuid4()
+    deposit_buy = _buy(
+        holding_id,
+        "005930",
+        Currency.KRW,
+        source_group_id=source_id,
+        quantity="10",
+        price="100",
+        principal_flow=PrincipalFlow.DEPOSIT,
+    )
+    reinvest_buy = _buy(
+        holding_id,
+        "005930",
+        Currency.KRW,
+        source_group_id=source_id,
+        quantity="5",
+        price="80",
+        tx_date=date(2026, 1, 2),
+        principal_flow=PrincipalFlow.REINVEST,
+    )
+    withdrawal_sell = _sell(
+        holding_id,
+        deposit_buy,
+        Currency.KRW,
+        source_group_id=source_id,
+        quantity="2",
+        price="120",
+        principal_flow=PrincipalFlow.WITHDRAW,
+    )
+    holding = _holding("005930", Currency.KRW, deposit_buy, reinvest_buy, withdrawal_sell)
+
+    summary, holdings = _build_scoped_dashboard_payload(
+        [holding],
+        PortfolioScope("source", source_id),
+        {"005930": Decimal("110")},
+    )
+
+    currency_summary = summary.currencies[Currency.KRW]
+    assert holdings.holdings[0].remaining_cost_basis == Decimal("1200")
+    assert currency_summary.total_cost_basis == Decimal("1200")
+    assert currency_summary.total_invested_principal == Decimal("760")
+    assert currency_summary.total_current_value == Decimal("1430")
+    assert currency_summary.total_profit_loss == Decimal("670")
+    assert currency_summary.total_profit_loss_pct == Decimal("88.15789473684210526315789474")
 
 
 def test_dashboard_ignores_inactive_holdings_and_keeps_currencies_separate():

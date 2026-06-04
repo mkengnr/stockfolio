@@ -1,6 +1,7 @@
 export type Market = 'KRX' | 'US'
 export type Currency = 'KRW' | 'USD'
 export type TxType = 'BUY' | 'SELL'
+export type PrincipalFlow = 'DEPOSIT' | 'REINVEST' | 'WITHDRAW'
 
 export interface GroupMetadata {
   id: string
@@ -57,6 +58,7 @@ export interface PortfolioHistory {
 export type AccountingStatus = 'ok' | 'requires_review'
 
 export interface PortfolioCurrencySummary {
+  total_invested_principal: string | null
   total_cost_basis: string | null
   total_current_value: string | null
   total_profit_loss: string | null
@@ -101,6 +103,7 @@ export interface ScopedPortfolioHoldings {
 export interface ScopedPortfolioHistoryPoint {
   snapshot_date: string
   total_value: string | null
+  total_invested_principal: string | null
   total_cost_basis: string | null
   total_profit_loss: string | null
   unavailable_price_count: number
@@ -118,6 +121,7 @@ export interface Transaction {
   quantity: string
   price: string
   transaction_date: string
+  principal_flow: PrincipalFlow
   created_at: string
   source_group_id: string | null
   label_ids: string[]

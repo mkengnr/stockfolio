@@ -40,6 +40,9 @@ class TestDetectMarket:
     def test_leading_zeros_still_krx(self):
         assert detect_market("000660") == Market.KRX
 
+    def test_six_character_krx_code_with_letter_is_krx(self):
+        assert detect_market("0195R0") == Market.KRX
+
     def test_alphabetic_ticker_is_us(self):
         assert detect_market("AAPL") == Market.US
 

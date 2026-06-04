@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { holdingsApi, stocksApi, fetcher } from '@/lib/api'
 import { today } from '@/lib/utils'
-import type { Label, SourceGroup, StockSearchResult } from '@/lib/types'
+import type { Label, PrincipalFlow, SourceGroup, StockSearchResult } from '@/lib/types'
 
 export function HoldingForm() {
   const router = useRouter()
@@ -29,6 +29,7 @@ export function HoldingForm() {
   const [quantity, setQuantity] = useState('')
   const [price, setPrice] = useState('')
   const [txDate, setTxDate] = useState(today())
+  const [principalFlow, setPrincipalFlow] = useState<PrincipalFlow>('DEPOSIT')
   const [notes, setNotes] = useState('')
   const [sourceGroupId, setSourceGroupId] = useState<string | null>(null)
   const [labelIds, setLabelIds] = useState<string[]>([])
@@ -89,6 +90,7 @@ export function HoldingForm() {
         quantity,
         price,
         transaction_date: txDate,
+        principal_flow: principalFlow,
         notes: notes.trim() || undefined,
         source_group_id: sourceGroupId,
         label_ids: labelIds,
@@ -170,6 +172,18 @@ export function HoldingForm() {
           onChange={(e) => setTxDate(e.target.value)}
           required
         />
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">투자원금처리</label>
+          <select
+            value={principalFlow}
+            onChange={(e) => setPrincipalFlow(e.target.value as PrincipalFlow)}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
+          >
+            <option value="DEPOSIT">입금 - 투자원금 증가</option>
+            <option value="REINVEST">재투자 - 투자원금 변화 없음</option>
+          </select>
+        </div>
 
         <Input
           label="메모 (선택)"

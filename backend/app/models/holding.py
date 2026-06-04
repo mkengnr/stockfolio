@@ -22,6 +22,12 @@ class TransactionType(str, enum.Enum):
     SELL = "SELL"
 
 
+class PrincipalFlow(str, enum.Enum):
+    DEPOSIT = "DEPOSIT"
+    REINVEST = "REINVEST"
+    WITHDRAW = "WITHDRAW"
+
+
 class Holding(Base):
     __tablename__ = "holdings"
 
@@ -69,6 +75,9 @@ class Transaction(Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
     price: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
     transaction_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    principal_flow: Mapped[PrincipalFlow] = mapped_column(
+        SAEnum(PrincipalFlow), nullable=False, default=PrincipalFlow.REINVEST
+    )
     requires_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

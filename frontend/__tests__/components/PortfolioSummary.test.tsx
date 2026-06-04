@@ -27,17 +27,19 @@ describe('PortfolioSummary', () => {
   const scopedSummary: PortfolioSummaryPayload = {
     currencies: {
       KRW: {
+        total_invested_principal: '600000',
         total_cost_basis: '700000',
         total_current_value: '750000',
-        total_profit_loss: '50000',
-        total_profit_loss_pct: '7.142857',
+        total_profit_loss: '150000',
+        total_profit_loss_pct: '25',
         holding_count: 1,
       },
       USD: {
+        total_invested_principal: '80',
         total_cost_basis: '100',
         total_current_value: '120',
-        total_profit_loss: '20',
-        total_profit_loss_pct: '20',
+        total_profit_loss: '40',
+        total_profit_loss_pct: '50',
         holding_count: 1,
       },
     },
@@ -49,10 +51,11 @@ describe('PortfolioSummary', () => {
   it('renders scoped remaining cost, current value, and profit without mixing currencies', () => {
     render(<PortfolioSummary summary={scopedSummary} />)
 
+    expect(screen.getAllByText('투자원금')).toHaveLength(2)
     expect(screen.getAllByText('잔여원금')).toHaveLength(2)
     expect(screen.getAllByText('평가금액')).toHaveLength(2)
     expect(screen.getAllByText('평가손익')).toHaveLength(2)
-    expect(screen.getByText(/\$100/)).toBeInTheDocument()
+    expect(screen.getByText(/\$80/)).toBeInTheDocument()
     expect(screen.getByText(/700,000/)).toBeInTheDocument()
   })
 

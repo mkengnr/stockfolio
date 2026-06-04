@@ -9,6 +9,7 @@ from uuid import UUID
 Currency = Literal["KRW", "USD"]
 ScopeKind = Literal["all", "unclassified", "source", "rollup", "label"]
 TransactionType = Literal["buy", "sell"]
+PrincipalFlow = Literal["DEPOSIT", "REINVEST", "WITHDRAW"]
 AccountingStatus = Literal["ok", "requires_review"]
 ZERO = Decimal(0)
 
@@ -45,6 +46,7 @@ class Transaction:
     price: Decimal
     transaction_date: date
     created_at: datetime
+    principal_flow: PrincipalFlow | None = None
     source_group_id: UUID | None = None
     lot_id: UUID | None = None
     label_ids: frozenset[UUID] = field(default_factory=frozenset)
@@ -96,6 +98,7 @@ class ScopedHolding:
 class PortfolioHistoryPoint:
     snapshot_date: date
     total_value: Decimal | None
+    total_invested_principal: Decimal
     total_cost_basis: Decimal
     total_profit_loss: Decimal | None
     unavailable_price_count: int
@@ -130,6 +133,13 @@ BuildHistory = Callable[
 
 def _transaction_type(transaction: Transaction) -> str:
     return str(getattr(transaction.type, "value", transaction.type)).lower()
+
+
+def _principal_flow(transaction: Transaction) -> str:
+    flow = getattr(transaction, "principal_flow", None)
+    if flow is None:
+        return "DEPOSIT" if _transaction_type(transaction) == "buy" else "REINVEST"
+    return str(getattr(flow, "value", flow)).upper()
 
 
 def _transaction_sort_key(transaction: Transaction) -> tuple[date, datetime, str]:
@@ -188,6 +198,38 @@ def _lot_matches_scope(lot: BuyLotState, scope: PortfolioScope) -> bool:
     if scope.kind == "label":
         return scope.id in lot.label_ids
     raise ValueError(f"Unsupported portfolio scope: {scope.kind}")
+
+
+def _transaction_matches_principal_scope(transaction: Transaction, scope: PortfolioScope) -> bool:
+    if scope.kind == "all":
+        return True
+    if scope.kind == "unclassified":
+        return transaction.source_group_id is None
+    if scope.kind == "source":
+        return transaction.source_group_id == scope.id
+    if scope.kind == "rollup":
+        return transaction.source_group_id in scope.resolved_source_group_ids
+    if scope.kind == "label":
+        return scope.id in transaction.label_ids
+    raise ValueError(f"Unsupported portfolio scope: {scope.kind}")
+
+
+def invested_principal_by_currency(
+    transactions: Sequence[Transaction],
+    scope: PortfolioScope = PortfolioScope("all"),
+) -> dict[Currency, Decimal]:
+    totals: dict[Currency, Decimal] = {}
+    for transaction in sorted(transactions, key=_transaction_sort_key):
+        if not _transaction_matches_principal_scope(transaction, scope):
+            continue
+        amount = transaction.quantity * transaction.price
+        flow = _principal_flow(transaction)
+        transaction_type = _transaction_type(transaction)
+        if flow == "DEPOSIT" and transaction_type == "buy":
+            totals[transaction.currency] = totals.get(transaction.currency, ZERO) + amount
+        elif flow == "WITHDRAW" and transaction_type == "sell":
+            totals[transaction.currency] = totals.get(transaction.currency, ZERO) - amount
+    return totals
 
 
 def _selected_realized_profit_loss(
@@ -378,14 +420,16 @@ def build_history(
         snapshot_dates = sorted(set(snapshot_dates))
     series: dict[Currency, list[PortfolioHistoryPoint]] = {"KRW": [], "USD": []}
     for snapshot_date in snapshot_dates:
+        transactions_until_date = [
+            transaction
+            for transaction in transactions
+            if transaction.transaction_date <= snapshot_date
+        ]
         replay_result = replay(
-            [
-                transaction
-                for transaction in transactions
-                if transaction.transaction_date <= snapshot_date
-            ],
+            transactions_until_date,
             scope,
         )
+        invested_principal = invested_principal_by_currency(transactions_until_date, scope)
         totals: dict[Currency, tuple[Decimal, Decimal, int]] = {
             "KRW": (ZERO, ZERO, int(replay_result.accounting_status == "requires_review")),
             "USD": (ZERO, ZERO, int(replay_result.accounting_status == "requires_review")),
@@ -410,11 +454,12 @@ def build_history(
                 PortfolioHistoryPoint(
                     snapshot_date=snapshot_date,
                     total_value=None if unavailable_price_count else total_value,
+                    total_invested_principal=invested_principal.get(currency, ZERO),
                     total_cost_basis=total_cost_basis,
                     total_profit_loss=(
                         None
                         if unavailable_price_count
-                        else total_value - total_cost_basis
+                        else total_value - invested_principal.get(currency, ZERO)
                     ),
                     unavailable_price_count=unavailable_price_count,
                     accounting_status=replay_result.accounting_status,

@@ -17,7 +17,7 @@ const colors: Record<Currency, Record<Measure, string>> = {
 
 const fieldByMeasure = {
   value: 'total_value',
-  cost: 'total_cost_basis',
+  cost: 'total_invested_principal',
   profit: 'total_profit_loss',
 } as const
 
@@ -112,7 +112,7 @@ export function PortfolioChart({ series }: Props) {
           <div key={currency} className="flex items-center gap-3">
             <strong className="text-gray-600">{currency}</strong>
             <Legend color={colors[currency].value} label="평가금액" />
-            <Legend color={colors[currency].cost} label="잔여원금" dashed />
+            <Legend color={colors[currency].cost} label="투자원금" dashed />
             <Legend color={colors[currency].profit} label="평가손익" dotted />
           </div>
         ))}

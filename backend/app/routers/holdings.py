@@ -12,7 +12,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 
 from app.database import get_db
 from app.models.group import BuyLot, Label, SellLotAllocation, SourceGroup, TransactionLabel
-from app.models.holding import Holding, Transaction, TransactionType
+from app.models.holding import Holding, PrincipalFlow, Transaction, TransactionType
 from app.models.user import User
 from app.routers.deps import get_current_user
 from app.schemas.holding import (
@@ -180,6 +180,7 @@ def _transaction_to_out(transaction: Transaction) -> TransactionOut:
         quantity=transaction.quantity,
         price=transaction.price,
         transaction_date=transaction.transaction_date,
+        principal_flow=_transaction_principal_flow(transaction),
         created_at=transaction.created_at,
         source_group_id=transaction.source_group_id,
         label_ids=_transaction_label_ids(transaction),
@@ -206,6 +207,7 @@ def _to_accounting_transaction(holding: Holding, transaction: Transaction) -> Ac
         price=transaction.price,
         transaction_date=transaction.transaction_date,
         created_at=transaction.created_at or datetime.max.replace(tzinfo=timezone.utc),
+        principal_flow=_transaction_principal_flow(transaction).value,
         source_group_id=transaction.source_group_id,
         lot_id=transaction.buy_lot.id if transaction.buy_lot else None,
         label_ids=frozenset(_transaction_label_ids(transaction)),
@@ -218,6 +220,15 @@ def _to_accounting_transaction(holding: Holding, transaction: Transaction) -> Ac
         ),
         requires_review=bool(transaction.requires_review),
     )
+
+
+def _transaction_principal_flow(transaction: Transaction) -> PrincipalFlow:
+    flow = getattr(transaction, "principal_flow", None)
+    if isinstance(flow, PrincipalFlow):
+        return flow
+    if isinstance(flow, str):
+        return PrincipalFlow(flow)
+    return PrincipalFlow.DEPOSIT if transaction.type == TransactionType.BUY else PrincipalFlow.REINVEST
 
 
 def _ensure_active_holding(holding: Holding) -> None:
@@ -460,6 +471,7 @@ async def create_holding(
         quantity=body.quantity,
         price=body.price,
         transaction_date=body.transaction_date,
+        principal_flow=body.principal_flow,
     )
     holding.transactions.append(tx)
     db.add(tx)
@@ -618,6 +630,7 @@ async def add_transaction(
         quantity=body.quantity,
         price=body.price,
         transaction_date=body.transaction_date,
+        principal_flow=body.principal_flow,
         requires_review=False,
         transaction_labels=[],
         sell_allocations=[],

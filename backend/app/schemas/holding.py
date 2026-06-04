@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, date
 from decimal import Decimal
 from pydantic import BaseModel, Field, field_validator, model_validator
-from app.models.holding import Market, Currency, TransactionType
+from app.models.holding import Market, Currency, PrincipalFlow, TransactionType
 
 
 class SellLotAllocationIn(BaseModel):
@@ -33,6 +33,7 @@ class TransactionIn(BaseModel):
     quantity: Decimal = Field(gt=0)
     price: Decimal = Field(gt=0)
     transaction_date: date
+    principal_flow: PrincipalFlow | None = None
     source_group_id: uuid.UUID | None = None
     label_ids: list[uuid.UUID] = Field(default_factory=list)
     sell_allocations: list[SellLotAllocationIn] = Field(default_factory=list)
@@ -46,6 +47,14 @@ class TransactionIn(BaseModel):
 
     @model_validator(mode="after")
     def validate_sell_allocations(self):
+        if self.principal_flow is None:
+            self.principal_flow = (
+                PrincipalFlow.DEPOSIT if self.type == TransactionType.BUY else PrincipalFlow.REINVEST
+            )
+        if self.type == TransactionType.BUY and self.principal_flow == PrincipalFlow.WITHDRAW:
+            raise ValueError("BUY transactions cannot withdraw principal")
+        if self.type == TransactionType.SELL and self.principal_flow == PrincipalFlow.DEPOSIT:
+            raise ValueError("SELL transactions cannot deposit principal")
         if self.type == TransactionType.SELL and not self.sell_allocations:
             raise ValueError("SELL transactions require sell_allocations")
         if self.type == TransactionType.BUY and self.sell_allocations:
@@ -59,6 +68,7 @@ class TransactionOut(BaseModel):
     quantity: Decimal
     price: Decimal
     transaction_date: date
+    principal_flow: PrincipalFlow
     created_at: datetime
     source_group_id: uuid.UUID | None
     label_ids: list[uuid.UUID]
@@ -72,6 +82,7 @@ class HoldingCreateIn(BaseModel):
     quantity: Decimal = Field(gt=0)
     price: Decimal = Field(gt=0)  # 최초 매수 단가
     transaction_date: date
+    principal_flow: PrincipalFlow = PrincipalFlow.DEPOSIT
     notes: str | None = None
     source_group_id: uuid.UUID | None = None
     label_ids: list[uuid.UUID] = Field(default_factory=list)
@@ -86,6 +97,13 @@ class HoldingCreateIn(BaseModel):
     def reject_duplicate_labels(cls, value: list[uuid.UUID]) -> list[uuid.UUID]:
         if len(value) != len(set(value)):
             raise ValueError("label_ids must not contain duplicates")
+        return value
+
+    @field_validator("principal_flow")
+    @classmethod
+    def reject_withdraw_on_initial_buy(cls, value: PrincipalFlow) -> PrincipalFlow:
+        if value == PrincipalFlow.WITHDRAW:
+            raise ValueError("initial BUY cannot withdraw principal")
         return value
 
 

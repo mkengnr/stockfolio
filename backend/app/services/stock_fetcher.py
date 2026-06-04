@@ -29,8 +29,9 @@ KOREAN_YFINANCE_SYMBOL = re.compile(r"^(?P<ticker>\d{6})\.(?:KS|KQ)$", re.IGNORE
 
 
 def detect_market(ticker: str) -> Market:
-    """Return KRX for 6-digit numeric tickers, US otherwise."""
-    return Market.KRX if re.fullmatch(r"\d{6}", ticker) else Market.US
+    """Return KRX for six-character Korean exchange codes, US otherwise."""
+    normalized = ticker.upper()
+    return Market.KRX if re.fullmatch(r"(?:\d{6}|\d{4}[A-Z]\d)", normalized) else Market.US
 
 
 def detect_currency(market: Market) -> Currency:

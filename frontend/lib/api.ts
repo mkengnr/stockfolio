@@ -1,5 +1,5 @@
 import type {
-  BuyLot, GroupKind, Holding, HoldingDetail, Label, PortfolioScope, PortfolioSummary,
+  BuyLot, GroupKind, Holding, HoldingDetail, Label, PortfolioScope, PortfolioSummary, PrincipalFlow,
   RollupGroup, ScopedPortfolioHistory, ScopedPortfolioHoldings, SharedGroup, SharedTag,
   SourceGroup, StockSearchResult, Tag, TagDetail, Transaction, User,
 } from './types'
@@ -52,6 +52,7 @@ export const holdingsApi = {
     quantity: string
     price: string
     transaction_date: string
+    principal_flow?: PrincipalFlow
     notes?: string
     source_group_id: string | null
     label_ids: string[]
@@ -69,6 +70,7 @@ export const holdingsApi = {
     quantity: string
     price: string
     transaction_date: string
+    principal_flow: PrincipalFlow
     source_group_id: string | null
     label_ids: string[]
     sell_allocations: { buy_lot_id: string; quantity: string }[]

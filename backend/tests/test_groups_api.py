@@ -535,6 +535,7 @@ def test_public_share_redacts_internal_transaction_ids_from_warnings(client, use
                     {
                         "snapshot_date": "2026-01-01",
                         "total_value": None,
+                        "total_invested_principal": None,
                         "total_cost_basis": None,
                         "total_profit_loss": None,
                         "unavailable_price_count": 1,

@@ -47,7 +47,8 @@ function ScopedSummary({ summary }: { summary: SummaryPayload }) {
       {groups.map(([currency, currencySummary]) => (
         <div key={currency}>
           <p className="mb-2 text-xs font-semibold text-gray-400">{currency}</p>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+            <SummaryCard title="투자원금" value={displayCurrency(currencySummary.total_invested_principal, currency)} />
             <SummaryCard title="잔여원금" value={displayCurrency(currencySummary.total_cost_basis, currency)} />
             <SummaryCard title="평가금액" value={displayCurrency(currencySummary.total_current_value, currency)} />
             <SummaryCard

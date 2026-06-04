@@ -233,8 +233,10 @@ def test_existing_payloads_remain_valid_and_unclassified():
     )
 
     assert create.source_group_id is None
+    assert create.principal_flow == "DEPOSIT"
     assert create.label_ids == []
     assert tx.source_group_id is None
+    assert tx.principal_flow == "DEPOSIT"
     assert tx.label_ids == []
     assert tx.sell_allocations == []
 
@@ -277,6 +279,7 @@ def test_create_holding_creates_initial_unclassified_buy_lot(client, db):
     assert response.status_code == 201
     payload = response.json()
     assert payload["transactions"][0]["source_group_id"] is None
+    assert payload["transactions"][0]["principal_flow"] == "DEPOSIT"
     assert payload["transactions"][0]["buy_lot"]["remaining_quantity"] == "1"
     assert any(isinstance(entity, BuyLot) for entity in db.added)
 
