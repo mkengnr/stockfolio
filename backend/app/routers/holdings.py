@@ -18,6 +18,8 @@ from app.routers.deps import get_current_user
 from app.schemas.holding import (
     BuyLotOut,
     HoldingCreateIn, HoldingDetailOut, HoldingOut, HoldingUpdateIn,
+    HoldingGroupBreakdownOut,
+    HoldingPerformanceOut,
     SellLotAllocationOut,
     SnapshotOut,
     TransactionClassificationIn,
@@ -27,8 +29,10 @@ from app.schemas.holding import (
 )
 from app.services import stock_fetcher
 from app.services.lot_accounting import (
+    PortfolioScope,
     SellAllocationInput,
     Transaction as AccountingTransaction,
+    invested_principal_by_currency,
     replay,
 )
 from app.services.price_cache import get_price
@@ -134,6 +138,29 @@ async def _validate_label_ids(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Label not found")
 
 
+async def _load_holding_source_groups(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    holding: Holding,
+) -> list[SourceGroup]:
+    source_group_ids = sorted(
+        {
+            transaction.source_group_id
+            for transaction in holding.transactions
+            if transaction.source_group_id is not None
+        },
+        key=str,
+    )
+    if not source_group_ids:
+        return []
+    result = await db.execute(
+        select(SourceGroup)
+        .where(SourceGroup.id.in_(source_group_ids))
+        .where(SourceGroup.user_id == user_id)
+    )
+    return result.scalars().all()
+
+
 async def _lock_owned_buy_lots(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -220,6 +247,95 @@ def _to_accounting_transaction(holding: Holding, transaction: Transaction) -> Ac
         ),
         requires_review=bool(transaction.requires_review),
     )
+
+
+def _profit_loss_pct(profit_loss: Decimal | None, principal: Decimal) -> Decimal | None:
+    if profit_loss is None or principal <= ZERO:
+        return None
+    return profit_loss / principal * Decimal(100)
+
+
+def _scope_invested_principal(
+    transactions: list[AccountingTransaction],
+    holding: Holding,
+    scope: PortfolioScope,
+) -> Decimal:
+    return invested_principal_by_currency(transactions, scope).get(holding.currency.value, ZERO)
+
+
+def _holding_performance(
+    holding: Holding,
+    current_price: Decimal | None,
+    source_groups: list[SourceGroup],
+) -> tuple[HoldingPerformanceOut | None, list[HoldingGroupBreakdownOut]]:
+    transactions = [_to_accounting_transaction(holding, transaction) for transaction in holding.transactions]
+    replay_result = replay(transactions)
+    if replay_result.accounting_status == "requires_review":
+        return None, []
+    invested_principal = _scope_invested_principal(transactions, holding, PortfolioScope("all"))
+    remaining_cost_basis = sum(
+        (lot.remaining_quantity * lot.unit_price for lot in replay_result.lots.values()),
+        ZERO,
+    )
+    current_value = holding.quantity * current_price if current_price is not None else None
+    profit_loss = current_value - invested_principal if current_value is not None else None
+    performance = HoldingPerformanceOut(
+        total_invested_principal=invested_principal,
+        remaining_cost_basis=remaining_cost_basis,
+        current_value=current_value,
+        profit_loss=profit_loss,
+        profit_loss_pct=_profit_loss_pct(profit_loss, invested_principal),
+    )
+
+    source_by_id = {source_group.id: source_group for source_group in source_groups}
+    lot_totals: dict[uuid.UUID | None, tuple[Decimal, Decimal]] = {}
+    for lot in replay_result.lots.values():
+        if lot.remaining_quantity <= ZERO:
+            continue
+        quantity, cost_basis = lot_totals.get(lot.source_group_id, (ZERO, ZERO))
+        lot_totals[lot.source_group_id] = (
+            quantity + lot.remaining_quantity,
+            cost_basis + lot.remaining_quantity * lot.unit_price,
+        )
+
+    group_breakdown: list[HoldingGroupBreakdownOut] = []
+    for source_group_id, (remaining_quantity, group_cost_basis) in sorted(
+        lot_totals.items(),
+        key=lambda item: (
+            item[0] is None,
+            source_by_id[item[0]].name if item[0] in source_by_id else "미분류",
+            str(item[0]),
+        ),
+    ):
+        source_group = source_by_id.get(source_group_id) if source_group_id is not None else None
+        scope = (
+            PortfolioScope("source", source_group_id)
+            if source_group_id is not None
+            else PortfolioScope("unclassified")
+        )
+        group_invested_principal = _scope_invested_principal(transactions, holding, scope)
+        group_current_value = (
+            remaining_quantity * current_price if current_price is not None else None
+        )
+        group_profit_loss = (
+            group_current_value - group_invested_principal
+            if group_current_value is not None
+            else None
+        )
+        group_breakdown.append(
+            HoldingGroupBreakdownOut(
+                source_group_id=source_group_id,
+                name=source_group.name if source_group is not None else "미분류",
+                color=source_group.color if source_group is not None else None,
+                remaining_quantity=remaining_quantity,
+                invested_principal=group_invested_principal,
+                remaining_cost_basis=group_cost_basis,
+                current_value=group_current_value,
+                profit_loss=group_profit_loss,
+                profit_loss_pct=_profit_loss_pct(group_profit_loss, group_invested_principal),
+            )
+        )
+    return performance, group_breakdown
 
 
 def _transaction_principal_flow(transaction: Transaction) -> PrincipalFlow:
@@ -533,12 +649,16 @@ async def get_holding(
     except Exception:
         current_price = None
 
+    source_groups = await _load_holding_source_groups(db, current_user.id, holding)
+    performance, group_breakdown = _holding_performance(holding, current_price, source_groups)
     base = await _enrich_with_price(holding, current_price)
     return HoldingDetailOut(
         **base.model_dump(),
         transactions=[_transaction_to_out(t) for t in holding.transactions],
         snapshots=[SnapshotOut.model_validate(s) for s in sorted(holding.snapshots, key=lambda x: x.snapshot_date)],
         tags=[ht.tag_id for ht in holding.holding_tags],
+        performance=performance,
+        group_breakdown=group_breakdown,
     )
 
 

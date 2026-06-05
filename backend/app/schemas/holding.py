@@ -159,7 +159,29 @@ class HoldingOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class HoldingPerformanceOut(BaseModel):
+    total_invested_principal: Decimal
+    remaining_cost_basis: Decimal
+    current_value: Decimal | None
+    profit_loss: Decimal | None
+    profit_loss_pct: Decimal | None
+
+
+class HoldingGroupBreakdownOut(BaseModel):
+    source_group_id: uuid.UUID | None
+    name: str
+    color: str | None
+    remaining_quantity: Decimal
+    invested_principal: Decimal
+    remaining_cost_basis: Decimal
+    current_value: Decimal | None
+    profit_loss: Decimal | None
+    profit_loss_pct: Decimal | None
+
+
 class HoldingDetailOut(HoldingOut):
     transactions: list[TransactionOut] = []
     snapshots: list[SnapshotOut] = []
     tags: list[uuid.UUID] = []
+    performance: HoldingPerformanceOut | None = None
+    group_breakdown: list[HoldingGroupBreakdownOut] = []

@@ -284,10 +284,32 @@ export interface Holding {
   cost_basis: string | null
 }
 
+export interface HoldingPerformance {
+  total_invested_principal: string
+  remaining_cost_basis: string
+  current_value: string | null
+  profit_loss: string | null
+  profit_loss_pct: string | null
+}
+
+export interface HoldingGroupBreakdown {
+  source_group_id: string | null
+  name: string
+  color: string | null
+  remaining_quantity: string
+  invested_principal: string
+  remaining_cost_basis: string
+  current_value: string | null
+  profit_loss: string | null
+  profit_loss_pct: string | null
+}
+
 export interface HoldingDetail extends Holding {
   transactions: Transaction[]
   snapshots: Snapshot[]
   tags: string[]
+  performance: HoldingPerformance | null
+  group_breakdown: HoldingGroupBreakdown[]
 }
 
 export interface TagCurrencySummary {

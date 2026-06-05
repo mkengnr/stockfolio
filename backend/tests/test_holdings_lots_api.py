@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.database import get_db
 from app.models.group import BuyLot, Label, SellLotAllocation, SourceGroup, TransactionLabel
-from app.models.holding import Currency, Holding, Market, Transaction, TransactionType
+from app.models.holding import Currency, Holding, Market, PrincipalFlow, Transaction, TransactionType
 from app.routers.deps import get_current_user
 from app.routers.holdings import _rebuild_snapshots_after_mutation, _replay_and_update_lots, router
 from app.schemas.holding import HoldingCreateIn, TransactionIn
@@ -94,12 +94,12 @@ def client(user, db):
     return TestClient(app)
 
 
-def _source(user_id):
+def _source(user_id, *, name="월급", color="#6366f1"):
     return SourceGroup(
         id=uuid.uuid4(),
         user_id=user_id,
-        name="월급",
-        color="#6366f1",
+        name=name,
+        color=color,
         share_requires_auth=True,
         created_at=NOW,
     )
@@ -128,6 +128,7 @@ def _holding(user_id):
         currency=Currency.KRW,
         first_buy_date=date(2026, 1, 1),
         is_active=True,
+        created_at=NOW,
         transactions=[],
         buy_lots=[],
     )
@@ -139,6 +140,7 @@ def _buy(
     source_group_id=None,
     quantity="2",
     price="80000",
+    principal_flow=PrincipalFlow.DEPOSIT,
     transaction_date=date(2026, 1, 1),
 ):
     tx = Transaction(
@@ -150,6 +152,7 @@ def _buy(
         quantity=Decimal(quantity),
         price=Decimal(price),
         transaction_date=transaction_date,
+        principal_flow=principal_flow,
         created_at=NOW,
         transaction_labels=[],
         sell_allocations=[],
@@ -172,7 +175,15 @@ def _buy(
     return tx, lot
 
 
-def _sell(holding, lot, *, source_group_id=None, quantity="1", price="100000"):
+def _sell(
+    holding,
+    lot,
+    *,
+    source_group_id=None,
+    quantity="1",
+    price="100000",
+    principal_flow=PrincipalFlow.REINVEST,
+):
     tx = Transaction(
         id=uuid.uuid4(),
         holding_id=holding.id,
@@ -181,6 +192,7 @@ def _sell(holding, lot, *, source_group_id=None, quantity="1", price="100000"):
         type=TransactionType.SELL,
         quantity=Decimal(quantity),
         price=Decimal(price),
+        principal_flow=principal_flow,
         transaction_date=date(2026, 2, 1),
         created_at=NOW,
         requires_review=False,
@@ -282,6 +294,124 @@ def test_create_holding_creates_initial_unclassified_buy_lot(client, db):
     assert payload["transactions"][0]["principal_flow"] == "DEPOSIT"
     assert payload["transactions"][0]["buy_lot"]["remaining_quantity"] == "1"
     assert any(isinstance(entity, BuyLot) for entity in db.added)
+
+
+def test_get_holding_returns_performance_and_group_breakdown(client, user, db):
+    source_one = _source(user.id, name="모음통장", color="#2563eb")
+    source_two = _source(user.id, name="긴급통장", color="#dc2626")
+    holding = _holding(user.id)
+    _, lot_one = _buy(
+        holding,
+        source_group_id=source_one.id,
+        quantity="2",
+        price="80000",
+        transaction_date=date(2026, 1, 1),
+    )
+    _sell(
+        holding,
+        lot_one,
+        source_group_id=source_one.id,
+        quantity="1",
+        price="90000",
+        principal_flow=PrincipalFlow.WITHDRAW,
+    )
+    _buy(
+        holding,
+        source_group_id=source_two.id,
+        quantity="1",
+        price="100000",
+        transaction_date=date(2026, 1, 2),
+    )
+    db.queue(_Result(one=holding), _Result(many=[source_one, source_two]))
+
+    with patch(
+        "app.routers.holdings.get_price",
+        new=AsyncMock(return_value=SimpleNamespace(price=Decimal("120000"))),
+    ):
+        response = client.get(f"/api/holdings/{holding.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["performance"] == {
+        "total_invested_principal": "170000",
+        "remaining_cost_basis": "180000",
+        "current_value": "240000",
+        "profit_loss": "70000",
+        "profit_loss_pct": "41.17647058823529411764705882",
+    }
+    assert payload["group_breakdown"] == [
+        {
+            "source_group_id": str(source_two.id),
+            "name": "긴급통장",
+            "color": "#dc2626",
+            "remaining_quantity": "1",
+            "invested_principal": "100000",
+            "remaining_cost_basis": "100000",
+            "current_value": "120000",
+            "profit_loss": "20000",
+            "profit_loss_pct": "20.0",
+        },
+        {
+            "source_group_id": str(source_one.id),
+            "name": "모음통장",
+            "color": "#2563eb",
+            "remaining_quantity": "1",
+            "invested_principal": "70000",
+            "remaining_cost_basis": "80000",
+            "current_value": "120000",
+            "profit_loss": "50000",
+            "profit_loss_pct": "71.42857142857142857142857143",
+        },
+    ]
+
+
+def test_get_holding_nulls_performance_when_lot_accounting_requires_review(client, user, db):
+    holding = _holding(user.id)
+    _buy(holding, quantity="2", price="80000")
+    _legacy_sell_requiring_review(holding, quantity="1")
+    db.queue(_Result(one=holding))
+
+    with patch(
+        "app.routers.holdings.get_price",
+        new=AsyncMock(return_value=SimpleNamespace(price=Decimal("120000"))),
+    ):
+        response = client.get(f"/api/holdings/{holding.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["performance"] is None
+    assert payload["group_breakdown"] == []
+
+
+def test_get_holding_keeps_principal_metrics_when_current_price_is_unavailable(client, user, db):
+    source = _source(user.id, name="모음통장", color="#2563eb")
+    holding = _holding(user.id)
+    _buy(
+        holding,
+        source_group_id=source.id,
+        quantity="2",
+        price="80000",
+        transaction_date=date(2026, 1, 1),
+    )
+    db.queue(_Result(one=holding), _Result(many=[source]))
+
+    with patch("app.routers.holdings.get_price", new=AsyncMock(side_effect=RuntimeError("price unavailable"))):
+        response = client.get(f"/api/holdings/{holding.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["performance"] == {
+        "total_invested_principal": "160000",
+        "remaining_cost_basis": "160000",
+        "current_value": None,
+        "profit_loss": None,
+        "profit_loss_pct": None,
+    }
+    assert payload["group_breakdown"][0]["invested_principal"] == "160000"
+    assert payload["group_breakdown"][0]["remaining_cost_basis"] == "160000"
+    assert payload["group_breakdown"][0]["current_value"] is None
+    assert payload["group_breakdown"][0]["profit_loss"] is None
+    assert payload["group_breakdown"][0]["profit_loss_pct"] is None
 
 
 def test_create_holding_rejects_ticker_when_provider_lookup_fails(client, db):

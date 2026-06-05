@@ -28,7 +28,7 @@ jest.mock('@/components/layout/AuthGuard', () => ({
 }))
 
 jest.mock('@/components/holdings/PriceChart', () => ({
-  PriceChart: () => null,
+  PriceChart: () => <div data-testid="price-chart" />,
 }))
 
 jest.mock('@/components/holdings/AddTransactionForm', () => ({
@@ -58,6 +58,26 @@ const holding: HoldingDetail = {
   profit_loss: '40',
   profit_loss_pct: '20',
   cost_basis: '200',
+  performance: {
+    total_invested_principal: '200',
+    remaining_cost_basis: '200',
+    current_value: '240',
+    profit_loss: '40',
+    profit_loss_pct: '20',
+  },
+  group_breakdown: [
+    {
+      source_group_id: 'source-1',
+      name: '가족',
+      color: '#2563eb',
+      remaining_quantity: '2',
+      invested_principal: '200',
+      remaining_cost_basis: '200',
+      current_value: '240',
+      profit_loss: '40',
+      profit_loss_pct: '20',
+    },
+  ],
   transactions: [],
   snapshots: [],
   tags: [],
@@ -81,5 +101,33 @@ describe('HoldingPage', () => {
     expect(confirm).toHaveBeenCalledWith('Apple 종목을 목록에서 숨기시겠습니까? 거래 내역은 유지됩니다.')
     expect(screen.getByText('Holding with remaining lots cannot be deleted')).toBeInTheDocument()
     expect(replace).not.toHaveBeenCalled()
+  })
+
+  it('shows dashboard-style performance and group breakdown with one price chart', () => {
+    render(<HoldingPage params={{ id: 'holding-1' }} />)
+
+    expect(screen.getAllByText('투자원금').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('$200.00').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('잔여원금').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('평가금액').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('손익').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('손익률').length).toBeGreaterThan(0)
+    expect(screen.getByText('그룹별 수익현황')).toBeInTheDocument()
+    expect(screen.getByText('가족')).toBeInTheDocument()
+    expect(screen.getAllByTestId('price-chart')).toHaveLength(1)
+  })
+
+  it('uses placeholders when performance is unavailable', () => {
+    mockedUseSWR.mockReturnValue({
+      data: { ...holding, performance: null, group_breakdown: [] },
+      isLoading: false,
+      mutate: jest.fn(),
+    })
+
+    render(<HoldingPage params={{ id: 'holding-1' }} />)
+
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(5)
+    expect(screen.getByText('현재 보유 중인 그룹별 잔여 수량이 없습니다.')).toBeInTheDocument()
+    expect(screen.getAllByTestId('price-chart')).toHaveLength(1)
   })
 })
