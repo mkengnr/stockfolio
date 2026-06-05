@@ -14,10 +14,12 @@ export function PriceChart({ snapshots, currency }: Props) {
   useEffect(() => {
     if (!containerRef.current || snapshots.length === 0) return
 
+    let cancelled = false
     let chart: ReturnType<typeof import('lightweight-charts')['createChart']> | null = null
+    let handleResize: (() => void) | null = null
 
     import('lightweight-charts').then(({ createChart, ColorType }) => {
-      if (!containerRef.current) return
+      if (cancelled || !containerRef.current) return
 
       chart = createChart(containerRef.current, {
         width: containerRef.current.clientWidth,
@@ -62,16 +64,17 @@ export function PriceChart({ snapshots, currency }: Props) {
 
       chart.timeScale().fitContent()
 
-      const handleResize = () => {
+      handleResize = () => {
         if (containerRef.current && chart) {
           chart.applyOptions({ width: containerRef.current.clientWidth })
         }
       }
       window.addEventListener('resize', handleResize)
-      return () => window.removeEventListener('resize', handleResize)
     })
 
     return () => {
+      cancelled = true
+      if (handleResize) window.removeEventListener('resize', handleResize)
       chart?.remove()
     }
   }, [snapshots, currency])

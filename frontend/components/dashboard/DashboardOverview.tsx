@@ -12,6 +12,8 @@ import { PortfolioChart } from './PortfolioChart'
 import { PortfolioSummary } from './PortfolioSummary'
 import type { DashboardGroupSummary, DashboardHoldingRow, DashboardResponse, DisplayCurrency } from '@/lib/types'
 
+type TotalChartScope = 'all' | 'total'
+
 interface Props {
   dashboard: DashboardResponse
   displayCurrency: DisplayCurrency
@@ -31,6 +33,7 @@ export function DashboardOverview({
 }: Props) {
   const [chartMetric, setChartMetric] = useState<DashboardChartMetric>('value')
   const [chartView, setChartView] = useState<DashboardChartView>('combined')
+  const [totalChartScope, setTotalChartScope] = useState<TotalChartScope>('all')
   const [selectedGroupKey, setSelectedGroupKey] = useState('total')
   const selectedGroup = dashboard.groups.find((group) => groupKey(group) === selectedGroupKey) ?? null
   useEffect(() => {
@@ -42,10 +45,12 @@ export function DashboardOverview({
   const selectedSummary = selectedGroup?.summary ?? dashboard.summary
   const selectedHistoryRows = useMemo(
     () => dashboard.history.rows.filter((row) => {
-      if (!selectedGroup) return row.group_kind === 'total'
+      if (!selectedGroup) {
+        return totalChartScope === 'all' || row.group_kind === 'total'
+      }
       return row.group_kind === selectedGroup.kind && (row.group_id ?? null) === selectedGroup.id
     }),
-    [dashboard.history.rows, selectedGroup],
+    [dashboard.history.rows, selectedGroup, totalChartScope],
   )
   const selectedHoldings = useMemo(
     () => filterHoldingsByGroup(dashboard.holdings, selectedGroup),
@@ -121,15 +126,23 @@ export function DashboardOverview({
           <div>
             <h2 className="font-semibold text-gray-900">포트폴리오 변화</h2>
             <p className="mt-1 text-sm text-gray-500">
-              선택한 표시 통화 기준의 aggregate history를 단일 축으로 표시합니다.
+              전체 선택 시 전체 흐름과 그룹별 흐름을 함께 볼 수 있습니다.
             </p>
           </div>
-          <DashboardChartControls
-            metric={chartMetric}
-            view={chartView}
-            onMetricChange={setChartMetric}
-            onViewChange={setChartView}
-          />
+          <div className="flex flex-wrap gap-2">
+            {!selectedGroup && (
+              <TotalChartScopeControl
+                value={totalChartScope}
+                onChange={setTotalChartScope}
+              />
+            )}
+            <DashboardChartControls
+              metric={chartMetric}
+              view={chartView}
+              onMetricChange={setChartMetric}
+              onViewChange={setChartView}
+            />
+          </div>
         </div>
         <PortfolioChart
           historyRows={selectedHistoryRows}
@@ -175,4 +188,37 @@ function formatLastUpdated(value: Date | null) {
     minute: '2-digit',
     second: '2-digit',
   }).format(value)
+}
+
+function TotalChartScopeControl({
+  value,
+  onChange,
+}: {
+  value: TotalChartScope
+  onChange: (value: TotalChartScope) => void
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1" aria-label="전체 차트 범위">
+      {[
+        { value: 'all' as const, label: '전체+그룹' },
+        { value: 'total' as const, label: '전체만' },
+      ].map((option) => {
+        const active = option.value === value
+        return (
+          <button
+            key={option.value}
+            type="button"
+            className={[
+              'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+              active ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900',
+            ].join(' ')}
+            aria-pressed={active}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
 }

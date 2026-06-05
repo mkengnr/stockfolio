@@ -14,7 +14,9 @@ jest.mock('next/link', () => {
 })
 
 jest.mock('@/components/dashboard/PortfolioChart', () => ({
-  PortfolioChart: () => <div>차트 렌더됨</div>,
+  PortfolioChart: ({ historyRows }: { historyRows: Array<{ group_name: string }> }) => (
+    <div data-testid="portfolio-chart">{historyRows.map((row) => row.group_name).join(',')}</div>
+  ),
 }))
 
 const dashboard: DashboardResponse = {
@@ -100,6 +102,26 @@ const dashboard: DashboardResponse = {
         total_cost_basis: '800000',
         total_profit_loss: '100000',
       },
+      {
+        group_kind: 'source',
+        group_id: 'source-1',
+        group_name: '모음통장',
+        snapshot_date: '2026-06-01',
+        total_value: '580000',
+        total_invested_principal: '600000',
+        total_cost_basis: '500000',
+        total_profit_loss: '80000',
+      },
+      {
+        group_kind: 'combined',
+        group_id: 'combined-1',
+        group_name: '장기투자',
+        snapshot_date: '2026-06-01',
+        total_value: '320000',
+        total_invested_principal: '400000',
+        total_cost_basis: '300000',
+        total_profit_loss: '20000',
+      },
     ],
   },
   holdings: [],
@@ -167,6 +189,9 @@ describe('DashboardOverview', () => {
     expect(screen.getByText('통합 그룹은 비교용이며 단순 합산 시 중복 가능')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '하나의 차트' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '각각 보기' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '전체+그룹' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '전체만' })).toBeInTheDocument()
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('전체,모음통장,장기투자')
   })
 
   it('filters the dashboard by selected group', () => {
@@ -202,5 +227,26 @@ describe('DashboardOverview', () => {
 
     expect(screen.getByText('모음통장 수익현황')).toBeInTheDocument()
     expect(screen.getByText('삼성전자')).toBeInTheDocument()
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('모음통장')
+    expect(screen.getByTestId('portfolio-chart')).not.toHaveTextContent('전체')
+  })
+
+  it('can collapse the total dashboard chart to total-only history', () => {
+    render(
+      <DashboardOverview
+        dashboard={dashboard}
+        displayCurrency="KRW"
+        onDisplayCurrencyChange={jest.fn()}
+        onRefresh={jest.fn()}
+        isRefreshing={false}
+        lastUpdated={new Date('2026-06-05T09:00:00Z')}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '전체만' }))
+
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('전체')
+    expect(screen.getByTestId('portfolio-chart')).not.toHaveTextContent('모음통장')
+    expect(screen.getByTestId('portfolio-chart')).not.toHaveTextContent('장기투자')
   })
 })
