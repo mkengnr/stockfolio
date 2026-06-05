@@ -10,7 +10,7 @@
         <string>--prefix</string>
         <string>/Users/Shared/workspace/stockfolio/frontend</string>
         <string>run</string>
-        <string>dev</string>
+        <string>start</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/Shared/workspace/stockfolio/frontend</string>

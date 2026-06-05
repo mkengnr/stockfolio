@@ -13,7 +13,7 @@ export function AuthGuard({ children, adminOnly = false }: Props) {
   const { user, isLoading, isAuthenticated } = useAuth({ required: true })
 
   if (isLoading) return <PageLoader />
-  if (!isAuthenticated) return null  // useAuth will redirect to /auth
+  if (!isAuthenticated) return <PageLoader />
 
   if (adminOnly && !user?.is_admin) {
     return (

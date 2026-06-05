@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import useSWR from 'swr'
 import { useRouter } from 'next/navigation'
 import { fetcher } from '@/lib/api'
@@ -15,9 +16,11 @@ export function useAuth({ required = false } = {}) {
 
   const isAuthenticated = !!user && !error
 
-  if (required && !isLoading && !isAuthenticated) {
-    router.replace('/auth')
-  }
+  useEffect(() => {
+    if (required && !isLoading && !isAuthenticated) {
+      router.replace('/auth')
+    }
+  }, [required, isLoading, isAuthenticated, router])
 
   return { user, isLoading, isAuthenticated, mutate }
 }
