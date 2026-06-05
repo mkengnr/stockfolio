@@ -14,8 +14,10 @@ jest.mock('next/link', () => {
 })
 
 jest.mock('@/components/dashboard/PortfolioChart', () => ({
-  PortfolioChart: ({ historyRows }: { historyRows: Array<{ group_name: string }> }) => (
-    <div data-testid="portfolio-chart">{historyRows.map((row) => row.group_name).join(',')}</div>
+  PortfolioChart: ({ historyRows }: { historyRows: Array<{ group_name: string; snapshot_date: string }> }) => (
+    <div data-testid="portfolio-chart">
+      {historyRows.map((row) => row.group_name).join(',')}|{historyRows.map((row) => row.snapshot_date).join(',')}
+    </div>
   ),
 }))
 
@@ -92,6 +94,26 @@ const dashboard: DashboardResponse = {
   ],
   history: {
     rows: [
+      {
+        group_kind: 'total',
+        group_id: null,
+        group_name: '전체',
+        snapshot_date: '2026-02-01',
+        total_value: '700000',
+        total_invested_principal: '1000000',
+        total_cost_basis: '800000',
+        total_profit_loss: '-100000',
+      },
+      {
+        group_kind: 'source',
+        group_id: 'source-1',
+        group_name: '모음통장',
+        snapshot_date: '2026-02-01',
+        total_value: '520000',
+        total_invested_principal: '600000',
+        total_cost_basis: '500000',
+        total_profit_loss: '20000',
+      },
       {
         group_kind: 'total',
         group_id: null,
@@ -192,6 +214,27 @@ describe('DashboardOverview', () => {
     expect(screen.getByRole('button', { name: '전체+그룹' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '전체만' })).toBeInTheDocument()
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('전체,모음통장,장기투자')
+    expect(screen.getByTestId('portfolio-chart')).not.toHaveTextContent('2026-02-01')
+  })
+
+  it('uses three months as the default chart range and can show all history', () => {
+    render(
+      <DashboardOverview
+        dashboard={dashboard}
+        displayCurrency="KRW"
+        onDisplayCurrencyChange={jest.fn()}
+        onRefresh={jest.fn()}
+        isRefreshing={false}
+        lastUpdated={new Date('2026-06-05T09:00:00Z')}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: '3개월' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('portfolio-chart')).not.toHaveTextContent('2026-02-01')
+
+    fireEvent.click(screen.getByRole('button', { name: '전체' }))
+
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('2026-02-01')
   })
 
   it('filters the dashboard by selected group', () => {

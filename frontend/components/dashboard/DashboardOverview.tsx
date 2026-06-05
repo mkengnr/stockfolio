@@ -13,6 +13,22 @@ import { PortfolioSummary } from './PortfolioSummary'
 import type { DashboardGroupSummary, DashboardHoldingRow, DashboardResponse, DisplayCurrency } from '@/lib/types'
 
 type TotalChartScope = 'all' | 'total'
+type ChartRange = '1m' | '3m' | '6m' | '1y' | 'all'
+
+const chartRangeOptions: Array<{ value: ChartRange; label: string }> = [
+  { value: '1m', label: '1개월' },
+  { value: '3m', label: '3개월' },
+  { value: '6m', label: '6개월' },
+  { value: '1y', label: '1년' },
+  { value: 'all', label: '전체' },
+]
+
+const chartRangeMonths: Record<Exclude<ChartRange, 'all'>, number> = {
+  '1m': 1,
+  '3m': 3,
+  '6m': 6,
+  '1y': 12,
+}
 
 interface Props {
   dashboard: DashboardResponse
@@ -33,6 +49,7 @@ export function DashboardOverview({
 }: Props) {
   const [chartMetric, setChartMetric] = useState<DashboardChartMetric>('value')
   const [chartView, setChartView] = useState<DashboardChartView>('combined')
+  const [chartRange, setChartRange] = useState<ChartRange>('3m')
   const [totalChartScope, setTotalChartScope] = useState<TotalChartScope>('all')
   const [selectedGroupKey, setSelectedGroupKey] = useState('total')
   const selectedGroup = dashboard.groups.find((group) => groupKey(group) === selectedGroupKey) ?? null
@@ -51,6 +68,10 @@ export function DashboardOverview({
       return row.group_kind === selectedGroup.kind && (row.group_id ?? null) === selectedGroup.id
     }),
     [dashboard.history.rows, selectedGroup, totalChartScope],
+  )
+  const chartHistoryRows = useMemo(
+    () => filterHistoryRowsByChartRange(selectedHistoryRows, chartRange),
+    [selectedHistoryRows, chartRange],
   )
   const selectedHoldings = useMemo(
     () => filterHoldingsByGroup(dashboard.holdings, selectedGroup),
@@ -130,6 +151,7 @@ export function DashboardOverview({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <ChartRangeControl value={chartRange} onChange={setChartRange} />
             {!selectedGroup && (
               <TotalChartScopeControl
                 value={totalChartScope}
@@ -145,7 +167,7 @@ export function DashboardOverview({
           </div>
         </div>
         <PortfolioChart
-          historyRows={selectedHistoryRows}
+          historyRows={chartHistoryRows}
           displayCurrency={displayCurrency}
           metric={chartMetric}
           view={chartView}
@@ -181,6 +203,22 @@ function filterHoldingsByGroup(holdings: DashboardHoldingRow[], group: Dashboard
   return holdings.filter((holding) => holding.groups.some((badge) => badge.source_group_id !== null && sourceIds.has(badge.source_group_id)))
 }
 
+function filterHistoryRowsByChartRange<T extends { snapshot_date: string }>(rows: T[], range: ChartRange): T[] {
+  if (range === 'all' || rows.length === 0) return rows
+  const latestDate = rows.reduce((latest, row) => (
+    row.snapshot_date > latest ? row.snapshot_date : latest
+  ), rows[0].snapshot_date)
+  const cutoffDate = subtractMonthsFromIsoDate(latestDate, chartRangeMonths[range])
+  return rows.filter((row) => row.snapshot_date >= cutoffDate)
+}
+
+function subtractMonthsFromIsoDate(value: string, months: number) {
+  const [year, month, day] = value.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day))
+  date.setUTCMonth(date.getUTCMonth() - months)
+  return date.toISOString().slice(0, 10)
+}
+
 function formatLastUpdated(value: Date | null) {
   if (!value) return '아직 없음'
   return new Intl.DateTimeFormat('ko-KR', {
@@ -188,6 +226,36 @@ function formatLastUpdated(value: Date | null) {
     minute: '2-digit',
     second: '2-digit',
   }).format(value)
+}
+
+function ChartRangeControl({
+  value,
+  onChange,
+}: {
+  value: ChartRange
+  onChange: (value: ChartRange) => void
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1" aria-label="차트 기간">
+      {chartRangeOptions.map((option) => {
+        const active = option.value === value
+        return (
+          <button
+            key={option.value}
+            type="button"
+            className={[
+              'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+              active ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900',
+            ].join(' ')}
+            aria-pressed={active}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 function TotalChartScopeControl({

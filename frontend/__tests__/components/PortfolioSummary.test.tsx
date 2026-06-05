@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom'
 import { render, screen } from '@testing-library/react'
 import { PortfolioSummary } from '@/components/dashboard/PortfolioSummary'
-import type { Holding, PortfolioSummary as PortfolioSummaryPayload } from '@/lib/types'
+import type { DashboardSummary, Holding, PortfolioSummary as PortfolioSummaryPayload } from '@/lib/types'
 
 const makeHolding = (overrides: Partial<Holding> = {}): Holding => ({
   id: '1',
@@ -131,5 +131,22 @@ describe('PortfolioSummary', () => {
     expect(screen.getByText('USD')).toBeInTheDocument()
     expect(screen.getByText(/700,000/)).toBeInTheDocument()
     expect(screen.getByText(/\$100/)).toBeInTheDocument()
+  })
+
+  it('keeps long dashboard money values on one line', () => {
+    const summary: DashboardSummary = {
+      total_invested_principal: '53339320',
+      total_cost_basis: '50881120',
+      total_current_value: '72788995',
+      total_current_value_change: '-6598515',
+      total_unrealized_profit_loss: '21907875',
+      total_unrealized_profit_loss_pct: '43.06',
+      total_profit_loss: '19449675',
+      total_profit_loss_pct: '36.46',
+    }
+
+    render(<PortfolioSummary summary={summary} displayCurrency="KRW" />)
+
+    expect(screen.getByText('-₩6,598,515')).toHaveClass('whitespace-nowrap')
   })
 })

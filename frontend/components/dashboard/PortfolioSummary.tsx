@@ -14,10 +14,10 @@ interface SummaryCardProps {
 
 function SummaryCard({ title, value, sub, subColor }: SummaryCardProps) {
   return (
-    <Card>
+    <Card className="min-w-0 p-4 sm:p-5">
       <CardTitle>{title}</CardTitle>
-      <p className={cn('mt-2 text-2xl font-bold text-gray-900 tabular-nums', subColor)}>{value}</p>
-      {sub && <p className={cn('mt-1 text-sm font-medium', subColor ?? 'text-gray-500')}>{sub}</p>}
+      <p className={cn('mt-2 whitespace-nowrap text-xl font-bold tracking-tight text-gray-900 tabular-nums 2xl:text-2xl', subColor)}>{value}</p>
+      {sub && <p className={cn('mt-1 truncate text-sm font-medium', subColor ?? 'text-gray-500')}>{sub}</p>}
     </Card>
   )
 }
@@ -37,7 +37,7 @@ export function PortfolioSummary(props: Props) {
 
 function DashboardSummaryCards({ summary, displayCurrency }: { summary: DashboardSummary; displayCurrency: DisplayCurrency }) {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-5">
       <SummaryCard title="투자원금" value={displayCurrencyValue(summary.total_invested_principal, displayCurrency)} />
       <SummaryCard title="잔여원금" value={displayCurrencyValue(summary.total_cost_basis, displayCurrency)} />
       <SummaryCard title="평가금액" value={displayCurrencyValue(summary.total_current_value, displayCurrency)} />
