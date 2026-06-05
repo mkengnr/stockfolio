@@ -577,11 +577,13 @@ def _dashboard_summary_with_value_change(
     group_kind: str,
     group_id: uuid.UUID | None,
 ) -> DashboardSummary:
+    today = date.today()
     previous_values = [
         row.total_value
         for row in history_rows
         if row.group_kind == group_kind
         and row.group_id == group_id
+        and row.snapshot_date < today
         and row.total_value is not None
     ]
     previous_value = previous_values[-1] if previous_values else None

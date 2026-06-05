@@ -485,6 +485,45 @@ def test_dashboard_summary_separates_unrealized_and_total_profit_and_daily_chang
     assert response.summary.total_current_value_change == Decimal("400")
 
 
+def test_dashboard_daily_change_uses_previous_trading_day_not_today_snapshot(monkeypatch):
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 6, 5)
+
+    monkeypatch.setattr(portfolio_router, "date", FixedDate)
+
+    holding_id = uuid.uuid4()
+    holding = _holding(
+        "005930",
+        Currency.KRW,
+        _buy(
+            holding_id,
+            "005930",
+            Currency.KRW,
+            quantity="1",
+            price="1000",
+            tx_date=date(2026, 1, 1),
+        ),
+        snapshots=[
+            _snapshot(date(2026, 6, 4), "1100"),
+            _snapshot(date(2026, 6, 5), "1500"),
+        ],
+    )
+
+    response = build_dashboard_response(
+        holdings=[holding],
+        source_groups=[],
+        rollup_groups=[],
+        current_prices={"005930": Decimal("1500")},
+        display_currency="KRW",
+        exchange_rate=None,
+    )
+
+    assert response.summary.total_current_value == Decimal("1500")
+    assert response.summary.total_current_value_change == Decimal("400")
+
+
 def test_krw_history_without_rate_nulls_usd_only_values():
     holding_id = uuid.uuid4()
     holding = _holding(
