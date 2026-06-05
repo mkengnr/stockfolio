@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.models.holding import PrincipalFlow, TransactionType
+from app.models.holding import Currency, PrincipalFlow, TransactionType
 
 
 class TransactionListItemOut(BaseModel):
@@ -12,6 +12,7 @@ class TransactionListItemOut(BaseModel):
     holding_id: uuid.UUID
     ticker: str
     holding_name: str
+    currency: Currency
     type: TransactionType
     transaction_date: date
     quantity: Decimal

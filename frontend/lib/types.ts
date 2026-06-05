@@ -199,6 +199,49 @@ export interface Transaction {
   sell_allocations: SellLotAllocation[]
 }
 
+export interface TransactionListItem {
+  id: string
+  holding_id: string
+  ticker: string
+  holding_name: string
+  currency: Currency
+  type: TxType
+  transaction_date: string
+  quantity: string
+  price: string
+  amount: string
+  principal_flow: PrincipalFlow
+  source_group_id: string | null
+  source_group_name: string | null
+  label_ids: string[]
+  label_names: string[]
+  requires_review: boolean
+  created_at: string
+}
+
+export interface TransactionListPayload {
+  transactions: TransactionListItem[]
+}
+
+export interface TransactionFilters {
+  date_from?: string
+  date_to?: string
+  q?: string
+  source_group_id?: string
+  type?: TxType
+  principal_flow?: PrincipalFlow
+  requires_review?: 'true' | 'false'
+}
+
+export interface TransactionUpdatePayload {
+  transaction_date?: string
+  quantity?: string
+  price?: string
+  principal_flow?: PrincipalFlow
+  source_group_id?: string | null
+  label_ids?: string[]
+}
+
 export interface BuyLot {
   id: string
   transaction_id: string

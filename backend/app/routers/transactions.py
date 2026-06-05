@@ -50,6 +50,7 @@ def _transaction_to_list_item(transaction: Transaction) -> TransactionListItemOu
         holding_id=transaction.holding_id,
         ticker=transaction.holding.ticker,
         holding_name=transaction.holding.name,
+        currency=transaction.holding.currency,
         type=transaction.type,
         transaction_date=transaction.transaction_date,
         quantity=transaction.quantity,
@@ -63,6 +64,14 @@ def _transaction_to_list_item(transaction: Transaction) -> TransactionListItemOu
         requires_review=bool(transaction.requires_review),
         created_at=transaction.created_at,
     )
+
+
+def _source_group_by_id(source_groups: list[SourceGroup]) -> dict[uuid.UUID, SourceGroup]:
+    return {source_group.id: source_group for source_group in source_groups}
+
+
+def _label_by_id(labels: list[Label]) -> dict[uuid.UUID, Label]:
+    return {label.id: label for label in labels}
 
 
 def _find_transaction_on_locked_holding(
@@ -137,6 +146,24 @@ async def _load_owned_source_group(
     return source_group
 
 
+async def _load_owned_source_groups(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    source_group_ids: list[uuid.UUID],
+) -> list[SourceGroup]:
+    if not source_group_ids:
+        return []
+    result = await db.execute(
+        select(SourceGroup)
+        .where(SourceGroup.id.in_(source_group_ids))
+        .where(SourceGroup.user_id == user_id)
+    )
+    source_groups = result.scalars().all()
+    if set(_source_group_by_id(source_groups)) != set(source_group_ids):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source group not found")
+    return source_groups
+
+
 async def _load_owned_labels(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -154,6 +181,29 @@ async def _load_owned_labels(
     if set(labels_by_id) != set(label_ids):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Label not found")
     return [labels_by_id[label_id] for label_id in label_ids]
+
+
+async def _hydrate_transaction_metadata(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    transaction: Transaction,
+) -> None:
+    source_groups = await _load_owned_source_groups(
+        db,
+        user_id,
+        [transaction.source_group_id] if transaction.source_group_id is not None else [],
+    )
+    source_groups_by_id = _source_group_by_id(source_groups)
+    transaction.source_group = (
+        source_groups_by_id.get(transaction.source_group_id)
+        if transaction.source_group_id is not None
+        else None
+    )
+    label_ids = [transaction_label.label_id for transaction_label in transaction.transaction_labels]
+    labels = await _load_owned_labels(db, user_id, label_ids)
+    labels_by_id = _label_by_id(labels)
+    for transaction_label in transaction.transaction_labels:
+        transaction_label.label = labels_by_id.get(transaction_label.label_id)
 
 
 async def _rebuild_snapshots_after_mutation(
@@ -282,7 +332,7 @@ async def update_transaction(
         )
     if "principal_flow" in fields_set and body.principal_flow is not None:
         _validate_principal_flow_for_type(transaction.type, body.principal_flow)
-    source_group = transaction.source_group
+    source_group: SourceGroup | None = None
     if "source_group_id" in fields_set:
         source_group = await _load_owned_source_group(db, current_user.id, body.source_group_id)
     labels: list[Label] | None = None
@@ -336,9 +386,7 @@ async def update_transaction(
 
     if "label_ids" in fields_set and body.label_ids is not None:
         await _replace_transaction_labels(db, transaction, body.label_ids)
-        labels_by_id = {label.id: label for label in labels or []}
-        for transaction_label in transaction.transaction_labels:
-            transaction_label.label = labels_by_id.get(transaction_label.label_id)
+    await _hydrate_transaction_metadata(db, current_user.id, transaction)
     if transaction.type == TransactionType.BUY:
         _refresh_first_buy_date(holding)
     await db.flush()

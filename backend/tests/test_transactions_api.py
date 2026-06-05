@@ -253,6 +253,7 @@ def test_list_returns_owned_transactions_with_metadata_and_amount(client, user, 
                 "holding_id": str(holding.id),
                 "ticker": "005930",
                 "holding_name": "삼성전자",
+                "currency": "KRW",
                 "type": "BUY",
                 "transaction_date": "2026-01-01",
                 "quantity": "2",
@@ -326,6 +327,8 @@ def test_buy_patch_updates_lot_holding_labels_and_rebuilds_snapshots(client, use
         _Result(one=holding),
         _Result(one=new_source),
         _Result(many=[label]),
+        _Result(many=[new_source]),
+        _Result(many=[label]),
     )
 
     with patch("app.routers.transactions.rebuild_holding_snapshots", new=AsyncMock()) as rebuild:
@@ -361,6 +364,57 @@ def test_buy_patch_updates_lot_holding_labels_and_rebuilds_snapshots(client, use
         holding,
         start=date(2026, 1, 1),
     )
+
+
+def test_partial_patch_hydrates_existing_group_and_labels(client, user, db):
+    source = _source(user.id, name="기존")
+    label = _label(user.id)
+    holding = _holding(user.id)
+    tx, _ = _buy(holding, source=source, quantity="2", price="80000")
+    _attach_label(tx, label)
+    db.queue(
+        _Result(one=holding.id),
+        _Result(one=holding),
+        _Result(many=[source]),
+        _Result(many=[label]),
+    )
+
+    with patch("app.routers.transactions.rebuild_holding_snapshots", new=AsyncMock()):
+        response = client.patch(
+            f"/api/transactions/{tx.id}",
+            json={"price": "85000"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["source_group_name"] == "기존"
+    assert response.json()["label_names"] == ["장기"]
+
+
+def test_label_only_patch_hydrates_existing_group(client, user, db):
+    source = _source(user.id, name="기존")
+    old_label = _label(user.id, name="이전")
+    new_label = _label(user.id, name="신규")
+    holding = _holding(user.id)
+    tx, _ = _buy(holding, source=source, quantity="2", price="80000")
+    _attach_label(tx, old_label)
+    db.queue(
+        _Result(one=holding.id),
+        _Result(one=holding),
+        _Result(many=[new_label]),
+        _Result(many=[source]),
+        _Result(many=[new_label]),
+    )
+
+    with patch("app.routers.transactions.rebuild_holding_snapshots", new=AsyncMock()):
+        response = client.patch(
+            f"/api/transactions/{tx.id}",
+            json={"label_ids": [str(new_label.id)]},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["source_group_name"] == "기존"
+    assert response.json()["label_ids"] == [str(new_label.id)]
+    assert response.json()["label_names"] == ["신규"]
 
 
 def test_sell_quantity_patch_is_rejected(client, user, db):

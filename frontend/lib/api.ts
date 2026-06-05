@@ -1,7 +1,8 @@
 import type {
   BuyLot, DashboardResponse, DisplayCurrency, GroupKind, Holding, HoldingDetail, Label, PortfolioScope, PortfolioSummary, PrincipalFlow,
   RollupGroup, ScopedPortfolioHistory, ScopedPortfolioHoldings, SharedGroup, SharedTag,
-  SourceGroup, StockSearchResult, Tag, TagDetail, Transaction, User,
+  SourceGroup, StockSearchResult, Tag, TagDetail, Transaction, TransactionFilters, TransactionListItem, TransactionListPayload,
+  TransactionUpdatePayload, User,
 } from './types'
 
 const BASE = ''  // rewritten to backend by next.config.ts rewrites
@@ -125,6 +126,31 @@ export const holdingsApi = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+}
+
+// ── Transactions ─────────────────────────────────────────────────────────────
+export const transactionsApi = {
+  listPath: (filters: TransactionFilters = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        params.set(key, String(value))
+      }
+    })
+    const query = params.toString()
+    return query ? `/api/transactions?${query}` : '/api/transactions'
+  },
+
+  list: (filters: TransactionFilters = {}) =>
+    request<TransactionListPayload>(transactionsApi.listPath(filters)),
+
+  update: (id: string, data: TransactionUpdatePayload) =>
+    request<TransactionListItem>(`/api/transactions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: string) => request(`/api/transactions/${id}`, { method: 'DELETE' }),
 }
 
 // ── Groups ───────────────────────────────────────────────────────────────────

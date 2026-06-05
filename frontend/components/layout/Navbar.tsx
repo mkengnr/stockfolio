@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button'
 
 const navLinks = [
   { href: '/', label: '대시보드' },
+  { href: '/transactions', label: '거래내역' },
   { href: '/holdings/new', label: '종목 등록' },
   { href: '/tags', label: '그룹 관리' },
 ]
