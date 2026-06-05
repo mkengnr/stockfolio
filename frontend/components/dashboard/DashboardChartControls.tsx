@@ -15,7 +15,7 @@ interface Props {
 const metricLabels: Array<{ value: DashboardChartMetric; label: string }> = [
   { value: 'value', label: '평가금액' },
   { value: 'principal', label: '투자원금' },
-  { value: 'profit', label: '손익' },
+  { value: 'profit', label: '총손익' },
 ]
 
 const viewLabels: Array<{ value: DashboardChartView; label: string }> = [

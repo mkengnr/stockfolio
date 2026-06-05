@@ -37,17 +37,29 @@ export function PortfolioSummary(props: Props) {
 
 function DashboardSummaryCards({ summary, displayCurrency }: { summary: DashboardSummary; displayCurrency: DisplayCurrency }) {
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
       <SummaryCard title="투자원금" value={displayCurrencyValue(summary.total_invested_principal, displayCurrency)} />
       <SummaryCard title="잔여원금" value={displayCurrencyValue(summary.total_cost_basis, displayCurrency)} />
       <SummaryCard title="평가금액" value={displayCurrencyValue(summary.total_current_value, displayCurrency)} />
       <SummaryCard
-        title="손익"
+        title="전일대비"
+        value={displayCurrencyValue(summary.total_current_value_change, displayCurrency)}
+        subColor={profitColor(summary.total_current_value_change)}
+      />
+      <SummaryCard
+        title="평가손익"
+        value={displayCurrencyValue(summary.total_unrealized_profit_loss, displayCurrency)}
+        sub={formatPercent(summary.total_unrealized_profit_loss_pct)}
+        subColor={profitColor(summary.total_unrealized_profit_loss)}
+      />
+      <SummaryCard
+        title="총손익"
         value={displayCurrencyValue(summary.total_profit_loss, displayCurrency)}
+        sub="평가금액 - 투자원금"
         subColor={profitColor(summary.total_profit_loss)}
       />
       <SummaryCard
-        title="손익률"
+        title="총손익률"
         value={formatPercent(summary.total_profit_loss_pct)}
         subColor={profitColor(summary.total_profit_loss_pct)}
       />

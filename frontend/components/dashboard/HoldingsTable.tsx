@@ -133,7 +133,7 @@ export function HoldingsTable({ holdings, displayCurrency }: Props) {
 
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-      <table className="min-w-full text-sm">
+      <table className="min-w-[980px] text-sm">
         <thead>
           <tr className="border-b border-gray-100 bg-gray-50">
             <SortableHeading label="종목" align="left" onClick={() => toggleSort('name')}><SortIcon column="name" /></SortableHeading>
@@ -142,8 +142,8 @@ export function HoldingsTable({ holdings, displayCurrency }: Props) {
             <th className="px-4 py-3 text-right font-medium text-gray-500">평균매수가</th>
             <th className="px-4 py-3 text-right font-medium text-gray-500">현재가</th>
             <SortableHeading label="평가금액" onClick={() => toggleSort('currentValue')}><SortIcon column="currentValue" /></SortableHeading>
-            <SortableHeading label="손익" onClick={() => toggleSort('profit')}><SortIcon column="profit" /></SortableHeading>
-            <SortableHeading label="수익률" onClick={() => toggleSort('profitPct')}><SortIcon column="profitPct" /></SortableHeading>
+            <SortableHeading label="평가손익" onClick={() => toggleSort('profit')}><SortIcon column="profit" /></SortableHeading>
+            <SortableHeading label="평가손익률" onClick={() => toggleSort('profitPct')}><SortIcon column="profitPct" /></SortableHeading>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-50">

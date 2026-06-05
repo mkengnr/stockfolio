@@ -11,19 +11,24 @@ import { PageLoader } from '@/components/ui/LoadingSpinner'
 import { fetcher, holdingsApi } from '@/lib/api'
 import { formatCurrency, formatDate, formatPercent, profitColor } from '@/lib/utils'
 import type { HoldingDetail } from '@/lib/types'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { useRouter } from 'next/navigation'
 
 function HoldingDetailContent({ id }: { id: string }) {
   const router = useRouter()
-  const { data: holding, isLoading, mutate } = useSWR<HoldingDetail>(
+  const { data: holding, isLoading, isValidating, mutate } = useSWR<HoldingDetail>(
     `/api/holdings/${id}`,
     fetcher,
     { refreshInterval: 30_000 },
   )
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+
+  useEffect(() => {
+    if (holding) setLastUpdated(new Date())
+  }, [holding])
 
   if (isLoading || !holding) return <PageLoader />
 
@@ -44,7 +49,7 @@ function HoldingDetailContent({ id }: { id: string }) {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <Link href="/" className="text-sm text-gray-400 hover:text-gray-600">대시보드</Link>
@@ -53,10 +58,16 @@ function HoldingDetailContent({ id }: { id: string }) {
           </div>
           <h1 className="mt-1 text-xl font-semibold text-gray-900">{holding.name}</h1>
           <p className="text-sm text-gray-400">{holding.ticker} · {holding.market} · {holding.currency}</p>
+          <p className="mt-1 text-xs text-gray-400">마지막 갱신: {formatLastUpdated(lastUpdated)}</p>
         </div>
-        <Button variant="danger" size="sm" loading={deleting} onClick={handleDelete}>
-          종목 삭제
-        </Button>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <Button variant="secondary" size="sm" loading={isValidating} onClick={() => void mutate()} className="w-full sm:w-auto">
+            새로고침
+          </Button>
+          <Button variant="danger" size="sm" loading={deleting} onClick={handleDelete} className="w-full sm:w-auto">
+            종목 삭제
+          </Button>
+        </div>
       </div>
       {deleteError && <p className="text-sm text-red-500">{deleteError}</p>}
 
@@ -118,7 +129,7 @@ function HoldingPerformanceSummary({ holding }: { holding: HoldingDetail }) {
   ]
 
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       {cards.map(({ label, value, colorClass }) => (
         <Card key={label}>
           <p className="text-xs font-medium uppercase tracking-wide text-gray-400">{label}</p>
@@ -127,6 +138,15 @@ function HoldingPerformanceSummary({ holding }: { holding: HoldingDetail }) {
       ))}
     </div>
   )
+}
+
+function formatLastUpdated(value: Date | null) {
+  if (!value) return '아직 없음'
+  return new Intl.DateTimeFormat('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(value)
 }
 
 function HoldingGroupBreakdownTable({ holding }: { holding: HoldingDetail }) {
@@ -143,7 +163,7 @@ function HoldingGroupBreakdownTable({ holding }: { holding: HoldingDetail }) {
     <Card>
       <h2 className="mb-4 font-semibold text-gray-900">그룹별 수익현황</h2>
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-100 text-sm">
+        <table className="min-w-[900px] divide-y divide-gray-100 text-sm">
           <thead>
             <tr className="text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
               <th className="px-3 py-2">그룹</th>

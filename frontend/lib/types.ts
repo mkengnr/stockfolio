@@ -130,6 +130,9 @@ export interface DashboardSummary {
   total_invested_principal: string | null
   total_cost_basis: string | null
   total_current_value: string | null
+  total_current_value_change: string | null
+  total_unrealized_profit_loss: string | null
+  total_unrealized_profit_loss_pct: string | null
   total_profit_loss: string | null
   total_profit_loss_pct: string | null
 }
@@ -139,6 +142,7 @@ export interface DashboardGroupSummary {
   id: string | null
   name: string
   color: string | null
+  source_group_ids: string[]
   summary: DashboardSummary
 }
 

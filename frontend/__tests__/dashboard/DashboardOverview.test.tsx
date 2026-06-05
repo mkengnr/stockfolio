@@ -29,6 +29,9 @@ const dashboard: DashboardResponse = {
     total_invested_principal: '1000000',
     total_cost_basis: '800000',
     total_current_value: '900000',
+    total_current_value_change: '50000',
+    total_unrealized_profit_loss: '100000',
+    total_unrealized_profit_loss_pct: '12.5',
     total_profit_loss: '100000',
     total_profit_loss_pct: '12.5',
   },
@@ -38,10 +41,14 @@ const dashboard: DashboardResponse = {
       id: 'source-1',
       name: '모음통장',
       color: '#4f46e5',
+      source_group_ids: ['source-1'],
       summary: {
         total_invested_principal: '600000',
         total_cost_basis: '500000',
         total_current_value: '580000',
+        total_current_value_change: '30000',
+        total_unrealized_profit_loss: '80000',
+        total_unrealized_profit_loss_pct: '16',
         total_profit_loss: '80000',
         total_profit_loss_pct: '16',
       },
@@ -51,10 +58,14 @@ const dashboard: DashboardResponse = {
       id: 'combined-1',
       name: '장기투자',
       color: '#059669',
+      source_group_ids: ['source-1'],
       summary: {
         total_invested_principal: '400000',
         total_cost_basis: '300000',
         total_current_value: '320000',
+        total_current_value_change: '10000',
+        total_unrealized_profit_loss: '20000',
+        total_unrealized_profit_loss_pct: '6.67',
         total_profit_loss: '20000',
         total_profit_loss_pct: '6.67',
       },
@@ -64,10 +75,14 @@ const dashboard: DashboardResponse = {
       id: null,
       name: '미분류',
       color: null,
+      source_group_ids: [],
       summary: {
         total_invested_principal: null,
         total_cost_basis: null,
         total_current_value: null,
+        total_current_value_change: null,
+        total_unrealized_profit_loss: null,
+        total_unrealized_profit_loss_pct: null,
         total_profit_loss: null,
         total_profit_loss_pct: null,
       },
@@ -99,8 +114,10 @@ describe('GroupPerformanceTable', () => {
     expect(screen.getByText('투자원금')).toBeInTheDocument()
     expect(screen.getByText('잔여원금')).toBeInTheDocument()
     expect(screen.getByText('평가금액')).toBeInTheDocument()
-    expect(screen.getByText('손익')).toBeInTheDocument()
-    expect(screen.getByText('손익률')).toBeInTheDocument()
+    expect(screen.getByText('전일대비')).toBeInTheDocument()
+    expect(screen.getByText('평가손익')).toBeInTheDocument()
+    expect(screen.getByText('총손익')).toBeInTheDocument()
+    expect(screen.getByText('총손익률')).toBeInTheDocument()
     expect(screen.getByText('모음통장')).toBeInTheDocument()
     expect(screen.getByText('장기투자')).toBeInTheDocument()
     expect(screen.getByText('미분류')).toBeInTheDocument()
@@ -135,15 +152,55 @@ describe('DashboardOverview', () => {
         dashboard={dashboard}
         displayCurrency="KRW"
         onDisplayCurrencyChange={jest.fn()}
+        onRefresh={jest.fn()}
+        isRefreshing={false}
+        lastUpdated={new Date('2026-06-05T09:00:00Z')}
       />,
     )
 
     expect(screen.getByText('전체 수익현황')).toBeInTheDocument()
+    expect(screen.getByLabelText('그룹 필터')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '새로고침' })).toBeInTheDocument()
     expect(screen.getByText('그룹별 수익현황')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '거래내역 보기' })).toHaveAttribute('href', '/transactions')
     expect(screen.getByText('AAPL 시세를 가져오지 못했습니다.')).toBeInTheDocument()
     expect(screen.getByText('통합 그룹은 비교용이며 단순 합산 시 중복 가능')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '하나의 차트' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '각각 보기' })).toBeInTheDocument()
+  })
+
+  it('filters the dashboard by selected group', () => {
+    render(
+      <DashboardOverview
+        dashboard={{
+          ...dashboard,
+          holdings: [
+            {
+              holding_id: 'holding-1',
+              ticker: '005930',
+              name: '삼성전자',
+              market: 'KRX',
+              currency: 'KRW',
+              quantity: '1',
+              remaining_cost_basis: '500000',
+              current_price: '580000',
+              current_value: '580000',
+              unrealized_profit_loss: '80000',
+              groups: [{ source_group_id: 'source-1', name: '모음통장', color: '#4f46e5', remaining_quantity: '1' }],
+            },
+          ],
+        }}
+        displayCurrency="KRW"
+        onDisplayCurrencyChange={jest.fn()}
+        onRefresh={jest.fn()}
+        isRefreshing={false}
+        lastUpdated={new Date('2026-06-05T09:00:00Z')}
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText('그룹 필터'), { target: { value: 'source:source-1' } })
+
+    expect(screen.getByText('모음통장 수익현황')).toBeInTheDocument()
+    expect(screen.getByText('삼성전자')).toBeInTheDocument()
   })
 })

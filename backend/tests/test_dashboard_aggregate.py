@@ -208,6 +208,9 @@ def test_krw_display_converts_usd_assets_and_includes_group_rows():
     assert response.groups[0].summary.total_current_value == Decimal("46800")
     assert response.groups[1].summary.total_current_value == Decimal("46800")
     assert response.groups[2].summary.total_current_value == Decimal("2400")
+    assert response.groups[0].source_group_ids == [salary.id]
+    assert response.groups[1].source_group_ids == [salary.id]
+    assert response.groups[2].source_group_ids == []
 
 
 def test_usd_display_includes_only_usd_assets():
@@ -435,6 +438,51 @@ def test_dashboard_history_includes_inactive_holding_snapshots():
     ]
     assert total_rows[1].total_value == Decimal("2300")
     assert [holding.ticker for holding in response.holdings] == ["005930"]
+
+
+def test_dashboard_summary_separates_unrealized_and_total_profit_and_daily_change():
+    holding_id = uuid.uuid4()
+    buy = _buy(
+        holding_id,
+        "005930",
+        Currency.KRW,
+        quantity="2",
+        price="1000",
+        tx_date=date(2026, 1, 1),
+    )
+    sell = _sell(
+        holding_id,
+        buy,
+        quantity="1",
+        price="1300",
+        tx_date=date(2026, 2, 1),
+        principal_flow=PrincipalFlow.WITHDRAW,
+    )
+    holding = _holding(
+        "005930",
+        Currency.KRW,
+        buy,
+        sell,
+        snapshots=[_snapshot(date(2026, 6, 4), "1100")],
+    )
+
+    response = build_dashboard_response(
+        holdings=[holding],
+        source_groups=[],
+        rollup_groups=[],
+        current_prices={"005930": Decimal("1500")},
+        display_currency="KRW",
+        exchange_rate=None,
+    )
+
+    assert response.summary.total_invested_principal == Decimal("700")
+    assert response.summary.total_cost_basis == Decimal("1000")
+    assert response.summary.total_current_value == Decimal("1500")
+    assert response.summary.total_unrealized_profit_loss == Decimal("500")
+    assert response.summary.total_unrealized_profit_loss_pct == Decimal("50.0")
+    assert response.summary.total_profit_loss == Decimal("800")
+    assert response.summary.total_profit_loss_pct == Decimal("114.2857142857142857142857143")
+    assert response.summary.total_current_value_change == Decimal("400")
 
 
 def test_krw_history_without_rate_nulls_usd_only_values():

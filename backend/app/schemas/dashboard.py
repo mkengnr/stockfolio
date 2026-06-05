@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Literal
 import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.holding import Currency, Market
 
@@ -24,6 +24,9 @@ class DashboardSummary(BaseModel):
     total_invested_principal: Decimal | None
     total_cost_basis: Decimal | None
     total_current_value: Decimal | None
+    total_current_value_change: Decimal | None = None
+    total_unrealized_profit_loss: Decimal | None = None
+    total_unrealized_profit_loss_pct: Decimal | None = None
     total_profit_loss: Decimal | None
     total_profit_loss_pct: Decimal | None
 
@@ -33,6 +36,7 @@ class DashboardGroupSummary(BaseModel):
     id: uuid.UUID | None
     name: str
     color: str | None
+    source_group_ids: list[uuid.UUID] = Field(default_factory=list)
     summary: DashboardSummary
 
 

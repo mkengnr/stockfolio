@@ -1,42 +1,77 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
 import { DisplayCurrencyToggle } from './DisplayCurrencyToggle'
 import { DashboardChartControls, type DashboardChartMetric, type DashboardChartView } from './DashboardChartControls'
 import { GroupPerformanceTable } from './GroupPerformanceTable'
 import { HoldingsTable } from './HoldingsTable'
 import { PortfolioChart } from './PortfolioChart'
 import { PortfolioSummary } from './PortfolioSummary'
-import type { DashboardResponse, DisplayCurrency } from '@/lib/types'
+import type { DashboardGroupSummary, DashboardHoldingRow, DashboardResponse, DisplayCurrency } from '@/lib/types'
 
 interface Props {
   dashboard: DashboardResponse
   displayCurrency: DisplayCurrency
   onDisplayCurrencyChange: (currency: DisplayCurrency) => void
+  onRefresh: () => void
+  isRefreshing: boolean
+  lastUpdated: Date | null
 }
 
-export function DashboardOverview({ dashboard, displayCurrency, onDisplayCurrencyChange }: Props) {
+export function DashboardOverview({
+  dashboard,
+  displayCurrency,
+  onDisplayCurrencyChange,
+  onRefresh,
+  isRefreshing,
+  lastUpdated,
+}: Props) {
   const [chartMetric, setChartMetric] = useState<DashboardChartMetric>('value')
   const [chartView, setChartView] = useState<DashboardChartView>('combined')
+  const [selectedGroupKey, setSelectedGroupKey] = useState('total')
+  const selectedGroup = dashboard.groups.find((group) => groupKey(group) === selectedGroupKey) ?? null
+  useEffect(() => {
+    if (selectedGroupKey !== 'total' && !dashboard.groups.some((group) => groupKey(group) === selectedGroupKey)) {
+      setSelectedGroupKey('total')
+    }
+  }, [dashboard.groups, selectedGroupKey])
+  const selectedName = selectedGroup?.name ?? '전체'
+  const selectedSummary = selectedGroup?.summary ?? dashboard.summary
+  const selectedHistoryRows = useMemo(
+    () => dashboard.history.rows.filter((row) => {
+      if (!selectedGroup) return row.group_kind === 'total'
+      return row.group_kind === selectedGroup.kind && (row.group_id ?? null) === selectedGroup.id
+    }),
+    [dashboard.history.rows, selectedGroup],
+  )
+  const selectedHoldings = useMemo(
+    () => filterHoldingsByGroup(dashboard.holdings, selectedGroup),
+    [dashboard.holdings, selectedGroup],
+  )
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">대시보드</h1>
           <p className="mt-1 text-sm text-gray-500">
             포트폴리오 전체와 그룹별 수익률을 {displayCurrency === 'KRW' ? 'KRW 환산' : 'USD 별도'} 기준으로 확인합니다.
           </p>
+          <p className="mt-1 text-xs text-gray-400">마지막 갱신: {formatLastUpdated(lastUpdated)}</p>
         </div>
-        <div className="flex flex-wrap items-start gap-3">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-start">
           <DisplayCurrencyToggle
             value={displayCurrency}
             exchangeRate={dashboard.exchange_rate}
             onChange={onDisplayCurrencyChange}
           />
-          <Link href="/holdings/new" className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-600">
+          <Button type="button" variant="secondary" loading={isRefreshing} onClick={onRefresh} className="w-full sm:w-auto">
+            새로고침
+          </Button>
+          <Link href="/holdings/new" className="inline-flex w-full items-center justify-center rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-600 sm:w-auto">
             + 종목 등록
           </Link>
         </div>
@@ -49,8 +84,28 @@ export function DashboardOverview({ dashboard, displayCurrency, onDisplayCurrenc
       )}
 
       <section className="flex flex-col gap-3">
-        <h2 className="font-semibold text-gray-900">전체 수익현황</h2>
-        <PortfolioSummary summary={dashboard.summary} displayCurrency={displayCurrency} />
+        <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="font-semibold text-gray-900">{selectedName} 수익현황</h2>
+            <p className="mt-1 text-sm text-gray-500">손익은 평가손익과 총손익을 분리해서 표시합니다.</p>
+          </div>
+          <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+            그룹 필터
+            <select
+              value={selectedGroupKey}
+              onChange={(event) => setSelectedGroupKey(event.target.value)}
+              className="min-w-48 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            >
+              <option value="total">전체</option>
+              {dashboard.groups.map((group) => (
+                <option key={groupKey(group)} value={groupKey(group)}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <PortfolioSummary summary={selectedSummary} displayCurrency={displayCurrency} />
       </section>
 
       <section className="flex flex-col gap-3">
@@ -77,7 +132,7 @@ export function DashboardOverview({ dashboard, displayCurrency, onDisplayCurrenc
           />
         </div>
         <PortfolioChart
-          historyRows={dashboard.history.rows}
+          historyRows={selectedHistoryRows}
           displayCurrency={displayCurrency}
           metric={chartMetric}
           view={chartView}
@@ -88,7 +143,7 @@ export function DashboardOverview({ dashboard, displayCurrency, onDisplayCurrenc
         <div className="border-b border-gray-100 px-6 py-4">
           <h2 className="font-semibold text-gray-900">보유 종목</h2>
         </div>
-        <HoldingsTable holdings={dashboard.holdings} displayCurrency={displayCurrency} />
+        <HoldingsTable holdings={selectedHoldings} displayCurrency={displayCurrency} />
       </Card>
 
       <div className="flex justify-end">
@@ -98,4 +153,26 @@ export function DashboardOverview({ dashboard, displayCurrency, onDisplayCurrenc
       </div>
     </div>
   )
+}
+
+function groupKey(group: DashboardGroupSummary) {
+  return `${group.kind}:${group.id ?? 'unclassified'}`
+}
+
+function filterHoldingsByGroup(holdings: DashboardHoldingRow[], group: DashboardGroupSummary | null) {
+  if (!group) return holdings
+  if (group.kind === 'unclassified') {
+    return holdings.filter((holding) => holding.groups.some((badge) => badge.source_group_id === null))
+  }
+  const sourceIds = new Set(group.source_group_ids)
+  return holdings.filter((holding) => holding.groups.some((badge) => badge.source_group_id !== null && sourceIds.has(badge.source_group_id)))
+}
+
+function formatLastUpdated(value: Date | null) {
+  if (!value) return '아직 없음'
+  return new Intl.DateTimeFormat('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(value)
 }

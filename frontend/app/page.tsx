@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import useSWR from 'swr'
 import { DashboardOverview } from '@/components/dashboard/DashboardOverview'
 import { DashboardLoadError } from '@/components/dashboard/DashboardLoadError'
@@ -11,9 +11,14 @@ import type { DashboardResponse, DisplayCurrency } from '@/lib/types'
 
 function DashboardContent() {
   const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>('KRW')
-  const { data: dashboard, error, isLoading, mutate } = useSWR<DashboardResponse>(portfolioApi.dashboardPath(displayCurrency), fetcher, {
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const { data: dashboard, error, isLoading, isValidating, mutate } = useSWR<DashboardResponse>(portfolioApi.dashboardPath(displayCurrency), fetcher, {
     refreshInterval: 30_000,
   })
+
+  useEffect(() => {
+    if (dashboard) setLastUpdated(new Date())
+  }, [dashboard])
 
   if (error) return <DashboardLoadError onRetry={() => void mutate()} />
   if (isLoading || !dashboard) return <PageLoader />
@@ -23,6 +28,9 @@ function DashboardContent() {
       dashboard={dashboard}
       displayCurrency={displayCurrency}
       onDisplayCurrencyChange={setDisplayCurrency}
+      onRefresh={() => void mutate()}
+      isRefreshing={isValidating}
+      lastUpdated={lastUpdated}
     />
   )
 }

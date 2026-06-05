@@ -418,6 +418,11 @@ def _build_scoped_dashboard_payload(
             if total_current_value is not None
             else None
         )
+        total_unrealized_profit_loss = (
+            total_current_value - total_cost_basis
+            if total_current_value is not None
+            else None
+        )
         currencies[currency] = PortfolioCurrencySummary(
             total_invested_principal=invested_principal,
             total_cost_basis=total_cost_basis,
@@ -467,6 +472,9 @@ def _empty_dashboard_summary() -> DashboardSummary:
         total_invested_principal=Decimal(0),
         total_cost_basis=Decimal(0),
         total_current_value=Decimal(0),
+        total_current_value_change=None,
+        total_unrealized_profit_loss=Decimal(0),
+        total_unrealized_profit_loss_pct=None,
         total_profit_loss=Decimal(0),
         total_profit_loss_pct=None,
     )
@@ -515,11 +523,28 @@ def _dashboard_summary_from_currency_summary(
         for field in fields
     }
     invested_principal = display_totals["total_invested_principal"]
+    cost_basis = display_totals["total_cost_basis"]
+    current_value = display_totals["total_current_value"]
+    unrealized_profit_loss = (
+        current_value - cost_basis
+        if current_value is not None and cost_basis is not None
+        else None
+    )
     profit_loss = display_totals["total_profit_loss"]
     return DashboardSummary(
         total_invested_principal=invested_principal,
-        total_cost_basis=display_totals["total_cost_basis"],
-        total_current_value=display_totals["total_current_value"],
+        total_cost_basis=cost_basis,
+        total_current_value=current_value,
+        total_unrealized_profit_loss=unrealized_profit_loss,
+        total_unrealized_profit_loss_pct=(
+            unrealized_profit_loss / cost_basis * 100
+            if (
+                unrealized_profit_loss is not None
+                and cost_basis is not None
+                and cost_basis > 0
+            )
+            else None
+        ),
         total_profit_loss=profit_loss,
         total_profit_loss_pct=(
             profit_loss / invested_principal * 100
@@ -543,6 +568,48 @@ def _dashboard_summary_has_values(summary: DashboardSummary) -> bool:
             summary.total_profit_loss,
         )
     )
+
+
+def _dashboard_summary_with_value_change(
+    summary: DashboardSummary,
+    history_rows: list[DashboardHistoryRow],
+    *,
+    group_kind: str,
+    group_id: uuid.UUID | None,
+) -> DashboardSummary:
+    previous_values = [
+        row.total_value
+        for row in history_rows
+        if row.group_kind == group_kind
+        and row.group_id == group_id
+        and row.total_value is not None
+    ]
+    previous_value = previous_values[-1] if previous_values else None
+    current_value_change = (
+        summary.total_current_value - previous_value
+        if summary.total_current_value is not None and previous_value is not None
+        else None
+    )
+    return summary.model_copy(update={"total_current_value_change": current_value_change})
+
+
+def _dashboard_groups_with_value_change(
+    groups: list[DashboardGroupSummary],
+    history_rows: list[DashboardHistoryRow],
+) -> list[DashboardGroupSummary]:
+    return [
+        group.model_copy(
+            update={
+                "summary": _dashboard_summary_with_value_change(
+                    group.summary,
+                    history_rows,
+                    group_kind=group.kind,
+                    group_id=group.id,
+                )
+            }
+        )
+        for group in groups
+    ]
 
 
 def _source_group_scope(source_group: SourceGroup) -> PortfolioScope:
@@ -604,6 +671,7 @@ def _build_dashboard_groups(
                     id=source_group.id,
                     name=source_group.name,
                     color=source_group.color,
+                    source_group_ids=[source_group.id],
                     summary=summary,
                 )
             )
@@ -624,6 +692,9 @@ def _build_dashboard_groups(
                     id=rollup_group.id,
                     name=rollup_group.name,
                     color=rollup_group.color,
+                    source_group_ids=[
+                        member.source_group_id for member in rollup_group.members
+                    ],
                     summary=summary,
                 )
             )
@@ -923,6 +994,25 @@ def build_dashboard_response(
     )
     output_warnings.extend(group_warnings)
 
+    history = _build_dashboard_history(
+        holdings,
+        groups,
+        rollup_groups,
+        display_currency,
+        exchange_rate,
+    )
+    summary = _dashboard_summary_with_value_change(
+        _dashboard_summary_from_currency_summary(
+            scoped_summary,
+            display_currency,
+            exchange_rate,
+        ),
+        history.rows,
+        group_kind="total",
+        group_id=None,
+    )
+    groups = _dashboard_groups_with_value_change(groups, history.rows)
+
     return DashboardResponse(
         display_currency=display_currency,
         exchange_rate=(
@@ -935,19 +1025,9 @@ def build_dashboard_response(
             if exchange_rate is not None
             else None
         ),
-        summary=_dashboard_summary_from_currency_summary(
-            scoped_summary,
-            display_currency,
-            exchange_rate,
-        ),
+        summary=summary,
         groups=groups,
-        history=_build_dashboard_history(
-            holdings,
-            groups,
-            rollup_groups,
-            display_currency,
-            exchange_rate,
-        ),
+        history=history,
         holdings=_build_dashboard_holdings(
             active_holdings,
             source_groups,
