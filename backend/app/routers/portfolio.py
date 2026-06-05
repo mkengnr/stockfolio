@@ -2,7 +2,7 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -61,6 +61,12 @@ class HistoricalPosition:
     @property
     def cost_basis(self) -> Decimal:
         return self.quantity * self.avg_cost
+
+
+@dataclass(frozen=True)
+class CurrentPriceQuote:
+    price: Decimal | None
+    price_date: date | None
 
 
 def _apply_transaction(position: HistoricalPosition, transaction: OrmTransaction) -> HistoricalPosition:
@@ -576,14 +582,15 @@ def _dashboard_summary_with_value_change(
     *,
     group_kind: str,
     group_id: uuid.UUID | None,
+    current_price_as_of: date | None = None,
 ) -> DashboardSummary:
-    today = date.today()
+    reference_date = current_price_as_of or date.today()
     previous_values = [
         row.total_value
         for row in history_rows
         if row.group_kind == group_kind
         and row.group_id == group_id
-        and row.snapshot_date < today
+        and row.snapshot_date < reference_date
         and row.total_value is not None
     ]
     previous_value = previous_values[-1] if previous_values else None
@@ -598,6 +605,7 @@ def _dashboard_summary_with_value_change(
 def _dashboard_groups_with_value_change(
     groups: list[DashboardGroupSummary],
     history_rows: list[DashboardHistoryRow],
+    current_price_as_of: date | None,
 ) -> list[DashboardGroupSummary]:
     return [
         group.model_copy(
@@ -607,11 +615,34 @@ def _dashboard_groups_with_value_change(
                     history_rows,
                     group_kind=group.kind,
                     group_id=group.id,
+                    current_price_as_of=current_price_as_of,
                 )
             }
         )
         for group in groups
     ]
+
+
+def _dashboard_current_price_as_of(current_price_dates: dict[str, date | None]) -> date | None:
+    valid_dates = [price_date for price_date in current_price_dates.values() if price_date is not None]
+    return min(valid_dates) if valid_dates else None
+
+
+def _dashboard_comparison_as_of(
+    history_rows: list[DashboardHistoryRow],
+    current_price_as_of: date | None,
+) -> date | None:
+    if current_price_as_of is None:
+        return None
+    previous_dates = [
+        row.snapshot_date
+        for row in history_rows
+        if row.group_kind == "total"
+        and row.group_id is None
+        and row.snapshot_date < current_price_as_of
+        and row.total_value is not None
+    ]
+    return previous_dates[-1] if previous_dates else None
 
 
 def _source_group_scope(source_group: SourceGroup) -> PortfolioScope:
@@ -971,6 +1002,7 @@ def build_dashboard_response(
     source_groups: list[SourceGroup],
     rollup_groups: list[RollupGroup],
     current_prices: dict[str, Decimal | None],
+    current_price_dates: dict[str, date | None] | None = None,
     display_currency: DisplayCurrency = "KRW",
     exchange_rate: ExchangeRate | None = None,
     warnings: list[str] | None = None,
@@ -1003,6 +1035,8 @@ def build_dashboard_response(
         display_currency,
         exchange_rate,
     )
+    current_price_as_of = _dashboard_current_price_as_of(current_price_dates or {})
+    comparison_as_of = _dashboard_comparison_as_of(history.rows, current_price_as_of)
     summary = _dashboard_summary_with_value_change(
         _dashboard_summary_from_currency_summary(
             scoped_summary,
@@ -1012,8 +1046,9 @@ def build_dashboard_response(
         history.rows,
         group_kind="total",
         group_id=None,
+        current_price_as_of=current_price_as_of,
     )
-    groups = _dashboard_groups_with_value_change(groups, history.rows)
+    groups = _dashboard_groups_with_value_change(groups, history.rows, current_price_as_of)
 
     return DashboardResponse(
         display_currency=display_currency,
@@ -1027,6 +1062,9 @@ def build_dashboard_response(
             if exchange_rate is not None
             else None
         ),
+        last_refreshed_at=datetime.now(timezone.utc),
+        current_price_as_of=current_price_as_of,
+        comparison_as_of=comparison_as_of,
         summary=summary,
         groups=groups,
         history=history,
@@ -1069,19 +1107,24 @@ async def _load_dashboard_groups(
 
 
 async def _fetch_current_prices(tickers: set[str]) -> dict[str, Decimal | None]:
+    quotes = await _fetch_current_price_quotes(tickers)
+    return {ticker: quote.price for ticker, quote in quotes.items()}
+
+
+async def _fetch_current_price_quotes(tickers: set[str]) -> dict[str, CurrentPriceQuote]:
     ordered_tickers = sorted(tickers)
     results = await asyncio.gather(
         *(get_price(ticker) for ticker in ordered_tickers),
         return_exceptions=True,
     )
-    prices = {}
+    quotes = {}
     for ticker, result in zip(ordered_tickers, results):
         if isinstance(result, BaseException):
             logger.warning("price lookup failed for ticker=%s: %r", ticker, result)
-            prices[ticker] = None
+            quotes[ticker] = CurrentPriceQuote(price=None, price_date=None)
         else:
-            prices[ticker] = result.price
-    return prices
+            quotes[ticker] = CurrentPriceQuote(price=result.price, price_date=result.price_date)
+    return quotes
 
 
 async def build_scoped_portfolio_dashboard(
@@ -1167,9 +1210,11 @@ async def build_portfolio_dashboard_response(
     holdings = await _load_scoped_holdings(db, user_id, include_inactive=True)
     active_holdings = [holding for holding in holdings if holding.is_active]
     source_groups, rollup_groups = await _load_dashboard_groups(db, user_id)
-    prices = await _fetch_current_prices(
+    price_quotes = await _fetch_current_price_quotes(
         _scoped_price_tickers(active_holdings, PortfolioScope("all"))
     )
+    prices = {ticker: quote.price for ticker, quote in price_quotes.items()}
+    price_dates = {ticker: quote.price_date for ticker, quote in price_quotes.items()}
     exchange_rate = None
     warnings: list[str] = []
     if display_currency == "KRW" and any(
@@ -1185,6 +1230,7 @@ async def build_portfolio_dashboard_response(
         source_groups=source_groups,
         rollup_groups=rollup_groups,
         current_prices=prices,
+        current_price_dates=price_dates,
         display_currency=display_currency,
         exchange_rate=exchange_rate,
         warnings=warnings,

@@ -79,6 +79,9 @@ class DashboardHistorySeries(BaseModel):
 class DashboardResponse(BaseModel):
     display_currency: DisplayCurrency
     exchange_rate: DashboardExchangeRate | None
+    last_refreshed_at: datetime
+    current_price_as_of: date | None
+    comparison_as_of: date | None
     summary: DashboardSummary
     groups: list[DashboardGroupSummary]
     history: DashboardHistorySeries

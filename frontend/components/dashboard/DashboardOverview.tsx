@@ -86,7 +86,12 @@ export function DashboardOverview({
           <p className="mt-1 text-sm text-gray-500">
             포트폴리오 전체와 그룹별 수익률을 {displayCurrency === 'KRW' ? 'KRW 환산' : 'USD 별도'} 기준으로 확인합니다.
           </p>
-          <p className="mt-1 text-xs text-gray-400">마지막 갱신: {formatLastUpdated(lastUpdated)}</p>
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+            <span>마지막 조회: {formatDashboardDateTime(dashboard.last_refreshed_at)}</span>
+            <span>화면 갱신: {formatLastUpdated(lastUpdated)}</span>
+            <span>현재가 기준: {formatDashboardDate(dashboard.current_price_as_of)}</span>
+            <span>비교 기준: {formatDashboardDate(dashboard.comparison_as_of)}</span>
+          </div>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-start">
           <DisplayCurrencyToggle
@@ -226,6 +231,25 @@ function formatLastUpdated(value: Date | null) {
     minute: '2-digit',
     second: '2-digit',
   }).format(value)
+}
+
+function formatDashboardDateTime(value: string | null) {
+  if (!value) return '—'
+  const date = new Date(value)
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-') + ' ' + [
+    String(date.getHours()).padStart(2, '0'),
+    String(date.getMinutes()).padStart(2, '0'),
+    String(date.getSeconds()).padStart(2, '0'),
+  ].join(':')
+}
+
+function formatDashboardDate(value: string | null) {
+  if (!value) return '—'
+  return value
 }
 
 function ChartRangeControl({

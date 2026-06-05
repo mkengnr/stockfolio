@@ -181,6 +181,9 @@ export interface DashboardHistoryRow {
 export interface DashboardResponse {
   display_currency: DisplayCurrency
   exchange_rate: DashboardExchangeRate | null
+  last_refreshed_at: string
+  current_price_as_of: string | null
+  comparison_as_of: string | null
   summary: DashboardSummary
   groups: DashboardGroupSummary[]
   history: { rows: DashboardHistoryRow[] }

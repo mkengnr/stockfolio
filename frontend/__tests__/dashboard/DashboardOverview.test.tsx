@@ -29,6 +29,9 @@ const dashboard: DashboardResponse = {
     rate: '1380.5',
     as_of: '2026-06-05T09:00:00Z',
   },
+  last_refreshed_at: '2026-06-06T00:45:59Z',
+  current_price_as_of: '2026-06-05',
+  comparison_as_of: '2026-06-04',
   summary: {
     total_invested_principal: '1000000',
     total_cost_basis: '800000',
@@ -215,6 +218,9 @@ describe('DashboardOverview', () => {
     expect(screen.getByRole('button', { name: '전체만' })).toBeInTheDocument()
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('전체,모음통장,장기투자')
     expect(screen.getByTestId('portfolio-chart')).not.toHaveTextContent('2026-02-01')
+    expect(screen.getByText(/마지막 조회/)).toHaveTextContent('2026-06-06')
+    expect(screen.getByText(/현재가 기준/)).toHaveTextContent('2026-06-05')
+    expect(screen.getByText(/비교 기준/)).toHaveTextContent('2026-06-04')
   })
 
   it('uses three months as the default chart range and can show all history', () => {

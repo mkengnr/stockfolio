@@ -524,6 +524,48 @@ def test_dashboard_daily_change_uses_previous_trading_day_not_today_snapshot(mon
     assert response.summary.total_current_value_change == Decimal("400")
 
 
+def test_dashboard_daily_change_uses_current_price_date_as_reference_day(monkeypatch):
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 6, 6)
+
+    monkeypatch.setattr(portfolio_router, "date", FixedDate)
+
+    holding_id = uuid.uuid4()
+    holding = _holding(
+        "005930",
+        Currency.KRW,
+        _buy(
+            holding_id,
+            "005930",
+            Currency.KRW,
+            quantity="1",
+            price="1000",
+            tx_date=date(2026, 1, 1),
+        ),
+        snapshots=[
+            _snapshot(date(2026, 6, 4), "1100"),
+            _snapshot(date(2026, 6, 5), "1500"),
+        ],
+    )
+
+    response = build_dashboard_response(
+        holdings=[holding],
+        source_groups=[],
+        rollup_groups=[],
+        current_prices={"005930": Decimal("1500")},
+        current_price_dates={"005930": date(2026, 6, 5)},
+        display_currency="KRW",
+        exchange_rate=None,
+    )
+
+    assert response.current_price_as_of == date(2026, 6, 5)
+    assert response.comparison_as_of == date(2026, 6, 4)
+    assert response.summary.total_current_value == Decimal("1500")
+    assert response.summary.total_current_value_change == Decimal("400")
+
+
 def test_krw_history_without_rate_nulls_usd_only_values():
     holding_id = uuid.uuid4()
     holding = _holding(
@@ -644,16 +686,23 @@ async def test_dashboard_endpoint_returns_authenticated_aggregate(monkeypatch):
     db = _QueuedSession()
     db.queue(_Result(many=[holding]), _Result(many=[source]), _Result(many=[]))
 
-    async def _fetch_current_prices(tickers):
+    async def _fetch_current_price_quotes(tickers):
         assert tickers == {"AAPL"}
-        return {"AAPL": Decimal("12")}
+        return {
+            "AAPL": portfolio_router.CurrentPriceQuote(
+                price=Decimal("12"),
+                price_date=date(2026, 1, 3),
+            )
+        }
 
-    monkeypatch.setattr(portfolio_router, "_fetch_current_prices", _fetch_current_prices)
+    monkeypatch.setattr(portfolio_router, "_fetch_current_price_quotes", _fetch_current_price_quotes)
     monkeypatch.setattr(portfolio_router, "get_usd_krw_rate", lambda: RATE)
 
     response = await get_portfolio_dashboard(current_user=user, db=db)
 
     assert response.display_currency == "KRW"
+    assert response.current_price_as_of == date(2026, 1, 3)
+    assert response.comparison_as_of == date(2026, 1, 2)
     assert response.summary.total_current_value == Decimal("15600")
     assert response.groups[0].name == "월급"
     assert response.holdings[0].ticker == "AAPL"
