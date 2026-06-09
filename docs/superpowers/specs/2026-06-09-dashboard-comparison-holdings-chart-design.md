@@ -1,119 +1,119 @@
-# Dashboard Comparison, Scoped Holdings, and Integrated Chart Design
+# 대시보드 비교 기준, 그룹별 보유종목, 통합 차트 설계
 
-## Goal
+## 목표
 
-Improve dashboard accuracy and readability in three related areas:
+대시보드의 정확성과 가독성을 다음 세 영역에서 개선한다.
 
-1. Recover a missing prior-trading-day snapshot during dashboard reads so the daily comparison does not silently fall back multiple trading days.
-2. Show only the selected group's owned lot share in the dashboard holdings table.
-3. Replace the single-metric dashboard chart with an integrated portfolio chart that combines group composition, total value, invested principal, and daily profit change.
+1. 대시보드 조회 시 누락된 직전 거래일 스냅샷을 복구하여 전일대비 비교가 여러 거래일 전 데이터로 조용히 후퇴하지 않게 한다.
+2. 대시보드 보유종목 표에 선택한 그룹이 실제로 보유한 lot 몫만 표시한다.
+3. 단일 지표 대시보드 차트를 그룹 구성, 전체 평가금액, 투자원금, 일별 손익 변화를 함께 보여주는 통합 차트로 교체한다.
 
-## Current Behavior and Root Cause
+## 현재 동작과 원인
 
-The dashboard selects `comparison_as_of` as the latest total-history snapshot before `current_price_as_of`. This is a prior available snapshot, not necessarily the immediately preceding trading day.
+대시보드는 `comparison_as_of`를 `current_price_as_of`보다 이전인 전체 포트폴리오 이력 중 가장 최근 스냅샷 날짜로 선택한다. 이 날짜는 사용 가능한 이전 스냅샷일 뿐, 반드시 바로 전 거래일인 것은 아니다.
 
-Daily snapshots are normally saved by the backend scheduler at 15:35 KST on weekdays. A snapshot can be absent when:
+일일 스냅샷은 일반적으로 백엔드 스케줄러가 평일 오후 3시 35분(KST)에 저장한다. 다음 상황에서는 스냅샷이 누락될 수 있다.
 
-- the backend process was not running at the scheduled time;
-- a quote lookup failed during the scheduled job;
-- the startup backfill did not obtain the missing recent bar.
+- 예약 시각에 백엔드 프로세스가 실행 중이지 않았을 때
+- 예약 작업 중 시세 조회가 실패했을 때
+- 서버 시작 시 수행하는 백필에서 최근 누락 시세를 가져오지 못했을 때
 
-For example, when the current price date is June 9, 2026 and the June 8 snapshot is absent, the comparison date falls back to June 5, 2026.
+예를 들어 현재가 기준일이 2026년 6월 9일이고 6월 8일 스냅샷이 없다면 비교 기준일은 6월 5일로 후퇴한다.
 
-## Design
+## 설계
 
-### 1. Read-Time Prior-Trading-Day Snapshot Recovery
+### 1. 조회 시 직전 거래일 스냅샷 복구
 
-Before building the dashboard response:
+대시보드 응답을 만들기 전에 다음 순서로 처리한다.
 
-1. Load holdings and fetch current price quotes.
-2. Determine the dashboard current price date using the existing conservative rule: the earliest valid quote date among included active holdings.
-3. For each active holding, inspect snapshots before that current price date.
-4. If recent history does not establish a snapshot for the prior available market trading day, request a short price-history window ending one day before the current price date and add missing snapshots using historical quantities.
-5. Commit added snapshots and reload holdings before building dashboard history.
+1. 보유종목을 불러오고 현재가 정보를 조회한다.
+2. 기존의 보수적인 규칙을 유지하여 대시보드 현재가 기준일을 결정한다. 포함된 활성 보유종목의 유효한 시세 날짜 중 가장 이른 날짜를 사용한다.
+3. 각 활성 보유종목에서 현재가 기준일 이전의 스냅샷을 확인한다.
+4. 최근 이력에서 직전 시장 거래일의 스냅샷을 확인할 수 없다면, 현재가 기준일 전날까지의 짧은 가격 이력 구간을 조회하고 과거 보유수량을 적용하여 누락된 스냅샷을 추가한다.
+5. 추가한 스냅샷을 커밋하고 보유종목을 다시 불러온 뒤 대시보드 이력을 생성한다.
 
-The recovery is bounded to the recent comparison window and runs only when the required recent snapshot is absent. It does not rebuild complete holding history on every dashboard request.
+복구 범위는 최근 비교에 필요한 짧은 구간으로 제한하며, 필요한 최근 스냅샷이 없을 때만 실행한다. 대시보드를 조회할 때마다 전체 보유 이력을 다시 만들지 않는다.
 
-If recovery fails for any holding, the dashboard still responds using the latest available comparison snapshot and adds a warning. The UI label becomes `비교 기준(직전 거래일)` so users can see both the intended meaning and the actual date used.
+특정 보유종목의 복구가 실패해도 대시보드 응답 자체는 실패시키지 않는다. 기존에 사용 가능한 가장 최근 비교 스냅샷을 사용하고 경고를 추가한다. UI 라벨은 `비교 기준(직전 거래일)`로 변경하여 의도한 기준과 실제 사용 날짜를 함께 확인할 수 있게 한다.
 
-### 2. Selected-Group Holdings Values
+### 2. 선택 그룹 기준 보유종목 값
 
-The dashboard response will expose holdings for each portfolio group scope, not only all-portfolio holdings.
+대시보드 응답은 전체 포트폴리오 보유종목뿐 아니라 각 포트폴리오 그룹 범위의 보유종목도 제공한다.
 
-For the selected scope:
+선택 범위별 포함 기준은 다음과 같다.
 
-- Source group: include only remaining lots assigned to that source group.
-- Combined group: include remaining lots from its member source groups.
-- Unclassified: include only remaining lots without a source group.
-- Total: include all remaining lots.
+- 출처 그룹: 해당 출처 그룹에 지정된 잔여 lot만 포함한다.
+- 통합 그룹: 통합 그룹에 속한 출처 그룹들의 잔여 lot를 포함한다.
+- 미분류: 출처 그룹이 없는 잔여 lot만 포함한다.
+- 전체: 모든 잔여 lot를 포함한다.
 
-Each scoped holding row contains the scoped remaining quantity, remaining cost basis, current value, and unrealized profit/loss. The dashboard holdings table switches to the selected scope's rows. This prevents a stock shared by multiple groups from displaying its full-portfolio quantity and value under one selected group.
+각 그룹별 보유종목 행에는 해당 범위의 잔여 수량, 잔여원금, 평가금액, 평가손익을 담는다. 대시보드 보유종목 표는 선택한 그룹의 행으로 전환한다. 여러 그룹에 걸쳐 보유한 종목을 특정 그룹에서 조회할 때 종목 전체 수량과 금액이 표시되는 문제를 방지한다.
 
-### 3. Integrated Portfolio Chart
+### 3. 통합 포트폴리오 차트
 
-The main dashboard chart uses synchronized upper and lower panels.
+메인 대시보드 차트는 서로 시간축이 연동된 상단 패널과 하단 패널로 구성한다.
 
-Upper panel:
+상단 패널:
 
-- Stacked histogram by date for source-group and unclassified current values.
-- Solid line for total portfolio value.
-- Dashed line for invested principal.
+- 날짜별 출처 그룹 및 미분류 평가금액을 누적 막대로 표시한다.
+- 전체 포트폴리오 평가금액을 실선으로 표시한다.
+- 투자원금을 점선으로 표시한다.
 
-The stacked histogram excludes combined groups because they overlap their member source groups. Its stack total therefore represents the non-overlapping total portfolio composition.
+통합 그룹은 구성 출처 그룹과 값이 중복되므로 누적 막대에서 제외한다. 따라서 누적 막대의 합계는 중복 없는 전체 포트폴리오 구성을 나타낸다.
 
-Lower panel:
+하단 패널:
 
-- Histogram of daily total-profit change.
-- Daily total-profit change is `current trading-day total_profit_loss - previous trading-day total_profit_loss`.
-- Positive values are green and negative values are red.
+- 일별 총손익 증감을 막대로 표시한다.
+- 일별 총손익 증감은 `당일 총손익 - 직전 거래일 총손익`으로 계산한다.
+- 양수는 초록색, 음수는 빨간색으로 표시한다.
 
-Formatting:
+표시 규칙:
 
-- Price axes and tooltips use thousands separators.
-- Monetary values display no decimal places.
-- Existing chart range control remains.
-- When a group filter is selected, the chart shows that scope's value and principal lines plus its daily-profit-change histogram. The group-composition stack is shown only for the total scope.
-- Existing combined/separate and single-metric controls are removed because the integrated chart establishes a single primary view.
+- 금액 축과 툴팁에 천 단위 구분 기호를 넣는다.
+- 금액은 소수점 없이 표시한다.
+- 기존 차트 기간 선택 기능은 유지한다.
+- 그룹 필터를 선택하면 해당 범위의 평가금액 선, 투자원금 선, 일별 총손익 증감 막대를 표시한다. 그룹 구성 누적 막대는 전체 범위에서만 표시한다.
+- 통합 차트가 하나의 기본 보기를 제공하므로 기존의 하나의 차트/각각 보기 및 단일 지표 선택 컨트롤은 제거한다.
 
-### 4. Data Contract
+### 4. 데이터 계약
 
-Add scoped holdings to each `DashboardGroupSummary` as a `holdings` field. This keeps the summary, history identity, and holdings scope aligned.
+각 `DashboardGroupSummary`에 `holdings` 필드로 그룹별 보유종목을 추가한다. 이를 통해 그룹 요약, 이력 식별자, 보유종목 범위를 일치시킨다.
 
-Chart data continues to derive from `DashboardHistoryRow`:
+차트 데이터는 계속 `DashboardHistoryRow`에서 파생한다.
 
-- total/source/unclassified history rows provide the non-overlapping stack;
-- selected total or group rows provide value, principal, and total-profit series;
-- daily profit change is derived client-side from consecutive selected-scope history rows.
+- 전체, 출처 그룹, 미분류 이력 행으로 중복 없는 그룹 누적 막대를 구성한다.
+- 선택한 전체 또는 그룹 이력 행으로 평가금액, 투자원금, 총손익 시리즈를 구성한다.
+- 연속된 선택 범위 이력 행의 총손익 차이로 일별 손익 증감을 프론트엔드에서 계산한다.
 
-No new persisted chart data is required.
+차트를 위해 새로 영속화하는 데이터는 없다.
 
-## Error Handling
+## 오류 처리
 
-- Snapshot recovery failures do not fail the dashboard request.
-- Recovery warnings identify that the prior-trading-day snapshot could not be refreshed.
-- Existing quote and exchange-rate warnings remain unchanged.
-- If chart series values are unavailable, the chart omits those points and retains the existing empty-state behavior when no usable values exist.
+- 스냅샷 복구 실패로 대시보드 요청 전체를 실패시키지 않는다.
+- 복구 실패 경고에는 직전 거래일 스냅샷을 갱신하지 못했다는 내용을 표시한다.
+- 기존 시세 및 환율 경고 동작은 유지한다.
+- 사용할 수 없는 차트 시리즈 값은 해당 지점을 제외한다. 사용 가능한 값이 전혀 없으면 기존의 데이터 없음 상태를 표시한다.
 
-## Testing
+## 테스트
 
-Backend tests:
+백엔드 테스트:
 
-- read-time recovery adds a missing prior-trading-day snapshot and reloads holdings;
-- recovery is skipped when the required snapshot already exists;
-- recovery failure returns a dashboard with a warning and existing comparison date;
-- source, combined, and unclassified group summaries expose holdings calculated only from matching remaining lots.
+- 조회 시 복구가 누락된 직전 거래일 스냅샷을 추가하고 보유종목을 다시 불러오는지 검증한다.
+- 필요한 스냅샷이 이미 있으면 복구를 생략하는지 검증한다.
+- 복구 실패 시 경고와 기존 비교 날짜를 포함한 대시보드를 반환하는지 검증한다.
+- 출처 그룹, 통합 그룹, 미분류 그룹 요약이 해당 잔여 lot만으로 계산된 보유종목을 제공하는지 검증한다.
 
-Frontend tests:
+프론트엔드 테스트:
 
-- selecting a group displays scoped holding quantities and values;
-- integrated chart builders create total value, principal, non-overlapping group stack, and daily profit-change series;
-- combined groups are excluded from stacked group composition;
-- money axis/tooltip formatting adds separators and removes decimals;
-- the comparison label reads `비교 기준(직전 거래일)`.
+- 그룹 선택 시 그룹 범위의 보유 수량과 금액을 표시하는지 검증한다.
+- 통합 차트 생성기가 전체 평가금액, 투자원금, 중복 없는 그룹 누적 막대, 일별 총손익 증감 시리즈를 생성하는지 검증한다.
+- 그룹 구성 누적 막대에서 통합 그룹을 제외하는지 검증한다.
+- 금액 축과 툴팁에 천 단위 구분 기호를 넣고 소수점을 제거하는지 검증한다.
+- 비교 라벨이 `비교 기준(직전 거래일)`로 표시되는지 검증한다.
 
-## Scope Boundaries
+## 범위 제외
 
-- Keep the existing scheduled snapshot job; read-time recovery supplements it.
-- Do not add market-calendar infrastructure. The short historical-price response determines the prior available market trading day.
-- Do not include combined groups in stacked chart composition.
-- Do not add long-range daily/weekly/monthly aggregation in this change.
+- 기존 예약 스냅샷 작업은 유지하며 조회 시 복구가 이를 보완한다.
+- 시장 휴장일 달력 인프라는 추가하지 않는다. 짧은 가격 이력 조회 결과를 이용해 직전 시장 거래일을 결정한다.
+- 통합 그룹은 그룹 구성 누적 막대에 포함하지 않는다.
+- 이번 변경에서는 긴 기간의 일간/주간/월간 집계 기능을 추가하지 않는다.
