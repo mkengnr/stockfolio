@@ -2,6 +2,7 @@ import {
   buildDashboardChartSeries,
   buildIntegratedDashboardChartData,
   formatDashboardMoney,
+  getDashboardChartLayout,
 } from '@/components/dashboard/PortfolioChart'
 import type { DashboardHistoryRow } from '@/lib/types'
 
@@ -170,5 +171,14 @@ describe('buildIntegratedDashboardChartData', () => {
       { time: '2026-06-02', value: 15000, color: '#16a34a' },
     ])
     expect(formatDashboardMoney(1234567.89)).toBe('1,234,568')
+  })
+})
+
+describe('getDashboardChartLayout', () => {
+  it('renders daily profit in a distinct lower chart panel', () => {
+    expect(getDashboardChartLayout()).toEqual({
+      mainHeight: 320,
+      profitHeight: 110,
+    })
   })
 })

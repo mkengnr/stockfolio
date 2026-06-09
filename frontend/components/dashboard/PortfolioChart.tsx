@@ -145,6 +145,13 @@ export function formatDashboardMoney(value: number) {
   return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(value)
 }
 
+export function getDashboardChartLayout() {
+  return {
+    mainHeight: 320,
+    profitHeight: 110,
+  }
+}
+
 function buildPointsForField(
   rows: DashboardHistoryRow[],
   field: 'total_value' | 'total_invested_principal',
@@ -207,7 +214,8 @@ function DashboardPortfolioChart({
   includeComposition: boolean
   displayCurrency: DisplayCurrency
 }) {
-  const containerRef = useRef<HTMLDivElement>(null)
+  const mainContainerRef = useRef<HTMLDivElement>(null)
+  const profitContainerRef = useRef<HTMLDivElement>(null)
   const chartData = useMemo(
     () => buildIntegratedDashboardChartData(compositionRows, rows, { includeComposition }),
     [compositionRows, includeComposition, rows],
@@ -215,42 +223,67 @@ function DashboardPortfolioChart({
   const hasData = chartData.value.length > 0 || chartData.principal.length > 0
 
   useEffect(() => {
-    if (!containerRef.current || !hasData) return
+    if (!mainContainerRef.current || !profitContainerRef.current || !hasData) return
     let cancelled = false
-    let chart: ReturnType<typeof import('lightweight-charts')['createChart']> | null = null
+    let mainChart: ReturnType<typeof import('lightweight-charts')['createChart']> | null = null
+    let profitChart: ReturnType<typeof import('lightweight-charts')['createChart']> | null = null
     let handleResize: (() => void) | null = null
 
     import('lightweight-charts').then(({ createChart, ColorType, LineStyle }) => {
-      if (cancelled || !containerRef.current) return
-      chart = createChart(containerRef.current, {
-        width: containerRef.current.clientWidth,
-        height: 420,
+      if (cancelled || !mainContainerRef.current || !profitContainerRef.current) return
+      const layout = getDashboardChartLayout()
+      const commonLayout = {
+        background: { type: ColorType.Solid, color: 'white' },
+        textColor: '#6b7280',
+        fontSize: 11,
+      }
+      const commonGrid = {
+        vertLines: { color: '#f3f4f6' },
+        horzLines: { color: '#f3f4f6' },
+      }
+
+      mainChart = createChart(mainContainerRef.current, {
+        width: mainContainerRef.current.clientWidth,
+        height: layout.mainHeight,
         layout: {
-          background: { type: ColorType.Solid, color: 'white' },
-          textColor: '#6b7280',
-          fontSize: 11,
+          ...commonLayout,
         },
-        grid: {
-          vertLines: { color: '#f3f4f6' },
-          horzLines: { color: '#f3f4f6' },
-        },
+        grid: commonGrid,
         localization: { priceFormatter: formatDashboardMoney },
         leftPriceScale: {
           visible: true,
           borderColor: '#e5e7eb',
-          scaleMargins: { top: 0.05, bottom: 0.32 },
+          scaleMargins: { top: 0.05, bottom: 0.05 },
+        },
+        rightPriceScale: { visible: false },
+        timeScale: {
+          visible: false,
+          borderColor: '#e5e7eb',
+          fixLeftEdge: true,
+          fixRightEdge: true,
+        },
+      })
+
+      profitChart = createChart(profitContainerRef.current, {
+        width: profitContainerRef.current.clientWidth,
+        height: layout.profitHeight,
+        layout: {
+          ...commonLayout,
+        },
+        grid: commonGrid,
+        localization: { priceFormatter: formatDashboardMoney },
+        leftPriceScale: {
+          visible: true,
+          borderColor: '#e5e7eb',
+          scaleMargins: { top: 0.1, bottom: 0.1 },
         },
         rightPriceScale: { visible: false },
         timeScale: { borderColor: '#e5e7eb', fixLeftEdge: true, fixRightEdge: true },
       })
 
-      chart.priceScale('profit').applyOptions({
-        scaleMargins: { top: 0.78, bottom: 0.02 },
-      })
-
       ;[...chartData.composition].reverse().forEach((item, reverseIndex) => {
         const index = chartData.composition.length - reverseIndex - 1
-        const histogram = chart!.addHistogramSeries({
+        const histogram = mainChart!.addHistogramSeries({
           color: dashboardColors[index % dashboardColors.length],
           priceScaleId: 'left',
           priceLineVisible: false,
@@ -263,7 +296,7 @@ function DashboardPortfolioChart({
         })))
       })
 
-      const valueSeries = chart.addLineSeries({
+      const valueSeries = mainChart.addLineSeries({
         color: '#312e81',
         lineWidth: 3,
         lineStyle: LineStyle.Solid,
@@ -274,7 +307,7 @@ function DashboardPortfolioChart({
       })
       valueSeries.setData(chartData.value.map(toLightweightPoint))
 
-      const principalSeries = chart.addLineSeries({
+      const principalSeries = mainChart.addLineSeries({
         color: '#818cf8',
         lineWidth: 2,
         lineStyle: LineStyle.Dashed,
@@ -285,8 +318,8 @@ function DashboardPortfolioChart({
       })
       principalSeries.setData(chartData.principal.map(toLightweightPoint))
 
-      const profitSeries = chart.addHistogramSeries({
-        priceScaleId: 'profit',
+      const profitSeries = profitChart.addHistogramSeries({
+        priceScaleId: 'left',
         priceLineVisible: false,
         lastValueVisible: false,
         priceFormat: dashboardPriceFormat,
@@ -297,9 +330,28 @@ function DashboardPortfolioChart({
         color: point.color,
       })))
 
-      chart.timeScale().fitContent()
+      mainChart.timeScale().fitContent()
+      profitChart.timeScale().fitContent()
+      let syncingTimeScale = false
+      const syncRange = (
+        target: ReturnType<typeof import('lightweight-charts')['createChart']>,
+        range: import('lightweight-charts').LogicalRange | null,
+      ) => {
+        if (!range || syncingTimeScale) return
+        syncingTimeScale = true
+        target.timeScale().setVisibleLogicalRange(range)
+        syncingTimeScale = false
+      }
+      mainChart.timeScale().subscribeVisibleLogicalRangeChange((range) => syncRange(profitChart!, range))
+      profitChart.timeScale().subscribeVisibleLogicalRangeChange((range) => syncRange(mainChart!, range))
+
       handleResize = () => {
-        if (containerRef.current && chart) chart.applyOptions({ width: containerRef.current.clientWidth })
+        if (mainContainerRef.current && mainChart) {
+          mainChart.applyOptions({ width: mainContainerRef.current.clientWidth })
+        }
+        if (profitContainerRef.current && profitChart) {
+          profitChart.applyOptions({ width: profitContainerRef.current.clientWidth })
+        }
       }
       window.addEventListener('resize', handleResize)
     })
@@ -307,7 +359,8 @@ function DashboardPortfolioChart({
     return () => {
       cancelled = true
       if (handleResize) window.removeEventListener('resize', handleResize)
-      chart?.remove()
+      mainChart?.remove()
+      profitChart?.remove()
     }
   }, [chartData, hasData])
 
@@ -330,7 +383,10 @@ function DashboardPortfolioChart({
           />
         ))}
       </div>
-      <div ref={containerRef} className="w-full" />
+      <div className="text-xs font-medium text-gray-500">평가금액 · 그룹 구성</div>
+      <div ref={mainContainerRef} className="w-full" />
+      <div className="mt-2 border-t border-gray-100 pt-2 text-xs font-medium text-gray-500">일별손익</div>
+      <div ref={profitContainerRef} className="w-full" />
     </div>
   )
 }
