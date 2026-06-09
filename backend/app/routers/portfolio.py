@@ -1004,7 +1004,11 @@ def _source_group_matches_scope(
         return source_group_id == scope.id
     if scope.kind == "rollup":
         return source_group_id in scope.resolved_source_group_ids
-    return True
+    if scope.kind == "label":
+        # Label scopes cut across source groups; attaching source badges here
+        # would expose the owner's full group taxonomy on label shares.
+        return False
+    raise ValueError(f"Unsupported portfolio scope: {scope.kind}")
 
 
 def _holding_market(holding: Holding) -> Market:
