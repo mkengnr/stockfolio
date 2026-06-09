@@ -728,6 +728,48 @@ def test_history_keeps_krw_and_usd_separate_and_carries_only_prior_close():
     assert result.series["USD"][0].unavailable_price_count == 1
 
 
+def test_history_excludes_only_unpriced_tickers_from_totals():
+    transactions = [
+        buy(
+            "2026-01-01",
+            transaction_id=UUID(int=1),
+            lot_id=SAVINGS_LOT,
+            quantity="1",
+            price="80000",
+        ),
+        buy(
+            "2026-01-01",
+            transaction_id=UUID(int=2),
+            lot_id=EMERGENCY_LOT,
+            quantity="1",
+            price="50000",
+            ticker="000660",
+            source_group_id=EMERGENCY,
+        ),
+    ]
+    closes = {
+        "005930": {
+            date(2026, 1, 1): Decimal("90000"),
+            date(2026, 1, 2): Decimal("91000"),
+        },
+        "000660": {date(2026, 1, 2): Decimal("60000")},
+    }
+
+    result = build_history(transactions, closes, PortfolioScope("all"))
+
+    day_one = result.series["KRW"][0]
+    assert day_one.total_value == Decimal("90000")
+    assert day_one.total_cost_basis == Decimal("80000")
+    assert day_one.total_profit_loss == Decimal("10000")
+    assert day_one.unavailable_price_count == 1
+
+    day_two = result.series["KRW"][1]
+    assert day_two.total_value == Decimal("151000")
+    assert day_two.total_cost_basis == Decimal("130000")
+    assert day_two.total_profit_loss == Decimal("21000")
+    assert day_two.unavailable_price_count == 0
+
+
 def test_history_profit_uses_remaining_cost_basis_for_reinvest_buys():
     transactions = [
         buy(

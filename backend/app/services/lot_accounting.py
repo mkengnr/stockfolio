@@ -430,38 +430,59 @@ def build_history(
             scope,
         )
         invested_principal = invested_principal_by_currency(transactions_until_date, scope)
-        totals: dict[Currency, tuple[Decimal, Decimal, int]] = {
-            "KRW": (ZERO, ZERO, int(replay_result.accounting_status == "requires_review")),
-            "USD": (ZERO, ZERO, int(replay_result.accounting_status == "requires_review")),
+        requires_review = replay_result.accounting_status == "requires_review"
+        totals: dict[Currency, tuple[Decimal, Decimal, int, int]] = {
+            "KRW": (ZERO, ZERO, 0, 0),
+            "USD": (ZERO, ZERO, 0, 0),
         }
         for position in build_current_positions(
             replay_result,
             _prior_closes(close_prices, snapshot_date),
             allow_requires_review=True,
         ):
-            total_value, total_cost_basis, unavailable_price_count = totals[
+            total_value, total_cost_basis, unavailable_price_count, priced_count = totals[
                 position.currency
             ]
-            totals[position.currency] = (
-                total_value + (position.current_value or ZERO),
-                total_cost_basis + position.remaining_cost_basis,
-                unavailable_price_count + (position.current_value is None),
-            )
+            if position.current_value is None:
+                # A held position with no prior close cannot be valued. Exclude its
+                # value AND cost basis so value minus cost stays consistent over the
+                # priced subset, and surface the gap via unavailable_price_count
+                # instead of nulling the whole currency series.
+                totals[position.currency] = (
+                    total_value,
+                    total_cost_basis,
+                    unavailable_price_count + 1,
+                    priced_count,
+                )
+            else:
+                totals[position.currency] = (
+                    total_value + position.current_value,
+                    total_cost_basis + position.remaining_cost_basis,
+                    unavailable_price_count,
+                    priced_count + 1,
+                )
 
         for currency in ("KRW", "USD"):
-            total_value, total_cost_basis, unavailable_price_count = totals[currency]
+            total_value, total_cost_basis, unavailable_price_count, priced_count = totals[
+                currency
+            ]
+            # Null the aggregate only when nothing can be valued at all: the replay
+            # needs review, or every held position lacks a prior close.
+            value_unreliable = requires_review or (
+                unavailable_price_count > 0 and priced_count == 0
+            )
             series[currency].append(
                 PortfolioHistoryPoint(
                     snapshot_date=snapshot_date,
-                    total_value=None if unavailable_price_count else total_value,
+                    total_value=None if value_unreliable else total_value,
                     total_invested_principal=invested_principal.get(currency, ZERO),
                     total_cost_basis=total_cost_basis,
                     total_profit_loss=(
                         None
-                        if unavailable_price_count
+                        if value_unreliable
                         else total_value - total_cost_basis
                     ),
-                    unavailable_price_count=unavailable_price_count,
+                    unavailable_price_count=unavailable_price_count + int(requires_review),
                     accounting_status=replay_result.accounting_status,
                     warnings=replay_result.warnings,
                 )
