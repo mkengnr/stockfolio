@@ -10,6 +10,7 @@ from app.models.holding import TransactionType
 from app.services.snapshot_service import (
     _build_snapshot_values,
     backfill_holding_snapshots,
+    backfill_recent_comparison_snapshots,
     rebuild_holding_snapshots,
 )
 from app.services.stock_fetcher import OHLCBar
@@ -122,6 +123,46 @@ async def test_backfill_adds_only_missing_dates():
     assert snapshot.close_price == Decimal("100")
     assert snapshot.total_value == Decimal("1000")
     db.flush.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_backfill_recent_comparison_snapshots_ends_before_current_price_date():
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.flush = AsyncMock()
+    existing_result = MagicMock()
+    existing_result.scalars.return_value.all.return_value = [date(2026, 6, 5)]
+    db.execute.return_value = existing_result
+    holding = SimpleNamespace(
+        id="holding-id",
+        ticker="005930",
+        first_buy_date=date(2026, 1, 2),
+        transactions=[_tx(TransactionType.BUY, "10", date(2026, 1, 2))],
+    )
+
+    with patch(
+        "app.services.snapshot_service.stock_fetcher.get_price_history",
+        return_value=[
+            _bar(date(2026, 6, 5), "100"),
+            _bar(date(2026, 6, 8), "110"),
+            _bar(date(2026, 6, 9), "120"),
+        ],
+    ) as get_price_history:
+        added = await backfill_recent_comparison_snapshots(
+            db,
+            holding,
+            current_price_date=date(2026, 6, 9),
+        )
+
+    assert added == 1
+    get_price_history.assert_called_once_with(
+        "005930",
+        date(2026, 6, 1),
+        date(2026, 6, 8),
+    )
+    snapshot = db.add.call_args.args[0]
+    assert snapshot.snapshot_date == date(2026, 6, 8)
+    assert snapshot.total_value == Decimal("1100")
 
 
 @pytest.mark.asyncio

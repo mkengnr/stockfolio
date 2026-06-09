@@ -2,10 +2,12 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI, HTTPException, status
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
 from app.models.group import RollupGroup, RollupGroupMember, SourceGroup
@@ -380,6 +382,13 @@ def test_holding_group_badges_use_remaining_lot_source_groups_only():
         ("보너스", Decimal("3")),
         ("미분류", Decimal("1")),
     ]
+    groups = {group.name: group for group in response.groups}
+    assert groups["보너스"].holdings[0].quantity == Decimal("3")
+    assert groups["보너스"].holdings[0].remaining_cost_basis == Decimal("30")
+    assert groups["보너스"].holdings[0].current_value == Decimal("36")
+    assert groups["보너스"].holdings[0].unrealized_profit_loss == Decimal("6")
+    assert groups["가족"].holdings[0].quantity == Decimal("3")
+    assert groups["미분류"].holdings[0].quantity == Decimal("1")
 
 
 def test_holding_remaining_cost_basis_is_null_when_conversion_fails():
@@ -438,6 +447,53 @@ def test_dashboard_history_includes_inactive_holding_snapshots():
     ]
     assert total_rows[1].total_value == Decimal("2300")
     assert [holding.ticker for holding in response.holdings] == ["005930"]
+
+
+def test_dashboard_history_keeps_closed_source_group_for_composition():
+    user_id = uuid.uuid4()
+    source = _source(user_id, name="과거 계좌")
+    holding_id = uuid.uuid4()
+    buy = _buy(
+        holding_id,
+        "005930",
+        Currency.KRW,
+        source_group_id=source.id,
+        quantity="1",
+        price="100",
+        tx_date=date(2026, 1, 1),
+    )
+    holding = _holding(
+        "005930",
+        Currency.KRW,
+        buy,
+        _sell(
+            holding_id,
+            buy,
+            source_group_id=source.id,
+            quantity="1",
+            price="100",
+            tx_date=date(2026, 2, 1),
+            principal_flow=PrincipalFlow.WITHDRAW,
+        ),
+        snapshots=[
+            _snapshot(date(2026, 1, 2), "100"),
+            _snapshot(date(2026, 2, 2), "100"),
+        ],
+    )
+
+    response = build_dashboard_response(
+        holdings=[holding],
+        source_groups=[source],
+        rollup_groups=[],
+        current_prices={"005930": Decimal("100")},
+        display_currency="KRW",
+        exchange_rate=None,
+    )
+
+    assert response.groups == []
+    source_rows = [row for row in response.history.rows if row.group_kind == "source"]
+    assert source_rows[0].snapshot_date == date(2026, 1, 2)
+    assert source_rows[0].total_value == Decimal("100")
 
 
 def test_dashboard_summary_separates_unrealized_and_total_profit_and_daily_change():
@@ -670,6 +726,219 @@ async def test_dashboard_rate_lookup_runs_in_thread_for_inactive_usd_history(mon
     assert response.exchange_rate.rate == Decimal("1300")
     assert response.holdings == []
     assert response.history.rows[0].total_value == Decimal("15600")
+
+
+@pytest.mark.asyncio
+async def test_dashboard_recovers_missing_recent_comparison_snapshot_and_reloads_holdings(monkeypatch):
+    user_id = uuid.uuid4()
+    holding_id = uuid.uuid4()
+    newer_quote_holding_id = uuid.uuid4()
+    stale_holding = _holding(
+        "005930",
+        Currency.KRW,
+        _buy(holding_id, "005930", Currency.KRW),
+        snapshots=[_snapshot(date(2026, 6, 5), "100")],
+    )
+    newer_quote_stale_holding = _holding(
+        "000660",
+        Currency.KRW,
+        _buy(newer_quote_holding_id, "000660", Currency.KRW),
+        snapshots=[_snapshot(date(2026, 6, 5), "200")],
+    )
+    recovered_holding = _holding(
+        "005930",
+        Currency.KRW,
+        _buy(holding_id, "005930", Currency.KRW),
+        snapshots=[
+            _snapshot(date(2026, 6, 5), "100"),
+            _snapshot(date(2026, 6, 8), "110"),
+        ],
+    )
+    newer_quote_recovered_holding = _holding(
+        "000660",
+        Currency.KRW,
+        _buy(newer_quote_holding_id, "000660", Currency.KRW),
+        snapshots=[
+            _snapshot(date(2026, 6, 5), "200"),
+            _snapshot(date(2026, 6, 8), "210"),
+        ],
+    )
+    loaded_holdings = [
+        [stale_holding, newer_quote_stale_holding],
+        [recovered_holding, newer_quote_recovered_holding],
+    ]
+    db = SimpleNamespace(commit=AsyncMock())
+    recover = AsyncMock(return_value=1)
+
+    async def _load_scoped_holdings(_db, _user_id, *, include_inactive=False):
+        return loaded_holdings.pop(0)
+
+    async def _load_dashboard_groups(_db, _user_id):
+        return [], []
+
+    async def _fetch_current_price_quotes(_tickers):
+        return {
+            "005930": portfolio_router.CurrentPriceQuote(
+                price=Decimal("120"),
+                price_date=date(2026, 6, 9),
+            ),
+            "000660": portfolio_router.CurrentPriceQuote(
+                price=Decimal("220"),
+                price_date=date(2026, 6, 10),
+            ),
+        }
+
+    monkeypatch.setattr(portfolio_router, "_load_scoped_holdings", _load_scoped_holdings)
+    monkeypatch.setattr(portfolio_router, "_load_dashboard_groups", _load_dashboard_groups)
+    monkeypatch.setattr(portfolio_router, "_fetch_current_price_quotes", _fetch_current_price_quotes)
+    monkeypatch.setattr(portfolio_router, "backfill_recent_comparison_snapshots", recover)
+
+    response = await build_portfolio_dashboard_response(db, user_id)
+
+    assert recover.await_count == 2
+    assert recover.await_args_list[0].args == (db, stale_holding)
+    assert recover.await_args_list[1].args == (db, newer_quote_stale_holding)
+    assert all(
+        call.kwargs == {"current_price_date": date(2026, 6, 9)}
+        for call in recover.await_args_list
+    )
+    db.commit.assert_awaited_once()
+    assert response.comparison_as_of == date(2026, 6, 8)
+
+
+@pytest.mark.asyncio
+async def test_dashboard_warns_when_recent_comparison_snapshot_recovery_fails(monkeypatch):
+    user_id = uuid.uuid4()
+    holding_id = uuid.uuid4()
+    holding = _holding(
+        "005930",
+        Currency.KRW,
+        _buy(holding_id, "005930", Currency.KRW),
+        snapshots=[_snapshot(date(2026, 6, 5), "100")],
+    )
+    db = SimpleNamespace(commit=AsyncMock())
+
+    async def _load_scoped_holdings(_db, _user_id, *, include_inactive=False):
+        return [holding]
+
+    async def _load_dashboard_groups(_db, _user_id):
+        return [], []
+
+    async def _fetch_current_price_quotes(_tickers):
+        return {
+            "005930": portfolio_router.CurrentPriceQuote(
+                price=Decimal("120"),
+                price_date=date(2026, 6, 9),
+            )
+        }
+
+    async def _fail_recovery(*_args, **_kwargs):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(portfolio_router, "_load_scoped_holdings", _load_scoped_holdings)
+    monkeypatch.setattr(portfolio_router, "_load_dashboard_groups", _load_dashboard_groups)
+    monkeypatch.setattr(portfolio_router, "_fetch_current_price_quotes", _fetch_current_price_quotes)
+    monkeypatch.setattr(portfolio_router, "backfill_recent_comparison_snapshots", _fail_recovery)
+
+    response = await build_portfolio_dashboard_response(db, user_id)
+
+    assert response.comparison_as_of == date(2026, 6, 5)
+    assert any("005930 직전 거래일 스냅샷 복구 실패" in warning for warning in response.warnings)
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dashboard_reloads_after_concurrent_snapshot_recovery_commit(monkeypatch):
+    user_id = uuid.uuid4()
+    holding_id = uuid.uuid4()
+    stale_holding = _holding(
+        "005930",
+        Currency.KRW,
+        _buy(holding_id, "005930", Currency.KRW),
+        snapshots=[_snapshot(date(2026, 6, 5), "100")],
+    )
+    recovered_holding = _holding(
+        "005930",
+        Currency.KRW,
+        _buy(holding_id, "005930", Currency.KRW),
+        snapshots=[
+            _snapshot(date(2026, 6, 5), "100"),
+            _snapshot(date(2026, 6, 8), "110"),
+        ],
+    )
+    loaded_holdings = [[stale_holding], [recovered_holding]]
+    db = SimpleNamespace(
+        commit=AsyncMock(
+            side_effect=IntegrityError("snapshot_date unique constraint", {}, Exception())
+        ),
+        rollback=AsyncMock(),
+    )
+
+    async def _load_scoped_holdings(_db, _user_id, *, include_inactive=False):
+        return loaded_holdings.pop(0)
+
+    async def _load_dashboard_groups(_db, _user_id):
+        return [], []
+
+    async def _fetch_current_price_quotes(_tickers):
+        return {
+            "005930": portfolio_router.CurrentPriceQuote(
+                price=Decimal("120"),
+                price_date=date(2026, 6, 9),
+            )
+        }
+
+    monkeypatch.setattr(portfolio_router, "_load_scoped_holdings", _load_scoped_holdings)
+    monkeypatch.setattr(portfolio_router, "_load_dashboard_groups", _load_dashboard_groups)
+    monkeypatch.setattr(portfolio_router, "_fetch_current_price_quotes", _fetch_current_price_quotes)
+    monkeypatch.setattr(
+        portfolio_router,
+        "backfill_recent_comparison_snapshots",
+        AsyncMock(return_value=1),
+    )
+
+    response = await build_portfolio_dashboard_response(db, user_id)
+
+    db.rollback.assert_awaited_once()
+    assert response.comparison_as_of == date(2026, 6, 8)
+
+
+@pytest.mark.asyncio
+async def test_dashboard_skips_recovery_when_friday_snapshot_precedes_monday_quote(monkeypatch):
+    user_id = uuid.uuid4()
+    holding_id = uuid.uuid4()
+    holding = _holding(
+        "005930",
+        Currency.KRW,
+        _buy(holding_id, "005930", Currency.KRW),
+        snapshots=[_snapshot(date(2026, 6, 5), "100")],
+    )
+    db = SimpleNamespace(commit=AsyncMock())
+    recover = AsyncMock(return_value=0)
+
+    async def _load_scoped_holdings(_db, _user_id, *, include_inactive=False):
+        return [holding]
+
+    async def _load_dashboard_groups(_db, _user_id):
+        return [], []
+
+    async def _fetch_current_price_quotes(_tickers):
+        return {
+            "005930": portfolio_router.CurrentPriceQuote(
+                price=Decimal("120"),
+                price_date=date(2026, 6, 8),
+            )
+        }
+
+    monkeypatch.setattr(portfolio_router, "_load_scoped_holdings", _load_scoped_holdings)
+    monkeypatch.setattr(portfolio_router, "_load_dashboard_groups", _load_dashboard_groups)
+    monkeypatch.setattr(portfolio_router, "_fetch_current_price_quotes", _fetch_current_price_quotes)
+    monkeypatch.setattr(portfolio_router, "backfill_recent_comparison_snapshots", recover)
+
+    response = await build_portfolio_dashboard_response(db, user_id)
+
+    recover.assert_not_awaited()
+    assert response.comparison_as_of == date(2026, 6, 5)
 
 
 @pytest.mark.asyncio

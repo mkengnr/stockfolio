@@ -151,7 +151,7 @@ export function HoldingsTable({ holdings, displayCurrency }: Props) {
             <tr key={row.key} className="transition-colors hover:bg-gray-50">
               <td className="px-4 py-3">{row.id ? <HoldingName row={row} linked /> : <HoldingName row={row} />}</td>
               <td className="px-4 py-3"><GroupBadges groups={row.groups} /></td>
-              <td className="px-4 py-3 text-right tabular-nums text-gray-700">{formatNumber(row.quantity, 0)}</td>
+              <td className="px-4 py-3 text-right tabular-nums text-gray-700">{formatShareQuantity(row.quantity)}</td>
               <td className="px-4 py-3 text-right tabular-nums text-gray-700">{formatCurrency(row.avgPrice, row.valueCurrency)}</td>
               <td className="px-4 py-3 text-right tabular-nums text-gray-700">{row.currentPrice ? formatCurrency(row.currentPrice, row.priceCurrency) : '—'}</td>
               <td className="px-4 py-3 text-right tabular-nums text-gray-700">{row.currentValue ? formatCurrency(row.currentValue, row.valueCurrency) : '—'}</td>

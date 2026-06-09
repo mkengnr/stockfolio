@@ -38,6 +38,7 @@ class DashboardGroupSummary(BaseModel):
     color: str | None
     source_group_ids: list[uuid.UUID] = Field(default_factory=list)
     summary: DashboardSummary
+    holdings: list["DashboardHoldingRow"] = Field(default_factory=list)
 
 
 class DashboardHoldingGroupBadge(BaseModel):

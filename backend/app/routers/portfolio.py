@@ -2,11 +2,12 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import Select, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, with_loader_criteria
 
@@ -48,6 +49,7 @@ from app.services import lot_accounting
 from app.services.exchange_rate import ExchangeRate, convert_money, get_usd_krw_rate
 from app.services.lot_accounting import PortfolioScope, ScopeKind
 from app.services.price_cache import get_price
+from app.services.snapshot_service import backfill_recent_comparison_snapshots
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 logger = logging.getLogger(__name__)
@@ -628,6 +630,13 @@ def _dashboard_current_price_as_of(current_price_dates: dict[str, date | None]) 
     return min(valid_dates) if valid_dates else None
 
 
+def _previous_weekday(value: date) -> date:
+    candidate = value - timedelta(days=1)
+    while candidate.weekday() >= 5:
+        candidate -= timedelta(days=1)
+    return candidate
+
+
 def _dashboard_comparison_as_of(
     history_rows: list[DashboardHistoryRow],
     current_price_as_of: date | None,
@@ -689,9 +698,10 @@ def _build_dashboard_groups(
     warnings: list[str] = []
 
     for source_group in source_groups:
+        scope = _source_group_scope(source_group)
         summary, scope_warnings = _scope_display_summary(
             holdings,
-            _source_group_scope(source_group),
+            scope,
             current_prices,
             display_currency,
             exchange_rate,
@@ -706,13 +716,22 @@ def _build_dashboard_groups(
                     color=source_group.color,
                     source_group_ids=[source_group.id],
                     summary=summary,
+                    holdings=_build_dashboard_holdings(
+                        holdings,
+                        source_groups,
+                        current_prices,
+                        display_currency,
+                        exchange_rate,
+                        scope=scope,
+                    ),
                 )
             )
 
     for rollup_group in rollup_groups:
+        scope = _rollup_group_scope(rollup_group)
         summary, scope_warnings = _scope_display_summary(
             holdings,
-            _rollup_group_scope(rollup_group),
+            scope,
             current_prices,
             display_currency,
             exchange_rate,
@@ -729,12 +748,21 @@ def _build_dashboard_groups(
                         member.source_group_id for member in rollup_group.members
                     ],
                     summary=summary,
+                    holdings=_build_dashboard_holdings(
+                        holdings,
+                        source_groups,
+                        current_prices,
+                        display_currency,
+                        exchange_rate,
+                        scope=scope,
+                    ),
                 )
             )
 
+    scope = PortfolioScope("unclassified")
     summary, scope_warnings = _scope_display_summary(
         holdings,
-        PortfolioScope("unclassified"),
+        scope,
         current_prices,
         display_currency,
         exchange_rate,
@@ -748,6 +776,14 @@ def _build_dashboard_groups(
                 name="미분류",
                 color=None,
                 summary=summary,
+                holdings=_build_dashboard_holdings(
+                    holdings,
+                    source_groups,
+                    current_prices,
+                    display_currency,
+                    exchange_rate,
+                    scope=scope,
+                ),
             )
         )
 
@@ -842,6 +878,7 @@ def _history_rows_for_scope(
 def _build_dashboard_history(
     holdings: list[Holding],
     groups: list[DashboardGroupSummary],
+    source_groups: list[SourceGroup],
     rollup_groups: list[RollupGroup],
     display_currency: DisplayCurrency,
     exchange_rate: ExchangeRate | None,
@@ -874,12 +911,42 @@ def _build_dashboard_history(
                 exchange_rate=exchange_rate,
             )
         )
+    represented_source_ids = {
+        group.id for group in groups if group.kind == "source"
+    }
+    for source_group in source_groups:
+        if source_group.id in represented_source_ids:
+            continue
+        rows.extend(
+            _history_rows_for_scope(
+                holdings,
+                _source_group_scope(source_group),
+                group_kind="source",
+                group_id=source_group.id,
+                group_name=source_group.name,
+                display_currency=display_currency,
+                exchange_rate=exchange_rate,
+            )
+        )
+    if not any(group.kind == "unclassified" for group in groups):
+        rows.extend(
+            _history_rows_for_scope(
+                holdings,
+                PortfolioScope("unclassified"),
+                group_kind="unclassified",
+                group_id=None,
+                group_name="미분류",
+                display_currency=display_currency,
+                exchange_rate=exchange_rate,
+            )
+        )
     return DashboardHistorySeries(rows=rows)
 
 
 def _holding_source_badges(
     holdings: list[Holding],
     source_groups: list[SourceGroup],
+    scope: PortfolioScope,
 ) -> dict[tuple[Currency, str], list[DashboardHoldingGroupBadge]]:
     source_metadata = {
         source_group.id: source_group for source_group in source_groups
@@ -893,7 +960,10 @@ def _holding_source_badges(
         if replay_result.accounting_status != "ok":
             continue
         for lot in replay_result.lots.values():
-            if lot.remaining_quantity <= 0:
+            if lot.remaining_quantity <= 0 or not _source_group_matches_scope(
+                lot.source_group_id,
+                scope,
+            ):
                 continue
             key = (currency, lot.ticker, lot.source_group_id)
             quantities[key] = quantities.get(key, Decimal(0)) + lot.remaining_quantity
@@ -922,6 +992,21 @@ def _holding_source_badges(
     return badges
 
 
+def _source_group_matches_scope(
+    source_group_id: uuid.UUID | None,
+    scope: PortfolioScope,
+) -> bool:
+    if scope.kind == "all":
+        return True
+    if scope.kind == "unclassified":
+        return source_group_id is None
+    if scope.kind == "source":
+        return source_group_id == scope.id
+    if scope.kind == "rollup":
+        return source_group_id in scope.resolved_source_group_ids
+    return True
+
+
 def _holding_market(holding: Holding) -> Market:
     return holding.market
 
@@ -932,10 +1017,12 @@ def _build_dashboard_holdings(
     current_prices: dict[str, Decimal | None],
     display_currency: DisplayCurrency,
     exchange_rate: ExchangeRate | None,
+    *,
+    scope: PortfolioScope = PortfolioScope("all"),
 ) -> list[DashboardHoldingRow]:
     _, scoped_holdings = _build_scoped_dashboard_payload(
         holdings,
-        PortfolioScope("all"),
+        scope,
         current_prices,
     )
     names = {(holding.currency, holding.ticker): holding.name for holding in holdings}
@@ -944,7 +1031,7 @@ def _build_dashboard_holdings(
         (holding.currency, holding.ticker): _holding_market(holding)
         for holding in holdings
     }
-    badges = _holding_source_badges(holdings, source_groups)
+    badges = _holding_source_badges(holdings, source_groups, scope)
 
     rows: list[DashboardHoldingRow] = []
     for holding in scoped_holdings.holdings:
@@ -1031,6 +1118,7 @@ def build_dashboard_response(
     history = _build_dashboard_history(
         holdings,
         groups,
+        source_groups,
         rollup_groups,
         display_currency,
         exchange_rate,
@@ -1215,8 +1303,44 @@ async def build_portfolio_dashboard_response(
     )
     prices = {ticker: quote.price for ticker, quote in price_quotes.items()}
     price_dates = {ticker: quote.price_date for ticker, quote in price_quotes.items()}
+    current_price_as_of = _dashboard_current_price_as_of(price_dates)
     exchange_rate = None
     warnings: list[str] = []
+    recovered_snapshot_count = 0
+    if current_price_as_of is not None:
+        expected_calendar_date = _previous_weekday(current_price_as_of)
+        for holding in active_holdings:
+            quote = price_quotes.get(holding.ticker)
+            if quote is None or quote.price_date is None:
+                continue
+            prior_snapshot_dates = [
+                snapshot.snapshot_date
+                for snapshot in holding.snapshots
+                if snapshot.snapshot_date < current_price_as_of
+            ]
+            if prior_snapshot_dates and max(prior_snapshot_dates) >= expected_calendar_date:
+                continue
+            try:
+                recovered_snapshot_count += await backfill_recent_comparison_snapshots(
+                    db,
+                    holding,
+                    current_price_date=current_price_as_of,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "recent comparison snapshot recovery failed for ticker=%s: %r",
+                    holding.ticker,
+                    exc,
+                )
+                warnings.append(f"{holding.ticker} 직전 거래일 스냅샷 복구 실패")
+        if recovered_snapshot_count:
+            try:
+                await db.commit()
+            except IntegrityError:
+                # Another dashboard request may have inserted the same dated snapshots.
+                await db.rollback()
+            holdings = await _load_scoped_holdings(db, user_id, include_inactive=True)
+            active_holdings = [holding for holding in holdings if holding.is_active]
     if display_currency == "KRW" and any(
         holding.currency == Currency.USD for holding in holdings
     ):

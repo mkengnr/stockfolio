@@ -5,14 +5,12 @@ import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { DisplayCurrencyToggle } from './DisplayCurrencyToggle'
-import { DashboardChartControls, type DashboardChartMetric, type DashboardChartView } from './DashboardChartControls'
 import { GroupPerformanceTable } from './GroupPerformanceTable'
 import { HoldingsTable } from './HoldingsTable'
 import { PortfolioChart } from './PortfolioChart'
 import { PortfolioSummary } from './PortfolioSummary'
-import type { DashboardGroupSummary, DashboardHoldingRow, DashboardResponse, DisplayCurrency } from '@/lib/types'
+import type { DashboardGroupSummary, DashboardResponse, DisplayCurrency } from '@/lib/types'
 
-type TotalChartScope = 'all' | 'total'
 type ChartRange = '1m' | '3m' | '6m' | '1y' | 'all'
 
 const chartRangeOptions: Array<{ value: ChartRange; label: string }> = [
@@ -47,10 +45,7 @@ export function DashboardOverview({
   isRefreshing,
   lastUpdated,
 }: Props) {
-  const [chartMetric, setChartMetric] = useState<DashboardChartMetric>('value')
-  const [chartView, setChartView] = useState<DashboardChartView>('combined')
   const [chartRange, setChartRange] = useState<ChartRange>('3m')
-  const [totalChartScope, setTotalChartScope] = useState<TotalChartScope>('all')
   const [selectedGroupKey, setSelectedGroupKey] = useState('total')
   const selectedGroup = dashboard.groups.find((group) => groupKey(group) === selectedGroupKey) ?? null
   useEffect(() => {
@@ -63,20 +58,21 @@ export function DashboardOverview({
   const selectedHistoryRows = useMemo(
     () => dashboard.history.rows.filter((row) => {
       if (!selectedGroup) {
-        return totalChartScope === 'all' || row.group_kind === 'total'
+        return row.group_kind === 'total'
       }
       return row.group_kind === selectedGroup.kind && (row.group_id ?? null) === selectedGroup.id
     }),
-    [dashboard.history.rows, selectedGroup, totalChartScope],
+    [dashboard.history.rows, selectedGroup],
   )
   const chartHistoryRows = useMemo(
     () => filterHistoryRowsByChartRange(selectedHistoryRows, chartRange),
     [selectedHistoryRows, chartRange],
   )
-  const selectedHoldings = useMemo(
-    () => filterHoldingsByGroup(dashboard.holdings, selectedGroup),
-    [dashboard.holdings, selectedGroup],
+  const compositionHistoryRows = useMemo(
+    () => filterHistoryRowsByChartRange(dashboard.history.rows, chartRange),
+    [dashboard.history.rows, chartRange],
   )
+  const selectedHoldings = selectedGroup?.holdings ?? dashboard.holdings
 
   return (
     <div className="flex flex-col gap-6">
@@ -90,7 +86,7 @@ export function DashboardOverview({
             <span>마지막 조회: {formatDashboardDateTime(dashboard.last_refreshed_at)}</span>
             <span>화면 갱신: {formatLastUpdated(lastUpdated)}</span>
             <span>현재가 기준: {formatDashboardDate(dashboard.current_price_as_of)}</span>
-            <span>비교 기준: {formatDashboardDate(dashboard.comparison_as_of)}</span>
+            <span>비교 기준(직전 거래일): {formatDashboardDate(dashboard.comparison_as_of)}</span>
           </div>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-start">
@@ -157,25 +153,13 @@ export function DashboardOverview({
           </div>
           <div className="flex flex-wrap gap-2">
             <ChartRangeControl value={chartRange} onChange={setChartRange} />
-            {!selectedGroup && (
-              <TotalChartScopeControl
-                value={totalChartScope}
-                onChange={setTotalChartScope}
-              />
-            )}
-            <DashboardChartControls
-              metric={chartMetric}
-              view={chartView}
-              onMetricChange={setChartMetric}
-              onViewChange={setChartView}
-            />
           </div>
         </div>
         <PortfolioChart
           historyRows={chartHistoryRows}
+          compositionRows={compositionHistoryRows}
+          includeComposition={!selectedGroup}
           displayCurrency={displayCurrency}
-          metric={chartMetric}
-          view={chartView}
         />
       </Card>
 
@@ -197,15 +181,6 @@ export function DashboardOverview({
 
 function groupKey(group: DashboardGroupSummary) {
   return `${group.kind}:${group.id ?? 'unclassified'}`
-}
-
-function filterHoldingsByGroup(holdings: DashboardHoldingRow[], group: DashboardGroupSummary | null) {
-  if (!group) return holdings
-  if (group.kind === 'unclassified') {
-    return holdings.filter((holding) => holding.groups.some((badge) => badge.source_group_id === null))
-  }
-  const sourceIds = new Set(group.source_group_ids)
-  return holdings.filter((holding) => holding.groups.some((badge) => badge.source_group_id !== null && sourceIds.has(badge.source_group_id)))
 }
 
 function filterHistoryRowsByChartRange<T extends { snapshot_date: string }>(rows: T[], range: ChartRange): T[] {
@@ -262,39 +237,6 @@ function ChartRangeControl({
   return (
     <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1" aria-label="차트 기간">
       {chartRangeOptions.map((option) => {
-        const active = option.value === value
-        return (
-          <button
-            key={option.value}
-            type="button"
-            className={[
-              'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-              active ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900',
-            ].join(' ')}
-            aria-pressed={active}
-            onClick={() => onChange(option.value)}
-          >
-            {option.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-function TotalChartScopeControl({
-  value,
-  onChange,
-}: {
-  value: TotalChartScope
-  onChange: (value: TotalChartScope) => void
-}) {
-  return (
-    <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1" aria-label="전체 차트 범위">
-      {[
-        { value: 'all' as const, label: '전체+그룹' },
-        { value: 'total' as const, label: '전체만' },
-      ].map((option) => {
         const active = option.value === value
         return (
           <button

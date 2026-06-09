@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Iterable
 
@@ -88,6 +88,8 @@ async def backfill_holding_snapshots(
 
     added = 0
     for value in _build_snapshot_values(holding.transactions, bars):
+        if value.snapshot_date < start or value.snapshot_date > end:
+            continue
         if value.snapshot_date in existing_dates:
             continue
         db.add(
@@ -103,6 +105,18 @@ async def backfill_holding_snapshots(
     if added:
         await db.flush()
     return added
+
+
+async def backfill_recent_comparison_snapshots(
+    db: AsyncSession,
+    holding: Holding,
+    *,
+    current_price_date: date,
+) -> int:
+    """Store missing recent trading-day snapshots before the current quote date."""
+    end = current_price_date - timedelta(days=1)
+    start = max(holding.first_buy_date, current_price_date - timedelta(days=8))
+    return await backfill_holding_snapshots(db, holding, start=start, end=end)
 
 
 async def rebuild_holding_snapshots(

@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useRef } from 'react'
 import type { Currency, DashboardHistoryGroupKind, DashboardHistoryRow, DisplayCurrency, ScopedPortfolioHistory } from '@/lib/types'
-import type { DashboardChartMetric, DashboardChartView } from './DashboardChartControls'
 
 type LegacyMeasure = 'value' | 'cost' | 'profit'
+type DashboardChartMetric = 'value' | 'principal' | 'profit'
 type ChartPoint = { time: string; value: number }
+type ColoredChartPoint = ChartPoint & { color: string }
 type CurrencyChartSeries = Record<LegacyMeasure, ChartPoint[]>
 
 export interface DashboardBuiltChartSeries {
@@ -15,19 +16,26 @@ export interface DashboardBuiltChartSeries {
   points: ChartPoint[]
 }
 
+export interface IntegratedDashboardChartData {
+  value: ChartPoint[]
+  principal: ChartPoint[]
+  dailyProfitChange: ColoredChartPoint[]
+  composition: DashboardBuiltChartSeries[]
+}
+
 type LegacyProps = {
   series: ScopedPortfolioHistory['series']
   historyRows?: never
+  compositionRows?: never
+  includeComposition?: never
   displayCurrency?: never
-  metric?: never
-  includeGroups?: never
 }
 
 type DashboardProps = {
   historyRows: DashboardHistoryRow[]
+  compositionRows: DashboardHistoryRow[]
+  includeComposition: boolean
   displayCurrency: DisplayCurrency
-  metric: DashboardChartMetric
-  view: DashboardChartView
   series?: never
 }
 
@@ -101,14 +109,87 @@ export function buildDashboardChartSeries(
     .sort(compareDashboardSeries)
 }
 
+export function buildIntegratedDashboardChartData(
+  allRows: DashboardHistoryRow[],
+  selectedRows: DashboardHistoryRow[],
+  options: { includeComposition: boolean },
+): IntegratedDashboardChartData {
+  const orderedSelectedRows = [...selectedRows].sort((left, right) => left.snapshot_date.localeCompare(right.snapshot_date))
+  const value = buildPointsForField(orderedSelectedRows, 'total_value')
+  const principal = buildPointsForField(orderedSelectedRows, 'total_invested_principal')
+  const dailyProfitChange: ColoredChartPoint[] = []
+  let previousProfit: number | null = null
+
+  for (const row of orderedSelectedRows) {
+    const currentProfit = parseNullableNumber(row.total_profit_loss)
+    if (currentProfit !== null && previousProfit !== null) {
+      const change = currentProfit - previousProfit
+      dailyProfitChange.push({
+        time: row.snapshot_date,
+        value: change,
+        color: change >= 0 ? '#16a34a' : '#dc2626',
+      })
+    }
+    if (currentProfit !== null) previousProfit = currentProfit
+  }
+
+  return {
+    value,
+    principal,
+    dailyProfitChange,
+    composition: options.includeComposition ? buildCumulativeComposition(allRows) : [],
+  }
+}
+
+export function formatDashboardMoney(value: number) {
+  return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(value)
+}
+
+function buildPointsForField(
+  rows: DashboardHistoryRow[],
+  field: 'total_value' | 'total_invested_principal',
+): ChartPoint[] {
+  return rows.flatMap((row) => {
+    const value = parseNullableNumber(row[field])
+    return value === null ? [] : [{ time: row.snapshot_date, value }]
+  })
+}
+
+function buildCumulativeComposition(rows: DashboardHistoryRow[]): DashboardBuiltChartSeries[] {
+  const individualSeries = buildDashboardChartSeries(
+    rows.filter((row) => row.group_kind === 'source' || row.group_kind === 'unclassified'),
+    { metric: 'value' },
+  )
+  const dates = Array.from(new Set(individualSeries.flatMap((series) => series.points.map((point) => point.time)))).sort()
+  const cumulativeByDate = new Map(dates.map((snapshotDate) => [snapshotDate, 0]))
+
+  return individualSeries.map((series) => {
+    const valueByDate = new Map(series.points.map((point) => [point.time, point.value]))
+    return {
+      ...series,
+      points: dates.map((snapshotDate) => {
+        const cumulative = (cumulativeByDate.get(snapshotDate) ?? 0) + (valueByDate.get(snapshotDate) ?? 0)
+        cumulativeByDate.set(snapshotDate, cumulative)
+        return { time: snapshotDate, value: cumulative }
+      }),
+    }
+  })
+}
+
+function parseNullableNumber(value: string | null) {
+  if (value === null) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 export function PortfolioChart(props: Props) {
   if (props.historyRows !== undefined) {
     return (
       <DashboardPortfolioChart
         rows={props.historyRows}
+        compositionRows={props.compositionRows}
+        includeComposition={props.includeComposition}
         displayCurrency={props.displayCurrency}
-        metric={props.metric}
-        view={props.view}
       />
     )
   }
@@ -117,73 +198,21 @@ export function PortfolioChart(props: Props) {
 
 function DashboardPortfolioChart({
   rows,
+  compositionRows,
+  includeComposition,
   displayCurrency,
-  metric,
-  view,
 }: {
   rows: DashboardHistoryRow[]
+  compositionRows: DashboardHistoryRow[]
+  includeComposition: boolean
   displayCurrency: DisplayCurrency
-  metric: DashboardChartMetric
-  view: DashboardChartView
-}) {
-  const chartSeries = useMemo(() => buildDashboardChartSeries(rows, { metric }), [rows, metric])
-  const hasData = chartSeries.some((series) => series.points.length > 0)
-
-  if (!hasData) {
-    return <div className="flex h-60 items-center justify-center text-sm text-gray-400">차트 데이터가 없습니다.</div>
-  }
-
-  if (view === 'separate') {
-    return (
-      <div className="grid gap-4 lg:grid-cols-2">
-        {chartSeries.map((series, index) => (
-          <div key={series.id} className="rounded-xl border border-gray-100 p-3">
-            <div className="mb-2 flex items-center justify-between text-xs text-gray-500">
-              <Legend color={dashboardColors[index % dashboardColors.length]} label={series.name} dashed={series.kind !== 'total'} />
-              <span>{displayCurrency}</span>
-            </div>
-            <DashboardSingleChart
-              series={[series]}
-              height={220}
-              colorOffset={index}
-              showLegend={false}
-            />
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500">
-        <strong className="text-gray-600">{displayCurrency}</strong>
-        {chartSeries.map((series, index) => (
-          <Legend
-            key={series.id}
-            color={dashboardColors[index % dashboardColors.length]}
-            label={series.name}
-            dashed={series.kind !== 'total'}
-          />
-        ))}
-      </div>
-      <DashboardSingleChart series={chartSeries} />
-    </div>
-  )
-}
-
-function DashboardSingleChart({
-  series,
-  height = 280,
-  colorOffset = 0,
-}: {
-  series: DashboardBuiltChartSeries[]
-  height?: number
-  colorOffset?: number
-  showLegend?: boolean
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const hasData = series.some((item) => item.points.length > 0)
+  const chartData = useMemo(
+    () => buildIntegratedDashboardChartData(compositionRows, rows, { includeComposition }),
+    [compositionRows, includeComposition, rows],
+  )
+  const hasData = chartData.value.length > 0 || chartData.principal.length > 0
 
   useEffect(() => {
     if (!containerRef.current || !hasData) return
@@ -195,7 +224,7 @@ function DashboardSingleChart({
       if (cancelled || !containerRef.current) return
       chart = createChart(containerRef.current, {
         width: containerRef.current.clientWidth,
-        height,
+        height: 420,
         layout: {
           background: { type: ColorType.Solid, color: 'white' },
           textColor: '#6b7280',
@@ -205,25 +234,68 @@ function DashboardSingleChart({
           vertLines: { color: '#f3f4f6' },
           horzLines: { color: '#f3f4f6' },
         },
-        leftPriceScale: { visible: true, borderColor: '#e5e7eb' },
+        localization: { priceFormatter: formatDashboardMoney },
+        leftPriceScale: {
+          visible: true,
+          borderColor: '#e5e7eb',
+          scaleMargins: { top: 0.05, bottom: 0.32 },
+        },
         rightPriceScale: { visible: false },
         timeScale: { borderColor: '#e5e7eb', fixLeftEdge: true, fixRightEdge: true },
       })
 
-      series.forEach((item, index) => {
-        const lineSeries = chart!.addLineSeries({
-          color: dashboardColors[(index + colorOffset) % dashboardColors.length],
-          lineWidth: item.kind === 'total' ? 2 : 1,
-          lineStyle: item.kind === 'total' ? LineStyle.Solid : LineStyle.Dashed,
+      chart.priceScale('profit').applyOptions({
+        scaleMargins: { top: 0.78, bottom: 0.02 },
+      })
+
+      ;[...chartData.composition].reverse().forEach((item, reverseIndex) => {
+        const index = chartData.composition.length - reverseIndex - 1
+        const histogram = chart!.addHistogramSeries({
+          color: dashboardColors[index % dashboardColors.length],
           priceScaleId: 'left',
           priceLineVisible: false,
-          lastValueVisible: item.kind === 'total',
+          lastValueVisible: false,
+          priceFormat: dashboardPriceFormat,
         })
-        lineSeries.setData(item.points.map((point) => ({
+        histogram.setData(item.points.map((point) => ({
           time: point.time as import('lightweight-charts').Time,
           value: point.value,
         })))
       })
+
+      const valueSeries = chart.addLineSeries({
+        color: '#312e81',
+        lineWidth: 3,
+        lineStyle: LineStyle.Solid,
+        priceScaleId: 'left',
+        priceLineVisible: false,
+        lastValueVisible: true,
+        priceFormat: dashboardPriceFormat,
+      })
+      valueSeries.setData(chartData.value.map(toLightweightPoint))
+
+      const principalSeries = chart.addLineSeries({
+        color: '#818cf8',
+        lineWidth: 2,
+        lineStyle: LineStyle.Dashed,
+        priceScaleId: 'left',
+        priceLineVisible: false,
+        lastValueVisible: false,
+        priceFormat: dashboardPriceFormat,
+      })
+      principalSeries.setData(chartData.principal.map(toLightweightPoint))
+
+      const profitSeries = chart.addHistogramSeries({
+        priceScaleId: 'profit',
+        priceLineVisible: false,
+        lastValueVisible: false,
+        priceFormat: dashboardPriceFormat,
+      })
+      profitSeries.setData(chartData.dailyProfitChange.map((point) => ({
+        time: point.time as import('lightweight-charts').Time,
+        value: point.value,
+        color: point.color,
+      })))
 
       chart.timeScale().fitContent()
       handleResize = () => {
@@ -237,13 +309,43 @@ function DashboardSingleChart({
       if (handleResize) window.removeEventListener('resize', handleResize)
       chart?.remove()
     }
-  }, [series, hasData, height, colorOffset])
+  }, [chartData, hasData])
 
   if (!hasData) {
     return <div className="flex h-60 items-center justify-center text-sm text-gray-400">차트 데이터가 없습니다.</div>
   }
 
-  return <div ref={containerRef} className="w-full" />
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500">
+        <strong className="text-gray-600">{displayCurrency}</strong>
+        <Legend color="#312e81" label="평가금액" />
+        <Legend color="#818cf8" label="투자원금" dashed />
+        <HistogramLegend color="#16a34a" label="일별손익" />
+        {chartData.composition.map((series, index) => (
+          <HistogramLegend
+            key={series.id}
+            color={dashboardColors[index % dashboardColors.length]}
+            label={series.name}
+          />
+        ))}
+      </div>
+      <div ref={containerRef} className="w-full" />
+    </div>
+  )
+}
+
+const dashboardPriceFormat = {
+  type: 'custom' as const,
+  minMove: 1,
+  formatter: formatDashboardMoney,
+}
+
+function toLightweightPoint(point: ChartPoint) {
+  return {
+    time: point.time as import('lightweight-charts').Time,
+    value: point.value,
+  }
 }
 
 const dashboardKindOrder: Record<DashboardHistoryGroupKind, number> = {
@@ -350,6 +452,15 @@ function Legend({ color, label, dashed, dotted }: { color: string; label: string
         className={`inline-block w-4 border-t-2 ${dashed ? 'border-dashed' : dotted ? 'border-dotted' : ''}`}
         style={{ borderColor: color }}
       />
+      {label}
+    </span>
+  )
+}
+
+function HistogramLegend({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1">
+      <span className="inline-block h-2.5 w-3 rounded-sm" style={{ backgroundColor: color }} />
       {label}
     </span>
   )

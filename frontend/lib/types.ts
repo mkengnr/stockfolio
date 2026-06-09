@@ -144,6 +144,7 @@ export interface DashboardGroupSummary {
   color: string | null
   source_group_ids: string[]
   summary: DashboardSummary
+  holdings: DashboardHoldingRow[]
 }
 
 export interface DashboardHoldingGroupBadge {

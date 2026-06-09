@@ -14,9 +14,19 @@ jest.mock('next/link', () => {
 })
 
 jest.mock('@/components/dashboard/PortfolioChart', () => ({
-  PortfolioChart: ({ historyRows }: { historyRows: Array<{ group_name: string; snapshot_date: string }> }) => (
+  PortfolioChart: ({
+    historyRows,
+    compositionRows,
+    includeComposition,
+  }: {
+    historyRows: Array<{ group_name: string; snapshot_date: string }>
+    compositionRows: Array<{ group_name: string; snapshot_date: string }>
+    includeComposition: boolean
+  }) => (
     <div data-testid="portfolio-chart">
-      {historyRows.map((row) => row.group_name).join(',')}|{historyRows.map((row) => row.snapshot_date).join(',')}
+      selected:{historyRows.map((row) => row.group_name).join(',')}|
+      composition:{includeComposition ? compositionRows.map((row) => row.group_name).join(',') : 'off'}|
+      dates:{historyRows.map((row) => row.snapshot_date).join(',')}
     </div>
   ),
 }))
@@ -59,6 +69,7 @@ const dashboard: DashboardResponse = {
         total_profit_loss: '80000',
         total_profit_loss_pct: '16',
       },
+      holdings: [],
     },
     {
       kind: 'combined',
@@ -76,6 +87,7 @@ const dashboard: DashboardResponse = {
         total_profit_loss: '20000',
         total_profit_loss_pct: '6.67',
       },
+      holdings: [],
     },
     {
       kind: 'unclassified',
@@ -93,6 +105,7 @@ const dashboard: DashboardResponse = {
         total_profit_loss: null,
         total_profit_loss_pct: null,
       },
+      holdings: [],
     },
   ],
   history: {
@@ -212,15 +225,16 @@ describe('DashboardOverview', () => {
     expect(screen.getByRole('link', { name: '거래내역 보기' })).toHaveAttribute('href', '/transactions')
     expect(screen.getByText('AAPL 시세를 가져오지 못했습니다.')).toBeInTheDocument()
     expect(screen.getByText('통합 그룹은 비교용이며 단순 합산 시 중복 가능')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '하나의 차트' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '각각 보기' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '전체+그룹' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '전체만' })).toBeInTheDocument()
-    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('전체,모음통장,장기투자')
+    expect(screen.queryByRole('button', { name: '하나의 차트' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '각각 보기' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '전체+그룹' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '전체만' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:전체')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('composition:전체,모음통장,장기투자')
     expect(screen.getByTestId('portfolio-chart')).not.toHaveTextContent('2026-02-01')
     expect(screen.getByText(/마지막 조회/)).toHaveTextContent('2026-06-06')
     expect(screen.getByText(/현재가 기준/)).toHaveTextContent('2026-06-05')
-    expect(screen.getByText(/비교 기준/)).toHaveTextContent('2026-06-04')
+    expect(screen.getByText(/비교 기준\(직전 거래일\)/)).toHaveTextContent('2026-06-04')
   })
 
   it('uses three months as the default chart range and can show all history', () => {
@@ -248,6 +262,26 @@ describe('DashboardOverview', () => {
       <DashboardOverview
         dashboard={{
           ...dashboard,
+          groups: dashboard.groups.map((group) => group.id === 'source-1'
+            ? {
+                ...group,
+                holdings: [
+                  {
+                    holding_id: 'holding-1',
+                    ticker: '005930',
+                    name: '삼성전자',
+                    market: 'KRX',
+                    currency: 'KRW',
+                    quantity: '0.25',
+                    remaining_cost_basis: '125000',
+                    current_price: '580000',
+                    current_value: '145000',
+                    unrealized_profit_loss: '20000',
+                    groups: [{ source_group_id: 'source-1', name: '모음통장', color: '#4f46e5', remaining_quantity: '0.25' }],
+                  },
+                ],
+              }
+            : group),
           holdings: [
             {
               holding_id: 'holding-1',
@@ -276,11 +310,13 @@ describe('DashboardOverview', () => {
 
     expect(screen.getByText('모음통장 수익현황')).toBeInTheDocument()
     expect(screen.getByText('삼성전자')).toBeInTheDocument()
-    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('모음통장')
-    expect(screen.getByTestId('portfolio-chart')).not.toHaveTextContent('전체')
+    expect(screen.getByText('0.25')).toBeInTheDocument()
+    expect(screen.getByText('₩145,000')).toBeInTheDocument()
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:모음통장')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('composition:off')
   })
 
-  it('can collapse the total dashboard chart to total-only history', () => {
+  it('passes the selected range to both selected and composition chart rows', () => {
     render(
       <DashboardOverview
         dashboard={dashboard}
@@ -292,10 +328,8 @@ describe('DashboardOverview', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '전체만' }))
-
-    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('전체')
-    expect(screen.getByTestId('portfolio-chart')).not.toHaveTextContent('모음통장')
-    expect(screen.getByTestId('portfolio-chart')).not.toHaveTextContent('장기투자')
+    expect(screen.getByTestId('portfolio-chart')).not.toHaveTextContent('2026-02-01')
+    fireEvent.click(screen.getByRole('button', { name: '전체' }))
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('2026-02-01')
   })
 })
