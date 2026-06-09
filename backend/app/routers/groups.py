@@ -39,6 +39,7 @@ from app.schemas.group import (
     SourceGroupOut,
     SourceGroupUpdateIn,
 )
+from app.schemas.portfolio import PublicScopedPortfolioHoldingsOut
 
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
@@ -421,6 +422,7 @@ async def get_shared_group(
     scope = await resolve_portfolio_scope(db, entity.user_id, public_kind, entity.id)
     summary, holdings = await build_scoped_portfolio_dashboard(db, entity.user_id, scope)
     history = await build_scoped_portfolio_history(db, entity.user_id, scope)
+    public_holdings = PublicScopedPortfolioHoldingsOut.model_validate(holdings.model_dump())
     return _redact_public_warnings(
         SharedGroupOut(
             kind=public_kind,
@@ -428,7 +430,7 @@ async def get_shared_group(
             color=entity.color,
             description=entity.description,
             summary=summary,
-            holdings=holdings,
+            holdings=public_holdings,
             history=history,
         )
     )

@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models.group import Label, RollupGroup, RollupGroupMember, SourceGroup
 from app.routers.deps import get_current_user, get_current_user_optional
 from app.routers.groups import router
+from app.schemas.portfolio import ScopedPortfolioHoldingsOut
 
 
 NOW = datetime(2026, 6, 2, tzinfo=timezone.utc)
@@ -428,7 +429,7 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
                 "accounting_status": "ok",
                 "warnings": [],
             },
-            {
+            ScopedPortfolioHoldingsOut.model_validate({
                 "holdings": [
                     {
                         "holding_id": str(uuid.uuid4()),
@@ -444,7 +445,7 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
                 ],
                 "accounting_status": "ok",
                 "warnings": [],
-            },
+            }),
         )
 
     async def _build_scoped_portfolio_history(actual_db, user_id, actual_scope):
@@ -521,11 +522,11 @@ def test_public_share_redacts_internal_transaction_ids_from_warnings(client, use
                 "accounting_status": "requires_review",
                 "warnings": [warning],
             },
-            {
+            ScopedPortfolioHoldingsOut.model_validate({
                 "holdings": [],
                 "accounting_status": "requires_review",
                 "warnings": [warning],
-            },
+            }),
         )
 
     async def _build_scoped_portfolio_history(*_args):
