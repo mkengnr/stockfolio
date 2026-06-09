@@ -21,6 +21,7 @@ from app.models.holding import Transaction
 from app.models.user import User
 from app.routers.deps import get_current_user, get_current_user_optional
 from app.routers.portfolio import (
+    build_shared_portfolio_dashboard,
     build_scoped_portfolio_dashboard,
     build_scoped_portfolio_history,
     resolve_portfolio_scope,
@@ -34,11 +35,18 @@ from app.schemas.group import (
     RollupGroupOut,
     RollupGroupUpdateIn,
     ShareUpdateIn,
+    SharedDashboardGroupOut,
+    SharedDashboardHistoryOut,
+    SharedDashboardHistoryRowOut,
+    SharedDashboardHoldingGroupBadgeOut,
+    SharedDashboardHoldingOut,
+    SharedDashboardOut,
     SharedGroupOut,
     SourceGroupCreateIn,
     SourceGroupOut,
     SourceGroupUpdateIn,
 )
+from app.schemas.dashboard import DashboardResponse
 from app.schemas.portfolio import PublicScopedPortfolioHoldingsOut
 
 
@@ -96,6 +104,85 @@ def _entity_to_out(entity: GroupEntity) -> GroupOut:
 
 def _redact_public_warning(warning: str) -> str:
     return _UUID_PATTERN.sub("[redacted]", warning)
+
+
+def _public_dashboard_holding(holding, allowed_group_names: set[str]) -> SharedDashboardHoldingOut:
+    return SharedDashboardHoldingOut(
+        ticker=holding.ticker,
+        name=holding.name,
+        market=holding.market,
+        currency=holding.currency,
+        quantity=holding.quantity,
+        remaining_cost_basis=holding.remaining_cost_basis,
+        current_price=holding.current_price,
+        current_value=holding.current_value,
+        unrealized_profit_loss=holding.unrealized_profit_loss,
+        groups=[
+            SharedDashboardHoldingGroupBadgeOut(
+                name=badge.name,
+                color=badge.color,
+                remaining_quantity=badge.remaining_quantity,
+            )
+            for badge in holding.groups
+            if badge.name in allowed_group_names
+        ],
+    )
+
+
+def _public_shared_dashboard(dashboard) -> SharedDashboardOut:
+    dashboard = DashboardResponse.model_validate(dashboard)
+    group_keys = {
+        (group.kind, group.id): f"group-{index}"
+        for index, group in enumerate(dashboard.groups, start=1)
+    }
+    groups = [
+        SharedDashboardGroupOut(
+            key=group_keys[(group.kind, group.id)],
+            kind="source",
+            name=group.name,
+            color=group.color,
+            summary=group.summary,
+            holdings=[
+                _public_dashboard_holding(holding, {group.name})
+                for holding in group.holdings
+            ],
+        )
+        for group in dashboard.groups
+        if group.kind == "source"
+    ]
+    history_rows = []
+    for row in dashboard.history.rows:
+        if row.group_kind == "total":
+            group_key = "total"
+        else:
+            group_key = group_keys.get((row.group_kind, row.group_id))
+            if group_key is None or row.group_kind != "source":
+                continue
+        history_rows.append(
+            SharedDashboardHistoryRowOut(
+                group_key=group_key,
+                group_kind=row.group_kind,
+                group_name=row.group_name,
+                snapshot_date=row.snapshot_date,
+                total_value=row.total_value,
+                total_invested_principal=row.total_invested_principal,
+                total_cost_basis=row.total_cost_basis,
+                total_profit_loss=row.total_profit_loss,
+            )
+        )
+    return SharedDashboardOut(
+        display_currency=dashboard.display_currency,
+        summary=dashboard.summary,
+        groups=groups,
+        history=SharedDashboardHistoryOut(rows=history_rows),
+        holdings=[
+            _public_dashboard_holding(
+                holding,
+                {group.name for group in dashboard.groups if group.kind == "source"},
+            )
+            for holding in dashboard.holdings
+        ],
+    )
 
 
 def _redact_public_warnings(payload: SharedGroupOut) -> SharedGroupOut:
@@ -422,6 +509,7 @@ async def get_shared_group(
     scope = await resolve_portfolio_scope(db, entity.user_id, public_kind, entity.id)
     summary, holdings = await build_scoped_portfolio_dashboard(db, entity.user_id, scope)
     history = await build_scoped_portfolio_history(db, entity.user_id, scope)
+    dashboard = await build_shared_portfolio_dashboard(db, entity.user_id, scope)
     public_holdings = PublicScopedPortfolioHoldingsOut.model_validate(holdings.model_dump())
     return _redact_public_warnings(
         SharedGroupOut(
@@ -432,5 +520,6 @@ async def get_shared_group(
             summary=summary,
             holdings=public_holdings,
             history=history,
+            dashboard=_public_shared_dashboard(dashboard),
         )
     )

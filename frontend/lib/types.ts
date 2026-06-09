@@ -364,6 +364,54 @@ export interface SharedGroup {
   summary: PortfolioSummary
   holdings: PublicScopedPortfolioHoldings
   history: ScopedPortfolioHistory
+  dashboard: SharedDashboard
+}
+
+export interface SharedDashboardHoldingGroupBadge {
+  name: string
+  color: string | null
+  remaining_quantity: string
+}
+
+export interface SharedDashboardHolding {
+  ticker: string
+  name: string | null
+  market: Market
+  currency: Currency
+  quantity: string
+  remaining_cost_basis: string | null
+  current_price: string | null
+  current_value: string | null
+  unrealized_profit_loss: string | null
+  groups: SharedDashboardHoldingGroupBadge[]
+}
+
+export interface SharedDashboardGroup {
+  key: string
+  kind: 'source'
+  name: string
+  color: string | null
+  summary: DashboardSummary
+  holdings: SharedDashboardHolding[]
+}
+
+export interface SharedDashboardHistoryRow {
+  group_key: string
+  group_kind: 'total' | 'source'
+  group_name: string
+  snapshot_date: string
+  total_value: string | null
+  total_invested_principal: string | null
+  total_cost_basis: string | null
+  total_profit_loss: string | null
+}
+
+export interface SharedDashboard {
+  display_currency: DisplayCurrency
+  summary: DashboardSummary
+  groups: SharedDashboardGroup[]
+  history: { rows: SharedDashboardHistoryRow[] }
+  holdings: SharedDashboardHolding[]
 }
 
 export interface ApiError {

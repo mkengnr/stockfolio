@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { HoldingsTable } from '@/components/dashboard/HoldingsTable'
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart'
@@ -10,25 +10,97 @@ import { Card, CardTitle } from '@/components/ui/Card'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
 import { shareApi } from '@/lib/api'
 import { formatCurrency, formatPercent, profitColor } from '@/lib/utils'
-import type { SharedGroup, SharedTag } from '@/lib/types'
+import type { DashboardHistoryRow, DashboardHoldingRow, SharedDashboardHolding, SharedGroup, SharedTag } from '@/lib/types'
 
 function SharedGroupView({ group }: { group: SharedGroup }) {
+  const [selectedGroupKey, setSelectedGroupKey] = useState('total')
+  const selectedGroup = group.dashboard.groups.find((item) => item.key === selectedGroupKey) ?? null
+  const selectedSummary = selectedGroup?.summary ?? group.dashboard.summary
+  const selectedHoldings = useMemo(
+    () => (selectedGroup?.holdings ?? group.dashboard.holdings).map(toDashboardHolding),
+    [group.dashboard.holdings, selectedGroup],
+  )
+  const historyRows = useMemo(
+    () => group.dashboard.history.rows.map(toDashboardHistoryRow),
+    [group.dashboard.history.rows],
+  )
+  const selectedHistoryRows = historyRows.filter((row) => (
+    selectedGroup ? row.group_id === selectedGroup.key : row.group_kind === 'total'
+  ))
+
   return (
     <SharedLayout name={group.name} color={group.color} description={group.description}>
-      <PortfolioSummary summary={group.summary} />
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="font-semibold text-gray-900">{selectedGroup?.name ?? '전체'} 수익현황</h2>
+            <p className="mt-1 text-sm text-gray-500">공유된 포트폴리오 범위의 수익현황입니다.</p>
+          </div>
+          {group.dashboard.groups.length > 0 && (
+            <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+              그룹 필터
+              <select
+                value={selectedGroupKey}
+                onChange={(event) => setSelectedGroupKey(event.target.value)}
+                className="min-w-48 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+              >
+                <option value="total">전체</option>
+                {group.dashboard.groups.map((item) => (
+                  <option key={item.key} value={item.key}>{item.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+        <PortfolioSummary summary={selectedSummary} displayCurrency={group.dashboard.display_currency} />
+      </section>
       <Card>
         <h2 className="font-semibold text-gray-900">포트폴리오 변화</h2>
-        <p className="mb-4 mt-1 text-sm text-gray-500">통화별 축을 분리해 표시합니다.</p>
-        <PortfolioChart series={group.history.series} />
+        <p className="mb-4 mt-1 text-sm text-gray-500">평가금액, 투자원금, 그룹 구성과 일별손익을 표시합니다.</p>
+        <PortfolioChart
+          historyRows={selectedHistoryRows}
+          compositionRows={historyRows}
+          includeComposition={!selectedGroup}
+          displayCurrency={group.dashboard.display_currency}
+        />
       </Card>
       <Card noPad>
         <div className="border-b border-gray-100 px-6 py-4">
           <h2 className="font-semibold text-gray-900">보유 종목</h2>
         </div>
-        <HoldingsTable holdings={group.holdings.holdings} />
+        <HoldingsTable holdings={selectedHoldings} displayCurrency={group.dashboard.display_currency} />
       </Card>
     </SharedLayout>
   )
+}
+
+function toDashboardHistoryRow(row: SharedGroup['dashboard']['history']['rows'][number]): DashboardHistoryRow {
+  return {
+    group_kind: row.group_kind,
+    group_id: row.group_key === 'total' ? null : row.group_key,
+    group_name: row.group_name,
+    snapshot_date: row.snapshot_date,
+    total_value: row.total_value,
+    total_invested_principal: row.total_invested_principal,
+    total_cost_basis: row.total_cost_basis,
+    total_profit_loss: row.total_profit_loss,
+  }
+}
+
+function toDashboardHolding(holding: SharedDashboardHolding): DashboardHoldingRow {
+  return {
+    holding_id: '',
+    ticker: holding.ticker,
+    name: holding.name,
+    market: holding.market,
+    currency: holding.currency,
+    quantity: holding.quantity,
+    remaining_cost_basis: holding.remaining_cost_basis,
+    current_price: holding.current_price,
+    current_value: holding.current_value,
+    unrealized_profit_loss: holding.unrealized_profit_loss,
+    groups: holding.groups.map((badge) => ({ ...badge, source_group_id: null })),
+  }
 }
 
 function LegacySharedTagView({ tag }: { tag: SharedTag }) {

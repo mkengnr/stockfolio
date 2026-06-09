@@ -452,6 +452,83 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
         calls.append(("history", actual_db, user_id, actual_scope))
         return {"series": {}}
 
+    async def _build_shared_portfolio_dashboard(actual_db, user_id, actual_scope):
+        calls.append(("shared_dashboard", actual_db, user_id, actual_scope))
+        return {
+            "display_currency": "KRW",
+            "exchange_rate": None,
+            "last_refreshed_at": NOW.isoformat(),
+            "current_price_as_of": "2026-06-02",
+            "comparison_as_of": "2026-06-01",
+            "summary": {
+                "total_invested_principal": "70000",
+                "total_cost_basis": "70000",
+                "total_current_value": "75000",
+                "total_current_value_change": "1000",
+                "total_unrealized_profit_loss": "5000",
+                "total_unrealized_profit_loss_pct": "7.14",
+                "total_profit_loss": "5000",
+                "total_profit_loss_pct": "7.14",
+            },
+            "groups": [
+                {
+                    "kind": "source",
+                    "id": str(entity.id),
+                    "name": entity.name,
+                    "color": entity.color,
+                    "source_group_ids": [str(entity.id)],
+                    "summary": {
+                        "total_invested_principal": "70000",
+                        "total_cost_basis": "70000",
+                        "total_current_value": "75000",
+                        "total_current_value_change": "1000",
+                        "total_unrealized_profit_loss": "5000",
+                        "total_unrealized_profit_loss_pct": "7.14",
+                        "total_profit_loss": "5000",
+                        "total_profit_loss_pct": "7.14",
+                    },
+                    "holdings": [],
+                }
+            ],
+            "history": {
+                "rows": [
+                    {
+                        "group_kind": "source",
+                        "group_id": str(entity.id),
+                        "group_name": entity.name,
+                        "snapshot_date": "2026-06-01",
+                        "total_value": "75000",
+                        "total_invested_principal": "70000",
+                        "total_cost_basis": "70000",
+                        "total_profit_loss": "5000",
+                    }
+                ]
+            },
+            "holdings": [
+                {
+                    "holding_id": str(uuid.uuid4()),
+                    "ticker": "005930",
+                    "name": "삼성전자",
+                    "market": "KRX",
+                    "currency": "KRW",
+                    "quantity": "1",
+                    "remaining_cost_basis": "70000",
+                    "current_price": "75000",
+                    "current_value": "75000",
+                    "unrealized_profit_loss": "5000",
+                    "groups": [
+                        {
+                            "source_group_id": str(entity.id),
+                            "name": entity.name,
+                            "color": entity.color,
+                            "remaining_quantity": "1",
+                        }
+                    ],
+                }
+            ],
+            "warnings": [],
+        }
+
     monkeypatch.setattr(
         "app.routers.groups.resolve_portfolio_scope",
         _resolve_portfolio_scope,
@@ -463,6 +540,11 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
     monkeypatch.setattr(
         "app.routers.groups.build_scoped_portfolio_history",
         _build_scoped_portfolio_history,
+    )
+    monkeypatch.setattr(
+        "app.routers.groups.build_shared_portfolio_dashboard",
+        _build_shared_portfolio_dashboard,
+        raising=False,
     )
 
     response = client.get(f"/api/groups/share/{entity.share_token}")
@@ -495,11 +577,78 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
             "warnings": [],
         },
         "history": {"series": {}},
+        "dashboard": {
+            "display_currency": "KRW",
+            "summary": {
+                "total_invested_principal": "70000",
+                "total_cost_basis": "70000",
+                "total_current_value": "75000",
+                "total_current_value_change": "1000",
+                "total_unrealized_profit_loss": "5000",
+                "total_unrealized_profit_loss_pct": "7.14",
+                "total_profit_loss": "5000",
+                "total_profit_loss_pct": "7.14",
+            },
+            "groups": [
+                {
+                    "key": "group-1",
+                    "kind": "source",
+                    "name": entity.name,
+                    "color": entity.color,
+                    "summary": {
+                        "total_invested_principal": "70000",
+                        "total_cost_basis": "70000",
+                        "total_current_value": "75000",
+                        "total_current_value_change": "1000",
+                        "total_unrealized_profit_loss": "5000",
+                        "total_unrealized_profit_loss_pct": "7.14",
+                        "total_profit_loss": "5000",
+                        "total_profit_loss_pct": "7.14",
+                    },
+                    "holdings": [],
+                }
+            ],
+            "history": {
+                "rows": [
+                    {
+                        "group_key": "group-1",
+                        "group_kind": "source",
+                        "group_name": entity.name,
+                        "snapshot_date": "2026-06-01",
+                        "total_value": "75000",
+                        "total_invested_principal": "70000",
+                        "total_cost_basis": "70000",
+                        "total_profit_loss": "5000",
+                    }
+                ]
+            },
+            "holdings": [
+                {
+                    "ticker": "005930",
+                    "name": "삼성전자",
+                    "market": "KRX",
+                    "currency": "KRW",
+                    "quantity": "1",
+                    "remaining_cost_basis": "70000",
+                    "current_price": "75000",
+                    "current_value": "75000",
+                    "unrealized_profit_loss": "5000",
+                    "groups": [
+                        {
+                            "name": entity.name,
+                            "color": entity.color,
+                            "remaining_quantity": "1",
+                        }
+                    ],
+                }
+            ],
+        },
     }
     assert calls == [
         ("scope", db, entity.user_id, kind, entity.id),
         ("dashboard", db, entity.user_id, scope),
         ("history", db, entity.user_id, scope),
+        ("shared_dashboard", db, entity.user_id, scope),
     ]
 
 
@@ -547,6 +696,29 @@ def test_public_share_redacts_internal_transaction_ids_from_warnings(client, use
             }
         }
 
+    async def _build_shared_portfolio_dashboard(*_args):
+        return {
+            "display_currency": "KRW",
+            "exchange_rate": None,
+            "last_refreshed_at": NOW.isoformat(),
+            "current_price_as_of": None,
+            "comparison_as_of": None,
+            "summary": {
+                "total_invested_principal": None,
+                "total_cost_basis": None,
+                "total_current_value": None,
+                "total_current_value_change": None,
+                "total_unrealized_profit_loss": None,
+                "total_unrealized_profit_loss_pct": None,
+                "total_profit_loss": None,
+                "total_profit_loss_pct": None,
+            },
+            "groups": [],
+            "history": {"rows": []},
+            "holdings": [],
+            "warnings": [],
+        }
+
     monkeypatch.setattr("app.routers.groups.resolve_portfolio_scope", _resolve_portfolio_scope)
     monkeypatch.setattr(
         "app.routers.groups.build_scoped_portfolio_dashboard",
@@ -555,6 +727,10 @@ def test_public_share_redacts_internal_transaction_ids_from_warnings(client, use
     monkeypatch.setattr(
         "app.routers.groups.build_scoped_portfolio_history",
         _build_scoped_portfolio_history,
+    )
+    monkeypatch.setattr(
+        "app.routers.groups.build_shared_portfolio_dashboard",
+        _build_shared_portfolio_dashboard,
     )
 
     response = client.get(f"/api/groups/share/{source.share_token}")

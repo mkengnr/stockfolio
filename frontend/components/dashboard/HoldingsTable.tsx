@@ -41,8 +41,8 @@ function toRow(holding: TableHolding, displayCurrency?: DisplayCurrency): Row {
     const profit = holding.unrealized_profit_loss
     const valueCurrency = displayCurrency ?? holding.currency
     return {
-      key: holding.holding_id,
-      id: holding.holding_id,
+      key: holding.holding_id || `${holding.currency}:${holding.ticker}`,
+      id: holding.holding_id || null,
       ticker: holding.ticker,
       name: holding.name ?? holding.ticker,
       subtitle: `${holding.ticker} · ${holding.market}`,

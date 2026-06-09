@@ -1225,6 +1225,126 @@ async def build_scoped_portfolio_dashboard(
     return _build_scoped_dashboard_payload(holdings, scope, prices)
 
 
+async def build_shared_portfolio_dashboard(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    scope: PortfolioScope,
+) -> DashboardResponse:
+    holdings = await _load_scoped_holdings(db, user_id, include_inactive=True)
+    active_holdings = [holding for holding in holdings if holding.is_active]
+    source_groups, _ = await _load_dashboard_groups(db, user_id)
+    child_source_groups = (
+        [
+            source_group
+            for source_group in source_groups
+            if source_group.id in scope.resolved_source_group_ids
+        ]
+        if scope.kind == "rollup"
+        else []
+    )
+    price_quotes = await _fetch_current_price_quotes(_scoped_price_tickers(active_holdings, scope))
+    prices = {ticker: quote.price for ticker, quote in price_quotes.items()}
+    price_dates = {ticker: quote.price_date for ticker, quote in price_quotes.items()}
+    exchange_rate = None
+    warnings: list[str] = []
+    if any(holding.currency == Currency.USD for holding in holdings):
+        try:
+            exchange_rate = await asyncio.to_thread(get_usd_krw_rate)
+        except Exception as exc:
+            logger.warning("shared USD/KRW exchange rate lookup failed: %r", exc)
+            warnings.append("USD/KRW exchange rate lookup failed")
+
+    summary, summary_warnings = _scope_display_summary(
+        active_holdings,
+        scope,
+        prices,
+        "KRW",
+        exchange_rate,
+    )
+    warnings.extend(summary_warnings)
+    history_rows = _history_rows_for_scope(
+        holdings,
+        scope,
+        group_kind="total",
+        group_id=None,
+        group_name="전체",
+        display_currency="KRW",
+        exchange_rate=exchange_rate,
+    )
+    groups: list[DashboardGroupSummary] = []
+    for source_group in child_source_groups:
+        child_scope = _source_group_scope(source_group)
+        child_summary, child_warnings = _scope_display_summary(
+            active_holdings,
+            child_scope,
+            prices,
+            "KRW",
+            exchange_rate,
+        )
+        warnings.extend(child_warnings)
+        if not _dashboard_summary_has_values(child_summary):
+            continue
+        groups.append(
+            DashboardGroupSummary(
+                kind="source",
+                id=source_group.id,
+                name=source_group.name,
+                color=source_group.color,
+                source_group_ids=[source_group.id],
+                summary=child_summary,
+                holdings=_build_dashboard_holdings(
+                    active_holdings,
+                    source_groups,
+                    prices,
+                    "KRW",
+                    exchange_rate,
+                    scope=child_scope,
+                ),
+            )
+        )
+        history_rows.extend(
+            _history_rows_for_scope(
+                holdings,
+                child_scope,
+                group_kind="source",
+                group_id=source_group.id,
+                group_name=source_group.name,
+                display_currency="KRW",
+                exchange_rate=exchange_rate,
+            )
+        )
+
+    current_price_as_of = _dashboard_current_price_as_of(price_dates)
+    summary = _dashboard_summary_with_value_change(
+        summary,
+        history_rows,
+        group_kind="total",
+        group_id=None,
+        current_price_as_of=current_price_as_of,
+    )
+    groups = _dashboard_groups_with_value_change(groups, history_rows, current_price_as_of)
+    history = DashboardHistorySeries(rows=history_rows)
+    return DashboardResponse(
+        display_currency="KRW",
+        exchange_rate=None,
+        last_refreshed_at=datetime.now(timezone.utc),
+        current_price_as_of=current_price_as_of,
+        comparison_as_of=_dashboard_comparison_as_of(history_rows, current_price_as_of),
+        summary=summary,
+        groups=groups,
+        history=history,
+        holdings=_build_dashboard_holdings(
+            active_holdings,
+            source_groups,
+            prices,
+            "KRW",
+            exchange_rate,
+            scope=scope,
+        ),
+        warnings=sorted(set(warnings)),
+    )
+
+
 def _build_scoped_history(
     holdings: list[Holding],
     scope: PortfolioScope,

@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import SharePage from '@/app/share/[token]/page'
 import { shareApi } from '@/lib/api'
 import type { SharedGroup, SharedTag } from '@/lib/types'
@@ -9,6 +9,21 @@ jest.mock('@/lib/api', () => ({
     getGroup: jest.fn(),
     getLegacy: jest.fn(),
   },
+}))
+
+jest.mock('@/components/dashboard/PortfolioChart', () => ({
+  PortfolioChart: ({
+    historyRows,
+    includeComposition,
+  }: {
+    historyRows: Array<{ group_name: string }>
+    includeComposition: boolean
+  }) => (
+    <div data-testid="portfolio-chart">
+      selected:{historyRows.map((row) => row.group_name).join(',')}|
+      composition:{includeComposition ? 'on' : 'off'}
+    </div>
+  ),
 }))
 
 const mockedShareApi = shareApi as jest.Mocked<typeof shareApi>
@@ -40,6 +55,83 @@ const sharedGroup: SharedGroup = {
     warnings: [],
   },
   history: { series: { KRW: [], USD: [] } },
+  dashboard: {
+    display_currency: 'KRW',
+    summary: {
+      total_invested_principal: '300',
+      total_cost_basis: '300',
+      total_current_value: '390',
+      total_current_value_change: '20',
+      total_unrealized_profit_loss: '90',
+      total_unrealized_profit_loss_pct: '30',
+      total_profit_loss: '90',
+      total_profit_loss_pct: '30',
+    },
+    groups: [{
+      key: 'group-1',
+      kind: 'source',
+      name: '급여',
+      color: '#4f46e5',
+      summary: {
+        total_invested_principal: '200',
+        total_cost_basis: '200',
+        total_current_value: '240',
+        total_current_value_change: '10',
+        total_unrealized_profit_loss: '40',
+        total_unrealized_profit_loss_pct: '20',
+        total_profit_loss: '40',
+        total_profit_loss_pct: '20',
+      },
+      holdings: [{
+        ticker: 'AAPL',
+        name: 'Apple',
+        market: 'US',
+        currency: 'USD',
+        quantity: '2',
+        remaining_cost_basis: '200',
+        current_price: '120',
+        current_value: '240',
+        unrealized_profit_loss: '40',
+        groups: [{ name: '급여', color: '#4f46e5', remaining_quantity: '2' }],
+      }],
+    }],
+    history: {
+      rows: [
+        {
+          group_key: 'total',
+          group_kind: 'total',
+          group_name: '전체',
+          snapshot_date: '2026-06-01',
+          total_value: '390',
+          total_invested_principal: '300',
+          total_cost_basis: '300',
+          total_profit_loss: '90',
+        },
+        {
+          group_key: 'group-1',
+          group_kind: 'source',
+          group_name: '급여',
+          snapshot_date: '2026-06-01',
+          total_value: '240',
+          total_invested_principal: '200',
+          total_cost_basis: '200',
+          total_profit_loss: '40',
+        },
+      ],
+    },
+    holdings: [{
+      ticker: 'AAPL',
+      name: 'Apple',
+      market: 'US',
+      currency: 'USD',
+      quantity: '3',
+      remaining_cost_basis: '300',
+      current_price: '130',
+      current_value: '390',
+      unrealized_profit_loss: '90',
+      groups: [{ name: '급여', color: '#4f46e5', remaining_quantity: '2' }],
+    }],
+  },
 }
 
 const legacyTag: SharedTag = {
@@ -67,6 +159,22 @@ describe('SharePage', () => {
     expect(screen.getByText('Apple')).toBeInTheDocument()
     expect(mockedShareApi.getGroup).toHaveBeenCalledWith('token-1')
     expect(mockedShareApi.getLegacy).not.toHaveBeenCalled()
+  })
+
+  it('filters shared dashboard summary, chart, and holdings by a component group', async () => {
+    mockedShareApi.getGroup.mockResolvedValue(sharedGroup)
+    render(<SharePage params={{ token: 'token-1' }} />)
+
+    const filter = await screen.findByLabelText('그룹 필터')
+    expect(screen.getByText('3')).toBeInTheDocument()
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:전체')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('composition:on')
+
+    fireEvent.change(filter, { target: { value: 'group-1' } })
+
+    expect(screen.getByText('2')).toBeInTheDocument()
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:급여')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('composition:off')
   })
 
   it('falls back to the legacy endpoint only after a 404', async () => {

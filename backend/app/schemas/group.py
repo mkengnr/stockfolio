@@ -1,6 +1,7 @@
 import re
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -10,6 +11,8 @@ from app.schemas.portfolio import (
     ScopedPortfolioHistoryOut,
     PublicScopedPortfolioHoldingsOut,
 )
+from app.models.holding import Currency, Market
+from app.schemas.dashboard import DashboardSummary, DisplayCurrency
 
 
 DEFAULT_COLOR = "#6366f1"
@@ -144,3 +147,55 @@ class SharedGroupOut(BaseModel):
     summary: PortfolioSummaryOut
     holdings: PublicScopedPortfolioHoldingsOut
     history: ScopedPortfolioHistoryOut
+    dashboard: "SharedDashboardOut"
+
+
+class SharedDashboardHoldingGroupBadgeOut(BaseModel):
+    name: str
+    color: str | None
+    remaining_quantity: Decimal
+
+
+class SharedDashboardHoldingOut(BaseModel):
+    ticker: str
+    name: str | None
+    market: Market
+    currency: Currency
+    quantity: Decimal
+    remaining_cost_basis: Decimal | None
+    current_price: Decimal | None
+    current_value: Decimal | None
+    unrealized_profit_loss: Decimal | None
+    groups: list[SharedDashboardHoldingGroupBadgeOut]
+
+
+class SharedDashboardGroupOut(BaseModel):
+    key: str
+    kind: Literal["source"]
+    name: str
+    color: str | None
+    summary: DashboardSummary
+    holdings: list[SharedDashboardHoldingOut]
+
+
+class SharedDashboardHistoryRowOut(BaseModel):
+    group_key: str
+    group_kind: Literal["total", "source"]
+    group_name: str
+    snapshot_date: date
+    total_value: Decimal | None
+    total_invested_principal: Decimal | None
+    total_cost_basis: Decimal | None
+    total_profit_loss: Decimal | None
+
+
+class SharedDashboardHistoryOut(BaseModel):
+    rows: list[SharedDashboardHistoryRowOut]
+
+
+class SharedDashboardOut(BaseModel):
+    display_currency: DisplayCurrency
+    summary: DashboardSummary
+    groups: list[SharedDashboardGroupOut]
+    history: SharedDashboardHistoryOut
+    holdings: list[SharedDashboardHoldingOut]
