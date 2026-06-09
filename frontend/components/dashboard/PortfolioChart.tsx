@@ -374,7 +374,6 @@ function DashboardPortfolioChart({
         <strong className="text-gray-600">{displayCurrency}</strong>
         <Legend color="#312e81" label="평가금액" />
         <Legend color="#818cf8" label="투자원금" dashed />
-        <HistogramLegend color="#16a34a" label="일별손익" />
         {chartData.composition.map((series, index) => (
           <HistogramLegend
             key={series.id}
