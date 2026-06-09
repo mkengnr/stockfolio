@@ -970,6 +970,25 @@ async def update_transaction_classification(
     return _transaction_to_out(transaction)
 
 
+def _ensure_buy_lot_not_allocated(holding: Holding, transaction: Transaction) -> None:
+    """Block deleting a BUY whose lot is referenced by sell allocations.
+
+    The DB cascades buy_lots -> sell_lot_allocations on delete, which would
+    silently leave later SELLs under-allocated; surface an explicit conflict
+    instead. Uses only relationships eagerly loaded by _holding_load_options.
+    """
+    if transaction.type != TransactionType.BUY or transaction.buy_lot is None:
+        return
+    lot_id = transaction.buy_lot.id
+    for sibling in holding.transactions:
+        for allocation in sibling.sell_allocations:
+            if allocation.buy_lot_id == lot_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="매도 배분이 연결된 매수 거래는 삭제할 수 없습니다. 먼저 해당 매도 거래를 삭제하거나 배분을 해제하세요.",
+                )
+
+
 @router.delete("/{holding_id}/transactions/{tx_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_transaction(
     holding_id: uuid.UUID,
@@ -989,6 +1008,7 @@ async def delete_transaction(
     holding = await _get_owned_holding(db, holding_id, current_user.id, lock=True)
     _ensure_active_holding(holding)
     _ensure_lot_accounting_ready(holding)
+    _ensure_buy_lot_not_allocated(holding, tx)
 
     remaining_transactions = [item for item in holding.transactions if item.id != tx_id]
     try:

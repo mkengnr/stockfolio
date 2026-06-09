@@ -750,7 +750,8 @@ def test_delete_buy_rejects_when_later_sell_would_become_invalid(client, user, d
 
     response = client.delete(f"/api/holdings/{holding.id}/transactions/{buy.id}")
 
-    assert response.status_code == 422
+    assert response.status_code == 409
+    assert "매도 배분" in response.json()["detail"]
     assert db.deleted == []
 
 

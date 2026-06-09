@@ -14,6 +14,7 @@ from app.models.user import User
 from app.routers.deps import get_current_user
 from app.routers.holdings import (
     _ensure_active_holding,
+    _ensure_buy_lot_not_allocated,
     _ensure_lot_accounting_ready,
     _get_owned_holding,
     _recalculate_holding,
@@ -412,6 +413,7 @@ async def delete_transaction(
     transaction = _find_transaction_on_locked_holding(holding, transaction_id)
     _ensure_active_holding(holding)
     _ensure_lot_accounting_ready(holding)
+    _ensure_buy_lot_not_allocated(holding, transaction)
 
     remaining_transactions = [
         item for item in holding.transactions if item.id != transaction_id
