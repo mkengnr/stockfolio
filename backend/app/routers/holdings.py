@@ -278,13 +278,13 @@ def _holding_performance(
         ZERO,
     )
     current_value = holding.quantity * current_price if current_price is not None else None
-    profit_loss = current_value - invested_principal if current_value is not None else None
+    profit_loss = current_value - remaining_cost_basis if current_value is not None else None
     performance = HoldingPerformanceOut(
         total_invested_principal=invested_principal,
         remaining_cost_basis=remaining_cost_basis,
         current_value=current_value,
         profit_loss=profit_loss,
-        profit_loss_pct=_profit_loss_pct(profit_loss, invested_principal),
+        profit_loss_pct=_profit_loss_pct(profit_loss, remaining_cost_basis),
     )
 
     source_by_id = {source_group.id: source_group for source_group in source_groups}
@@ -318,7 +318,7 @@ def _holding_performance(
             remaining_quantity * current_price if current_price is not None else None
         )
         group_profit_loss = (
-            group_current_value - group_invested_principal
+            group_current_value - group_cost_basis
             if group_current_value is not None
             else None
         )
@@ -332,7 +332,7 @@ def _holding_performance(
                 remaining_cost_basis=group_cost_basis,
                 current_value=group_current_value,
                 profit_loss=group_profit_loss,
-                profit_loss_pct=_profit_loss_pct(group_profit_loss, group_invested_principal),
+                profit_loss_pct=_profit_loss_pct(group_profit_loss, group_cost_basis),
             )
         )
     return performance, group_breakdown

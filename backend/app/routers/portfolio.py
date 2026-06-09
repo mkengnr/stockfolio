@@ -422,7 +422,7 @@ def _build_scoped_dashboard_payload(
             scope,
         ).get(currency.value, Decimal(0))
         total_profit_loss = (
-            total_current_value - invested_principal
+            total_current_value - total_cost_basis
             if total_current_value is not None
             else None
         )
@@ -437,8 +437,8 @@ def _build_scoped_dashboard_payload(
             total_current_value=total_current_value,
             total_profit_loss=total_profit_loss,
             total_profit_loss_pct=(
-                total_profit_loss / invested_principal * 100
-                if total_profit_loss is not None and invested_principal > 0
+                total_profit_loss / total_cost_basis * 100
+                if total_profit_loss is not None and total_cost_basis > 0
                 else None
             ),
             holding_count=len(currency_holdings),
@@ -555,11 +555,11 @@ def _dashboard_summary_from_currency_summary(
         ),
         total_profit_loss=profit_loss,
         total_profit_loss_pct=(
-            profit_loss / invested_principal * 100
+            profit_loss / cost_basis * 100
             if (
                 profit_loss is not None
-                and invested_principal is not None
-                and invested_principal > 0
+                and cost_basis is not None
+                and cost_basis > 0
             )
             else None
         ),

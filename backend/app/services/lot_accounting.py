@@ -459,7 +459,7 @@ def build_history(
                     total_profit_loss=(
                         None
                         if unavailable_price_count
-                        else total_value - invested_principal.get(currency, ZERO)
+                        else total_value - total_cost_basis
                     ),
                     unavailable_price_count=unavailable_price_count,
                     accounting_status=replay_result.accounting_status,

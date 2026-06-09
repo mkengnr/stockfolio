@@ -43,6 +43,7 @@ def buy(
     label_ids: frozenset[UUID] = frozenset(),
     requires_review: bool = False,
     created_at: datetime | None = None,
+    principal_flow: str | None = None,
 ) -> Transaction:
     return Transaction(
         id=transaction_id,
@@ -58,6 +59,7 @@ def buy(
         source_group_id=source_group_id,
         label_ids=label_ids,
         requires_review=requires_review,
+        principal_flow=principal_flow,
     )
 
 
@@ -724,6 +726,27 @@ def test_history_keeps_krw_and_usd_separate_and_carries_only_prior_close():
     assert result.series["KRW"][0].total_profit_loss == Decimal("10000")
     assert result.series["USD"][0].total_profit_loss is None
     assert result.series["USD"][0].unavailable_price_count == 1
+
+
+def test_history_profit_uses_remaining_cost_basis_for_reinvest_buys():
+    transactions = [
+        buy(
+            "2026-01-01",
+            transaction_id=UUID(int=1),
+            lot_id=SAVINGS_LOT,
+            quantity="1",
+            price="80000",
+            principal_flow="REINVEST",
+        ),
+    ]
+    closes = {"005930": {date(2026, 1, 1): Decimal("90000")}}
+
+    result = build_history(transactions, closes, PortfolioScope("all"))
+
+    point = result.series["KRW"][0]
+    assert point.total_invested_principal == Decimal("0")
+    assert point.total_cost_basis == Decimal("80000")
+    assert point.total_profit_loss == Decimal("10000")
 
 
 def test_history_keeps_zero_totals_when_currency_has_no_active_positions():

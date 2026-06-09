@@ -536,8 +536,8 @@ def test_dashboard_summary_separates_unrealized_and_total_profit_and_daily_chang
     assert response.summary.total_current_value == Decimal("1500")
     assert response.summary.total_unrealized_profit_loss == Decimal("500")
     assert response.summary.total_unrealized_profit_loss_pct == Decimal("50.0")
-    assert response.summary.total_profit_loss == Decimal("800")
-    assert response.summary.total_profit_loss_pct == Decimal("114.2857142857142857142857143")
+    assert response.summary.total_profit_loss == Decimal("500")
+    assert response.summary.total_profit_loss_pct == Decimal("50.0")
     assert response.summary.total_current_value_change == Decimal("400")
 
 

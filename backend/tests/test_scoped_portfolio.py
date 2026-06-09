@@ -287,8 +287,8 @@ def test_dashboard_tracks_invested_principal_separately_from_remaining_cost_basi
     assert currency_summary.total_cost_basis == Decimal("1200")
     assert currency_summary.total_invested_principal == Decimal("760")
     assert currency_summary.total_current_value == Decimal("1430")
-    assert currency_summary.total_profit_loss == Decimal("670")
-    assert currency_summary.total_profit_loss_pct == Decimal("88.15789473684210526315789474")
+    assert currency_summary.total_profit_loss == Decimal("230")
+    assert currency_summary.total_profit_loss_pct == Decimal("19.16666666666666666666666667")
 
 
 def test_dashboard_ignores_inactive_holdings_and_keeps_currencies_separate():
