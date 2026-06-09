@@ -277,7 +277,14 @@ def _holding_performance(
         (lot.remaining_quantity * lot.unit_price for lot in replay_result.lots.values()),
         ZERO,
     )
-    current_value = holding.quantity * current_price if current_price is not None else None
+    # Derive the valued quantity from lots, not holding.quantity: the
+    # moving-average mirror must never disagree with the lot ledger that
+    # produced remaining_cost_basis.
+    remaining_quantity = sum(
+        (lot.remaining_quantity for lot in replay_result.lots.values()),
+        ZERO,
+    )
+    current_value = remaining_quantity * current_price if current_price is not None else None
     profit_loss = current_value - remaining_cost_basis if current_value is not None else None
     performance = HoldingPerformanceOut(
         total_invested_principal=invested_principal,

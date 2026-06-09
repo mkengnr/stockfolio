@@ -398,6 +398,31 @@ def test_get_holding_profit_uses_remaining_cost_basis_for_reinvest_buys(client, 
     assert payload["group_breakdown"][0]["profit_loss_pct"] == "50.0"
 
 
+def test_get_holding_performance_derives_value_from_lots_not_moving_average(client, user, db):
+    source = _source(user.id, name="모음통장", color="#2563eb")
+    holding = _holding(user.id)
+    _buy(
+        holding,
+        source_group_id=source.id,
+        quantity="2",
+        price="80000",
+        transaction_date=date(2026, 1, 1),
+    )
+    holding.quantity = Decimal("99")
+    db.queue(_Result(one=holding), _Result(many=[source]))
+
+    with patch(
+        "app.routers.holdings.get_price",
+        new=AsyncMock(return_value=SimpleNamespace(price=Decimal("120000"))),
+    ):
+        response = client.get(f"/api/holdings/{holding.id}")
+
+    assert response.status_code == 200
+    performance = response.json()["performance"]
+    assert performance["current_value"] == "240000"
+    assert performance["profit_loss"] == "80000"
+
+
 def test_get_holding_nulls_performance_when_lot_accounting_requires_review(client, user, db):
     holding = _holding(user.id)
     _buy(holding, quantity="2", price="80000")
