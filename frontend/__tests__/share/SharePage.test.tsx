@@ -27,34 +27,12 @@ jest.mock('@/components/dashboard/PortfolioChart', () => ({
 }))
 
 const mockedShareApi = shareApi as jest.Mocked<typeof shareApi>
-const emptySummary = {
-  currencies: {},
-  holding_count: 0,
-  accounting_status: 'ok' as const,
-  warnings: [],
-}
 
 const sharedGroup: SharedGroup = {
   kind: 'source',
   name: '월급',
   color: '#6366f1',
   description: '급여 투자',
-  summary: emptySummary,
-  holdings: {
-    holdings: [{
-      ticker: 'AAPL',
-      name: 'Apple',
-      currency: 'USD',
-      remaining_quantity: '2',
-      remaining_cost_basis: '200',
-      current_price: '120',
-      current_value: '240',
-      unrealized_profit_loss: '40',
-    }],
-    accounting_status: 'ok',
-    warnings: [],
-  },
-  history: { series: { KRW: [], USD: [] } },
   dashboard: {
     display_currency: 'KRW',
     summary: {

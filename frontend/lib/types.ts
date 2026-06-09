@@ -88,12 +88,6 @@ export interface ScopedPortfolioHolding extends PublicScopedPortfolioHolding {
   holding_id: string
 }
 
-export interface PublicScopedPortfolioHoldings {
-  holdings: PublicScopedPortfolioHolding[]
-  accounting_status: AccountingStatus
-  warnings: string[]
-}
-
 export interface ScopedPortfolioHoldings {
   holdings: ScopedPortfolioHolding[]
   accounting_status: AccountingStatus
@@ -361,9 +355,6 @@ export interface SharedGroup {
   name: string
   color: string
   description: string | null
-  summary: PortfolioSummary
-  holdings: PublicScopedPortfolioHoldings
-  history: ScopedPortfolioHistory
   dashboard: SharedDashboard
 }
 

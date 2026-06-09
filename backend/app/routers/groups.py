@@ -1,4 +1,3 @@
-import re
 import uuid
 from typing import Literal
 
@@ -22,8 +21,6 @@ from app.models.user import User
 from app.routers.deps import get_current_user, get_current_user_optional
 from app.routers.portfolio import (
     build_shared_portfolio_dashboard,
-    build_scoped_portfolio_dashboard,
-    build_scoped_portfolio_history,
     resolve_portfolio_scope,
 )
 from app.schemas.group import (
@@ -47,7 +44,6 @@ from app.schemas.group import (
     SourceGroupUpdateIn,
 )
 from app.schemas.dashboard import DashboardResponse
-from app.schemas.portfolio import PublicScopedPortfolioHoldingsOut
 
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
@@ -60,10 +56,6 @@ _GROUP_MODELS = {
     "rollups": RollupGroup,
     "labels": Label,
 }
-_UUID_PATTERN = re.compile(
-    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
-)
 
 
 def _not_found() -> HTTPException:
@@ -102,10 +94,6 @@ def _entity_to_out(entity: GroupEntity) -> GroupOut:
     return LabelOut.model_validate(entity)
 
 
-def _redact_public_warning(warning: str) -> str:
-    return _UUID_PATTERN.sub("[redacted]", warning)
-
-
 def _public_dashboard_holding(holding, allowed_group_names: set[str]) -> SharedDashboardHoldingOut:
     return SharedDashboardHoldingOut(
         ticker=holding.ticker,
@@ -129,8 +117,7 @@ def _public_dashboard_holding(holding, allowed_group_names: set[str]) -> SharedD
     )
 
 
-def _public_shared_dashboard(dashboard) -> SharedDashboardOut:
-    dashboard = DashboardResponse.model_validate(dashboard)
+def _public_shared_dashboard(dashboard: DashboardResponse) -> SharedDashboardOut:
     group_keys = {
         (group.kind, group.id): f"group-{index}"
         for index, group in enumerate(dashboard.groups, start=1)
@@ -182,33 +169,6 @@ def _public_shared_dashboard(dashboard) -> SharedDashboardOut:
             )
             for holding in dashboard.holdings
         ],
-    )
-
-
-def _redact_public_warnings(payload: SharedGroupOut) -> SharedGroupOut:
-    def redact(warnings: list[str]) -> list[str]:
-        return [_redact_public_warning(warning) for warning in warnings]
-
-    return payload.model_copy(
-        update={
-            "summary": payload.summary.model_copy(
-                update={"warnings": redact(payload.summary.warnings)}
-            ),
-            "holdings": payload.holdings.model_copy(
-                update={"warnings": redact(payload.holdings.warnings)}
-            ),
-            "history": payload.history.model_copy(
-                update={
-                    "series": {
-                        currency: [
-                            point.model_copy(update={"warnings": redact(point.warnings)})
-                            for point in points
-                        ]
-                        for currency, points in payload.history.series.items()
-                    }
-                }
-            ),
-        }
     )
 
 
@@ -507,19 +467,11 @@ async def get_shared_group(
     if entity.share_requires_auth and current_user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     scope = await resolve_portfolio_scope(db, entity.user_id, public_kind, entity.id)
-    summary, holdings = await build_scoped_portfolio_dashboard(db, entity.user_id, scope)
-    history = await build_scoped_portfolio_history(db, entity.user_id, scope)
     dashboard = await build_shared_portfolio_dashboard(db, entity.user_id, scope)
-    public_holdings = PublicScopedPortfolioHoldingsOut.model_validate(holdings.model_dump())
-    return _redact_public_warnings(
-        SharedGroupOut(
-            kind=public_kind,
-            name=entity.name,
-            color=entity.color,
-            description=entity.description,
-            summary=summary,
-            holdings=public_holdings,
-            history=history,
-            dashboard=_public_shared_dashboard(dashboard),
-        )
+    return SharedGroupOut(
+        kind=public_kind,
+        name=entity.name,
+        color=entity.color,
+        description=entity.description,
+        dashboard=_public_shared_dashboard(dashboard),
     )
