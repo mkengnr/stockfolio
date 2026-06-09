@@ -76,6 +76,7 @@ def sell(
     label_ids: frozenset[UUID] = frozenset(),
     requires_review: bool = False,
     created_at: datetime | None = None,
+    principal_flow: str | None = None,
 ) -> Transaction:
     return Transaction(
         id=transaction_id,
@@ -90,6 +91,7 @@ def sell(
         source_group_id=source_group_id,
         label_ids=label_ids,
         requires_review=requires_review,
+        principal_flow=principal_flow,
         allocations=tuple(
             SellAllocationInput(buy_lot_id=lot_id, quantity=Decimal(allocation_quantity))
             for lot_id, allocation_quantity in allocations
@@ -726,6 +728,36 @@ def test_history_keeps_krw_and_usd_separate_and_carries_only_prior_close():
     assert result.series["KRW"][0].total_profit_loss == Decimal("10000")
     assert result.series["USD"][0].total_profit_loss is None
     assert result.series["USD"][0].unavailable_price_count == 1
+
+
+def test_invested_principal_ignores_withdraw_on_unresolved_reviewed_sell():
+    from app.services.lot_accounting import invested_principal_by_currency
+
+    transactions = [
+        buy(
+            "2026-01-01",
+            transaction_id=UUID(int=1),
+            lot_id=SAVINGS_LOT,
+            quantity="2",
+            price="80000",
+            principal_flow="DEPOSIT",
+        ),
+        sell(
+            "2026-02-01",
+            transaction_id=UUID(int=2),
+            quantity="1",
+            price="100000",
+            allocations=[],
+            requires_review=True,
+            principal_flow="WITHDRAW",
+        ),
+    ]
+
+    totals = invested_principal_by_currency(transactions)
+
+    # The replay skips unresolved reviewed sells, so principal must too —
+    # otherwise principal drops while remaining lots stay untouched.
+    assert totals["KRW"] == Decimal("160000")
 
 
 def test_history_excludes_only_unpriced_tickers_from_totals():

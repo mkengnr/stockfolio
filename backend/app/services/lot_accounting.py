@@ -228,6 +228,10 @@ def invested_principal_by_currency(
         if flow == "DEPOSIT" and transaction_type == "buy":
             totals[transaction.currency] = totals.get(transaction.currency, ZERO) + amount
         elif flow == "WITHDRAW" and transaction_type == "sell":
+            if transaction.requires_review and not transaction.allocations:
+                # replay() skips unresolved reviewed sells entirely; mirroring
+                # that here keeps principal consistent with remaining lots.
+                continue
             totals[transaction.currency] = totals.get(transaction.currency, ZERO) - amount
     return totals
 
