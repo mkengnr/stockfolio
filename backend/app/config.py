@@ -43,6 +43,26 @@ class Settings(BaseSettings):
     snapshot_cron_minute: int = 35  # KST 15:35 (after KRX close)
 
 
+PLACEHOLDER_SECRET_KEY = "change-me-in-production"
+MIN_SECRET_KEY_LENGTH = 32
+
+
+def validate_runtime_settings(settings: Settings) -> None:
+    """Fail fast on unsafe settings; called from the app lifespan, not import time."""
+    if not settings.debug and (
+        settings.secret_key == PLACEHOLDER_SECRET_KEY
+        or len(settings.secret_key) < MIN_SECRET_KEY_LENGTH
+    ):
+        raise RuntimeError(
+            "SECRET_KEY must be set to a random value of at least "
+            f"{MIN_SECRET_KEY_LENGTH} characters when debug is disabled"
+        )
+    if "*" in settings.allowed_origins:
+        raise RuntimeError(
+            "allowed_origins must not contain '*' because credentialed CORS is enabled"
+        )
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
