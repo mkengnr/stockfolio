@@ -223,6 +223,9 @@ export interface TransactionListItem {
 
 export interface TransactionListPayload {
   transactions: TransactionListItem[]
+  total?: number
+  limit?: number
+  offset?: number
 }
 
 export interface TransactionFilters {
