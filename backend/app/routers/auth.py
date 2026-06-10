@@ -20,7 +20,19 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 settings = get_settings()
 logger = logging.getLogger(__name__)
 OTP_VERIFICATION_MAX_ATTEMPTS = 5
+OTP_VERIFICATION_MAX_ATTEMPTS_PER_EMAIL = 15
 OTP_VERIFICATION_WINDOW_SECONDS = 10 * 60
+
+
+def _client_ip(request: Request) -> str:
+    """Resolve the caller IP, trusting proxy headers only behind a known proxy."""
+    if settings.trusted_proxy:
+        forwarded = request.headers.get("cf-connecting-ip")
+        if not forwarded:
+            forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        if forwarded:
+            return forwarded
+    return request.client.host if request.client else "unknown"
 
 
 def _mask_email(email: str) -> str:
@@ -45,17 +57,26 @@ async def _allow_otp_request(email: str, client_ip: str) -> bool:
 
 async def _allow_otp_verification(email: str, client_ip: str) -> bool:
     digest = hashlib.sha256(email.strip().lower().encode()).hexdigest()
-    key = f"otp:verify:email-ip:{digest}:{client_ip}"
+    ip_key = f"otp:verify:email-ip:{digest}:{client_ip}"
+    # IP rotation must not grant fresh guess budgets for one mailbox, so a
+    # higher email-only ceiling backs up the per-IP bucket.
+    email_key = f"otp:verify:email:{digest}"
     try:
         pipeline = get_redis().pipeline(transaction=True)
-        pipeline.incr(key)
-        pipeline.expire(key, OTP_VERIFICATION_WINDOW_SECONDS, nx=True)
-        attempt_count, _ = await pipeline.execute()
-        return attempt_count <= OTP_VERIFICATION_MAX_ATTEMPTS
+        pipeline.incr(ip_key)
+        pipeline.expire(ip_key, OTP_VERIFICATION_WINDOW_SECONDS, nx=True)
+        pipeline.incr(email_key)
+        pipeline.expire(email_key, OTP_VERIFICATION_WINDOW_SECONDS, nx=True)
+        ip_attempts, _, email_attempts, _ = await pipeline.execute()
+        return (
+            ip_attempts <= OTP_VERIFICATION_MAX_ATTEMPTS
+            and email_attempts <= OTP_VERIFICATION_MAX_ATTEMPTS_PER_EMAIL
+        )
     except Exception:
-        # Match OTP request throttling: keep auth available during Redis outages.
+        # Unlike OTP requests (fail-open for availability), verification
+        # guesses must stay throttled during a Redis outage: fail closed.
         logger.warning("OTP verification rate limiter unavailable", exc_info=True)
-        return True
+        return False
 
 
 async def _send_otp(email: str, code: str) -> None:
@@ -93,7 +114,7 @@ async def _send_otp(email: str, code: str) -> None:
 
 @router.post("/request-otp", response_model=OtpRequestOut)
 async def request_otp(body: OtpRequestIn, request: Request, db: AsyncSession = Depends(get_db)):
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _client_ip(request)
     if not await _allow_otp_request(body.email, client_ip):
         return OtpRequestOut()
 
@@ -122,7 +143,7 @@ async def verify_otp(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _client_ip(request)
     if not await _allow_otp_verification(body.email, client_ip):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

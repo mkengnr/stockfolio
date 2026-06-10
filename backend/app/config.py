@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     allowed_origins: list[str] = ["http://localhost:3000"]
     cookie_secure: bool | None = None  # None: follow `not debug`
+    trusted_proxy: bool = False  # True: honor CF-Connecting-IP / X-Forwarded-For
 
     # Database
     database_url: str = "postgresql+asyncpg://stockfolio:stockfolio@localhost:5432/stockfolio"

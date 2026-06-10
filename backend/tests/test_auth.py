@@ -97,7 +97,7 @@ class _Result:
 
 async def test_allow_otp_verification_uses_hashed_email_and_ip_combination(monkeypatch):
     pipeline = MagicMock()
-    pipeline.execute = AsyncMock(return_value=[1, True])
+    pipeline.execute = AsyncMock(return_value=[1, True, 1, True])
     redis = MagicMock()
     redis.pipeline.return_value = pipeline
     monkeypatch.setattr(auth, "get_redis", lambda: redis)
@@ -105,11 +105,14 @@ async def test_allow_otp_verification_uses_hashed_email_and_ip_combination(monke
     assert await auth._allow_otp_verification(" User@example.com ", "127.0.0.1")
 
     digest = hashlib.sha256("user@example.com".encode()).hexdigest()
-    key = f"otp:verify:email-ip:{digest}:127.0.0.1"
+    ip_key = f"otp:verify:email-ip:{digest}:127.0.0.1"
+    email_key = f"otp:verify:email:{digest}"
     redis.pipeline.assert_called_once_with(transaction=True)
-    pipeline.incr.assert_called_once_with(key)
-    pipeline.expire.assert_called_once_with(key, 600, nx=True)
-    assert "User@example.com" not in key
+    pipeline.incr.assert_any_call(ip_key)
+    pipeline.incr.assert_any_call(email_key)
+    pipeline.expire.assert_any_call(ip_key, 600, nx=True)
+    pipeline.expire.assert_any_call(email_key, 600, nx=True)
+    assert "User@example.com" not in ip_key
 
 
 @pytest.mark.parametrize(
@@ -125,7 +128,7 @@ async def test_allow_otp_verification_limits_attempts_per_window(
     expected,
 ):
     pipeline = MagicMock()
-    pipeline.execute = AsyncMock(return_value=[attempt_count, False])
+    pipeline.execute = AsyncMock(return_value=[attempt_count, False, attempt_count, False])
     redis = MagicMock()
     redis.pipeline.return_value = pipeline
     monkeypatch.setattr(auth, "get_redis", lambda: redis)
@@ -133,13 +136,50 @@ async def test_allow_otp_verification_limits_attempts_per_window(
     assert await auth._allow_otp_verification("user@example.com", "127.0.0.1") is expected
 
 
-async def test_allow_otp_verification_fails_open_during_redis_outage(monkeypatch, caplog):
+async def test_allow_otp_verification_limits_attempts_per_email_across_ips(monkeypatch):
+    pipeline = MagicMock()
+    pipeline.execute = AsyncMock(return_value=[1, True, 16, False])
+    redis = MagicMock()
+    redis.pipeline.return_value = pipeline
+    monkeypatch.setattr(auth, "get_redis", lambda: redis)
+
+    assert await auth._allow_otp_verification("user@example.com", "10.0.0.99") is False
+
+
+async def test_allow_otp_verification_fails_closed_during_redis_outage(monkeypatch, caplog):
     monkeypatch.setattr(auth, "get_redis", MagicMock(side_effect=OSError("redis unavailable")))
 
     with caplog.at_level("WARNING"):
-        assert await auth._allow_otp_verification("user@example.com", "127.0.0.1")
+        assert await auth._allow_otp_verification("user@example.com", "127.0.0.1") is False
 
     assert "OTP verification rate limiter unavailable" in caplog.text
+
+
+def test_client_ip_ignores_proxy_headers_by_default(monkeypatch):
+    request = MagicMock()
+    request.headers = {"cf-connecting-ip": "203.0.113.7", "x-forwarded-for": "203.0.113.8"}
+    request.client.host = "127.0.0.1"
+    monkeypatch.setattr(auth.settings, "trusted_proxy", False)
+
+    assert auth._client_ip(request) == "127.0.0.1"
+
+
+def test_client_ip_uses_proxy_headers_when_trusted(monkeypatch):
+    request = MagicMock()
+    request.headers = {"cf-connecting-ip": "203.0.113.7", "x-forwarded-for": "203.0.113.8, 10.0.0.1"}
+    request.client.host = "127.0.0.1"
+    monkeypatch.setattr(auth.settings, "trusted_proxy", True)
+
+    assert auth._client_ip(request) == "203.0.113.7"
+
+
+def test_client_ip_falls_back_to_forwarded_for_when_trusted(monkeypatch):
+    request = MagicMock()
+    request.headers = {"x-forwarded-for": "203.0.113.8, 10.0.0.1"}
+    request.client.host = "127.0.0.1"
+    monkeypatch.setattr(auth.settings, "trusted_proxy", True)
+
+    assert auth._client_ip(request) == "203.0.113.8"
 
 
 def test_verify_otp_returns_429_before_database_lookup_when_throttled(monkeypatch):
