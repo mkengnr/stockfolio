@@ -9,11 +9,22 @@ import { Badge } from '@/components/ui/Badge'
 import { Card, CardTitle } from '@/components/ui/Card'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
 import { shareApi } from '@/lib/api'
+import { toDashboardHistoryRow, toDashboardHolding } from '@/lib/shareAdapters'
 import { formatCurrency, formatPercent, profitColor } from '@/lib/utils'
-import type { DashboardHistoryRow, DashboardHoldingRow, SharedDashboardHolding, SharedGroup, SharedTag } from '@/lib/types'
+import type { SharedGroup, SharedTag } from '@/lib/types'
 
 function SharedGroupView({ group }: { group: SharedGroup }) {
   const [selectedGroupKey, setSelectedGroupKey] = useState('total')
+  useEffect(() => {
+    // A reloaded share may drop (or later reintroduce) the selected key;
+    // reset instead of silently keeping stale state.
+    if (
+      selectedGroupKey !== 'total'
+      && !group.dashboard.groups.some((item) => item.key === selectedGroupKey)
+    ) {
+      setSelectedGroupKey('total')
+    }
+  }, [group, selectedGroupKey])
   const selectedGroup = group.dashboard.groups.find((item) => item.key === selectedGroupKey) ?? null
   const selectedSummary = selectedGroup?.summary ?? group.dashboard.summary
   const selectedHoldings = useMemo(
@@ -52,7 +63,9 @@ function SharedGroupView({ group }: { group: SharedGroup }) {
             </label>
           )}
         </div>
-        <PortfolioSummary summary={selectedSummary} displayCurrency={group.dashboard.display_currency} />
+        <div aria-live="polite">
+          <PortfolioSummary summary={selectedSummary} displayCurrency={group.dashboard.display_currency} />
+        </div>
       </section>
       <Card>
         <h2 className="font-semibold text-gray-900">포트폴리오 변화</h2>
@@ -72,35 +85,6 @@ function SharedGroupView({ group }: { group: SharedGroup }) {
       </Card>
     </SharedLayout>
   )
-}
-
-function toDashboardHistoryRow(row: SharedGroup['dashboard']['history']['rows'][number]): DashboardHistoryRow {
-  return {
-    group_kind: row.group_kind,
-    group_id: row.group_key === 'total' ? null : row.group_key,
-    group_name: row.group_name,
-    snapshot_date: row.snapshot_date,
-    total_value: row.total_value,
-    total_invested_principal: row.total_invested_principal,
-    total_cost_basis: row.total_cost_basis,
-    total_profit_loss: row.total_profit_loss,
-  }
-}
-
-function toDashboardHolding(holding: SharedDashboardHolding): DashboardHoldingRow {
-  return {
-    holding_id: '',
-    ticker: holding.ticker,
-    name: holding.name,
-    market: holding.market,
-    currency: holding.currency,
-    quantity: holding.quantity,
-    remaining_cost_basis: holding.remaining_cost_basis,
-    current_price: holding.current_price,
-    current_value: holding.current_value,
-    unrealized_profit_loss: holding.unrealized_profit_loss,
-    groups: holding.groups.map((badge) => ({ ...badge, source_group_id: null })),
-  }
 }
 
 function LegacySharedTagView({ tag }: { tag: SharedTag }) {

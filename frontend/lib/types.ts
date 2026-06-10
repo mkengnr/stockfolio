@@ -149,7 +149,7 @@ export interface DashboardHoldingGroupBadge {
 }
 
 export interface DashboardHoldingRow {
-  holding_id: string
+  holding_id: string | null
   ticker: string
   name: string | null
   market: Market

@@ -155,6 +155,39 @@ describe('SharePage', () => {
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('composition:off')
   })
 
+  it('announces summary changes politely for screen readers', async () => {
+    mockedShareApi.getGroup.mockResolvedValue(sharedGroup)
+    const { container } = render(<SharePage params={{ token: 'token-1' }} />)
+
+    await screen.findByLabelText('그룹 필터')
+    const liveRegion = container.querySelector('[aria-live="polite"]')
+    expect(liveRegion).not.toBeNull()
+    expect(liveRegion!.textContent).toContain('평가금액')
+  })
+
+  it('resets the group filter when a reloaded share no longer has the selected group', async () => {
+    mockedShareApi.getGroup.mockResolvedValueOnce(sharedGroup)
+    const { rerender } = render(<SharePage params={{ token: 'token-1' }} />)
+    const filter = await screen.findByLabelText('그룹 필터')
+    fireEvent.change(filter, { target: { value: 'group-1' } })
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:급여')
+
+    const reloadedGroup: SharedGroup = {
+      ...sharedGroup,
+      dashboard: {
+        ...sharedGroup.dashboard,
+        groups: [{ ...sharedGroup.dashboard.groups[0], key: 'group-9', name: '새그룹' }],
+      },
+    }
+    mockedShareApi.getGroup.mockResolvedValueOnce(reloadedGroup)
+    rerender(<SharePage params={{ token: 'token-2' }} />)
+
+    await screen.findByText('새그룹')
+    await waitFor(() => {
+      expect((screen.getByLabelText('그룹 필터') as HTMLSelectElement).value).toBe('total')
+    })
+  })
+
   it('falls back to the legacy endpoint only after a 404', async () => {
     mockedShareApi.getGroup.mockRejectedValue(apiError(404))
     mockedShareApi.getLegacy.mockResolvedValue(legacyTag)
