@@ -8,7 +8,7 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
+from app.config import get_settings, resolve_cookie_secure
 from app.database import get_db
 from app.models.user import User
 from app.routers.deps import get_current_user
@@ -152,7 +152,7 @@ async def verify_otp(
         value=token,
         httponly=True,
         samesite="lax",
-        secure=not settings.debug,
+        secure=resolve_cookie_secure(settings),
         max_age=max_age,
     )
     return TokenOut(user=UserOut.model_validate(user), expires_at=expires_at)

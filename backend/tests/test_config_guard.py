@@ -1,6 +1,6 @@
 import pytest
 
-from app.config import Settings, validate_runtime_settings
+from app.config import Settings, resolve_cookie_secure, validate_runtime_settings
 
 
 def _settings(**overrides) -> Settings:
@@ -28,3 +28,17 @@ def test_allows_strong_secret_key_outside_debug():
 def test_rejects_wildcard_allowed_origin_even_in_debug():
     with pytest.raises(RuntimeError, match="allowed_origins"):
         validate_runtime_settings(_settings(debug=True, allowed_origins=["*"]))
+
+
+@pytest.mark.parametrize(
+    ("debug", "cookie_secure", "expected"),
+    [
+        (False, None, True),
+        (True, None, False),
+        (True, True, True),
+        (False, False, False),
+    ],
+)
+def test_cookie_secure_resolution(debug, cookie_secure, expected):
+    settings = _settings(debug=debug, cookie_secure=cookie_secure)
+    assert resolve_cookie_secure(settings) is expected

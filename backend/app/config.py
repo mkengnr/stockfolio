@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     debug: bool = False
     secret_key: str = "change-me-in-production"
     allowed_origins: list[str] = ["http://localhost:3000"]
+    cookie_secure: bool | None = None  # None: follow `not debug`
 
     # Database
     database_url: str = "postgresql+asyncpg://stockfolio:stockfolio@localhost:5432/stockfolio"
@@ -45,6 +46,13 @@ class Settings(BaseSettings):
 
 PLACEHOLDER_SECRET_KEY = "change-me-in-production"
 MIN_SECRET_KEY_LENGTH = 32
+
+
+def resolve_cookie_secure(settings: "Settings") -> bool:
+    """Explicit COOKIE_SECURE wins; otherwise mirror the debug flag."""
+    if settings.cookie_secure is not None:
+        return settings.cookie_secure
+    return not settings.debug
 
 
 def validate_runtime_settings(settings: Settings) -> None:

@@ -1,6 +1,6 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -57,6 +57,22 @@ async def patch_user(
     user = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    removes_admin = user.is_admin and user.is_active and (
+        body.is_admin is False or body.is_active is False
+    )
+    if removes_admin:
+        remaining = await db.execute(
+            select(func.count())
+            .select_from(User)
+            .where(User.is_admin.is_(True))
+            .where(User.is_active.is_(True))
+            .where(User.id != user.id)
+        )
+        if remaining.scalar_one() == 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="마지막 활성 관리자는 비활성화하거나 강등할 수 없습니다.",
+            )
     if body.is_active is not None:
         user.is_active = body.is_active
     if body.is_admin is not None:
