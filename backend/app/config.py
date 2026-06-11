@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     debug: bool = False
     secret_key: str = "change-me-in-production"
     allowed_origins: list[str] = ["http://localhost:3000"]
+    cookie_secure: bool | None = None  # None: follow `not debug`
+    trusted_proxy: bool = False  # True: honor CF-Connecting-IP / X-Forwarded-For
 
     # Database
     database_url: str = "postgresql+asyncpg://stockfolio:stockfolio@localhost:5432/stockfolio"
@@ -41,6 +43,33 @@ class Settings(BaseSettings):
     # Scheduler
     snapshot_cron_hour: int = 15
     snapshot_cron_minute: int = 35  # KST 15:35 (after KRX close)
+
+
+PLACEHOLDER_SECRET_KEY = "change-me-in-production"
+MIN_SECRET_KEY_LENGTH = 32
+
+
+def resolve_cookie_secure(settings: "Settings") -> bool:
+    """Explicit COOKIE_SECURE wins; otherwise mirror the debug flag."""
+    if settings.cookie_secure is not None:
+        return settings.cookie_secure
+    return not settings.debug
+
+
+def validate_runtime_settings(settings: Settings) -> None:
+    """Fail fast on unsafe settings; called from the app lifespan, not import time."""
+    if not settings.debug and (
+        settings.secret_key == PLACEHOLDER_SECRET_KEY
+        or len(settings.secret_key) < MIN_SECRET_KEY_LENGTH
+    ):
+        raise RuntimeError(
+            "SECRET_KEY must be set to a random value of at least "
+            f"{MIN_SECRET_KEY_LENGTH} characters when debug is disabled"
+        )
+    if "*" in settings.allowed_origins:
+        raise RuntimeError(
+            "allowed_origins must not contain '*' because credentialed CORS is enabled"
+        )
 
 
 @lru_cache

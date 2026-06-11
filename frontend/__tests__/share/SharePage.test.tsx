@@ -27,34 +27,12 @@ jest.mock('@/components/dashboard/PortfolioChart', () => ({
 }))
 
 const mockedShareApi = shareApi as jest.Mocked<typeof shareApi>
-const emptySummary = {
-  currencies: {},
-  holding_count: 0,
-  accounting_status: 'ok' as const,
-  warnings: [],
-}
 
 const sharedGroup: SharedGroup = {
   kind: 'source',
   name: '월급',
   color: '#6366f1',
   description: '급여 투자',
-  summary: emptySummary,
-  holdings: {
-    holdings: [{
-      ticker: 'AAPL',
-      name: 'Apple',
-      currency: 'USD',
-      remaining_quantity: '2',
-      remaining_cost_basis: '200',
-      current_price: '120',
-      current_value: '240',
-      unrealized_profit_loss: '40',
-    }],
-    accounting_status: 'ok',
-    warnings: [],
-  },
-  history: { series: { KRW: [], USD: [] } },
   dashboard: {
     display_currency: 'KRW',
     summary: {
@@ -175,6 +153,39 @@ describe('SharePage', () => {
     expect(screen.getByText('2')).toBeInTheDocument()
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:급여')
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('composition:off')
+  })
+
+  it('announces summary changes politely for screen readers', async () => {
+    mockedShareApi.getGroup.mockResolvedValue(sharedGroup)
+    const { container } = render(<SharePage params={{ token: 'token-1' }} />)
+
+    await screen.findByLabelText('그룹 필터')
+    const liveRegion = container.querySelector('[aria-live="polite"]')
+    expect(liveRegion).not.toBeNull()
+    expect(liveRegion!.textContent).toContain('평가금액')
+  })
+
+  it('resets the group filter when a reloaded share no longer has the selected group', async () => {
+    mockedShareApi.getGroup.mockResolvedValueOnce(sharedGroup)
+    const { rerender } = render(<SharePage params={{ token: 'token-1' }} />)
+    const filter = await screen.findByLabelText('그룹 필터')
+    fireEvent.change(filter, { target: { value: 'group-1' } })
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:급여')
+
+    const reloadedGroup: SharedGroup = {
+      ...sharedGroup,
+      dashboard: {
+        ...sharedGroup.dashboard,
+        groups: [{ ...sharedGroup.dashboard.groups[0], key: 'group-9', name: '새그룹' }],
+      },
+    }
+    mockedShareApi.getGroup.mockResolvedValueOnce(reloadedGroup)
+    rerender(<SharePage params={{ token: 'token-2' }} />)
+
+    await screen.findByText('새그룹')
+    await waitFor(() => {
+      expect((screen.getByLabelText('그룹 필터') as HTMLSelectElement).value).toBe('total')
+    })
   })
 
   it('falls back to the legacy endpoint only after a 404', async () => {

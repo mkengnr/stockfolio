@@ -52,12 +52,6 @@ class ScopedPortfolioHoldingOut(PublicScopedPortfolioHoldingOut):
     holding_id: uuid.UUID
 
 
-class PublicScopedPortfolioHoldingsOut(BaseModel):
-    holdings: list[PublicScopedPortfolioHoldingOut]
-    accounting_status: AccountingStatus
-    warnings: list[str]
-
-
 class ScopedPortfolioHoldingsOut(BaseModel):
     holdings: list[ScopedPortfolioHoldingOut]
     accounting_status: AccountingStatus

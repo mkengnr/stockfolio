@@ -486,3 +486,183 @@ def test_expand_migration_adds_authoritative_source_and_protected_references() -
     assert migration.count("ondelete='RESTRICT'") == 5
     assert "op.drop_constraint('fk_transactions_source_group_id_source_groups', 'transactions', type_='foreignkey')" in migration
     assert "op.drop_column('transactions', 'source_group_id')" in migration
+
+
+REPAIR_MIGRATION_PATH = (
+    BACKEND_PATH
+    / "alembic"
+    / "versions"
+    / "e7a41c5d2f10_repair_unambiguous_sell_allocations.py"
+)
+
+
+def _load_repair_migration():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("repair_migration", REPAIR_MIGRATION_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+async def _seed_reviewed_sell(
+    engine,
+    *,
+    lot_count: int,
+    sell_quantity: str = "1",
+    lot_remaining: str = "2",
+) -> dict[str, uuid.UUID]:
+    ids = {
+        "user": uuid.uuid4(),
+        "holding": uuid.uuid4(),
+        "sell": uuid.uuid4(),
+        "lots": [uuid.uuid4() for _ in range(lot_count)],
+    }
+    async with engine.begin() as connection:
+        await connection.execute(
+            User.__table__.insert().values(
+                id=ids["user"],
+                email=f"{ids['user']}@example.com",
+                is_admin=False,
+                is_active=True,
+            )
+        )
+        await connection.execute(
+            Holding.__table__.insert().values(
+                id=ids["holding"],
+                user_id=ids["user"],
+                ticker="AAPL",
+                market=Market.US,
+                name="Apple",
+                quantity=Decimal(lot_remaining),
+                avg_price=Decimal("100"),
+                currency=Currency.USD,
+                first_buy_date=date(2026, 1, 1),
+                is_active=True,
+            )
+        )
+        for lot_id in ids["lots"]:
+            buy_id = uuid.uuid4()
+            await connection.execute(
+                Transaction.__table__.insert().values(
+                    id=buy_id,
+                    holding_id=ids["holding"],
+                    user_id=ids["user"],
+                    source_group_id=None,
+                    type=TransactionType.BUY,
+                    quantity=Decimal(lot_remaining),
+                    price=Decimal("100"),
+                    transaction_date=date(2026, 1, 1),
+                )
+            )
+            await connection.execute(
+                BuyLot.__table__.insert().values(
+                    id=lot_id,
+                    transaction_id=buy_id,
+                    holding_id=ids["holding"],
+                    user_id=ids["user"],
+                    source_group_id=None,
+                    original_quantity=Decimal(lot_remaining),
+                    remaining_quantity=Decimal(lot_remaining),
+                    unit_price=Decimal("100"),
+                )
+            )
+        await connection.execute(
+            Transaction.__table__.insert().values(
+                id=ids["sell"],
+                holding_id=ids["holding"],
+                user_id=ids["user"],
+                source_group_id=None,
+                type=TransactionType.SELL,
+                quantity=Decimal(sell_quantity),
+                price=Decimal("120"),
+                transaction_date=date(2026, 2, 1),
+                requires_review=True,
+            )
+        )
+    return ids
+
+
+async def _assert_repair_behavior(database_url: str) -> None:
+    module = _load_repair_migration()
+    engine = create_async_engine(database_url)
+    try:
+        single = await _seed_reviewed_sell(engine, lot_count=1)
+        ambiguous = await _seed_reviewed_sell(engine, lot_count=2)
+
+        async with engine.begin() as connection:
+            repaired = await connection.run_sync(
+                lambda sync_connection: module.repair_unambiguous_sell_allocations(
+                    sync_connection
+                )
+            )
+        assert repaired == 1
+
+        async with engine.connect() as connection:
+            allocation = (
+                await connection.execute(
+                    sa.select(SellLotAllocation.__table__).where(
+                        SellLotAllocation.__table__.c.sell_transaction_id == single["sell"]
+                    )
+                )
+            ).one()
+            assert allocation.buy_lot_id == single["lots"][0]
+            assert allocation.quantity == Decimal("1")
+
+            repaired_lot = (
+                await connection.execute(
+                    sa.select(BuyLot.__table__).where(
+                        BuyLot.__table__.c.id == single["lots"][0]
+                    )
+                )
+            ).one()
+            assert repaired_lot.remaining_quantity == Decimal("1")
+
+            repaired_sell = (
+                await connection.execute(
+                    sa.select(Transaction.__table__).where(
+                        Transaction.__table__.c.id == single["sell"]
+                    )
+                )
+            ).one()
+            assert repaired_sell.requires_review is False
+
+            ambiguous_sell = (
+                await connection.execute(
+                    sa.select(Transaction.__table__).where(
+                        Transaction.__table__.c.id == ambiguous["sell"]
+                    )
+                )
+            ).one()
+            assert ambiguous_sell.requires_review is True
+            ambiguous_allocations = (
+                await connection.execute(
+                    sa.select(SellLotAllocation.__table__).where(
+                        SellLotAllocation.__table__.c.sell_transaction_id
+                        == ambiguous["sell"]
+                    )
+                )
+            ).all()
+            assert ambiguous_allocations == []
+    finally:
+        await engine.dispose()
+
+
+def test_repair_migration_resolves_only_unambiguous_single_lot_sells(
+    isolated_postgresql_url: str,
+) -> None:
+    config = Config(str(BACKEND_PATH / "alembic.ini"))
+    config.set_main_option("script_location", str(BACKEND_PATH / "alembic"))
+    config.set_main_option("sqlalchemy.url", isolated_postgresql_url)
+
+    command.upgrade(config, "head")
+    asyncio.run(_assert_repair_behavior(isolated_postgresql_url))
+
+
+def test_repair_migration_is_conservative_and_irreversible_by_design() -> None:
+    migration = REPAIR_MIGRATION_PATH.read_text()
+
+    assert "down_revision: Union[str, None] = '0f4c2a1b9d3e'" in migration
+    assert "requires_review = true" in migration
+    assert "remaining_quantity >= sells.quantity" in migration
+    assert "COUNT(*)" in migration

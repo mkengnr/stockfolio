@@ -88,12 +88,6 @@ export interface ScopedPortfolioHolding extends PublicScopedPortfolioHolding {
   holding_id: string
 }
 
-export interface PublicScopedPortfolioHoldings {
-  holdings: PublicScopedPortfolioHolding[]
-  accounting_status: AccountingStatus
-  warnings: string[]
-}
-
 export interface ScopedPortfolioHoldings {
   holdings: ScopedPortfolioHolding[]
   accounting_status: AccountingStatus
@@ -155,7 +149,7 @@ export interface DashboardHoldingGroupBadge {
 }
 
 export interface DashboardHoldingRow {
-  holding_id: string
+  holding_id: string | null
   ticker: string
   name: string | null
   market: Market
@@ -229,6 +223,9 @@ export interface TransactionListItem {
 
 export interface TransactionListPayload {
   transactions: TransactionListItem[]
+  total?: number
+  limit?: number
+  offset?: number
 }
 
 export interface TransactionFilters {
@@ -361,9 +358,6 @@ export interface SharedGroup {
   name: string
   color: string
   description: string | null
-  summary: PortfolioSummary
-  holdings: PublicScopedPortfolioHoldings
-  history: ScopedPortfolioHistory
   dashboard: SharedDashboard
 }
 

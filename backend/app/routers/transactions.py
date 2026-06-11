@@ -14,6 +14,7 @@ from app.models.user import User
 from app.routers.deps import get_current_user
 from app.routers.holdings import (
     _ensure_active_holding,
+    _ensure_buy_lot_not_allocated,
     _ensure_lot_accounting_ready,
     _get_owned_holding,
     _recalculate_holding,
@@ -265,45 +266,63 @@ async def list_transactions(
     type: TransactionType | None = None,
     principal_flow: PrincipalFlow | None = None,
     requires_review: bool | None = None,
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    query = (
-        select(Transaction)
-        .join(Holding, Holding.id == Transaction.holding_id)
-        .where(Transaction.user_id == current_user.id)
-        .where(Holding.user_id == current_user.id)
-        .options(
-            selectinload(Transaction.holding),
-            selectinload(Transaction.source_group),
-            selectinload(Transaction.transaction_labels).selectinload(TransactionLabel.label),
-        )
-        .order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
-    )
+    filters = [
+        Transaction.user_id == current_user.id,
+        Holding.user_id == current_user.id,
+    ]
     if date_from is not None:
-        query = query.where(Transaction.transaction_date >= date_from)
+        filters.append(Transaction.transaction_date >= date_from)
     if date_to is not None:
-        query = query.where(Transaction.transaction_date <= date_to)
+        filters.append(Transaction.transaction_date <= date_to)
     if q:
         pattern = f"%{q.strip().lower()}%"
-        query = query.where(
+        filters.append(
             or_(
                 func.lower(Holding.ticker).like(pattern),
                 func.lower(Holding.name).like(pattern),
             )
         )
     if source_group_id is not None:
-        query = query.where(Transaction.source_group_id == source_group_id)
+        filters.append(Transaction.source_group_id == source_group_id)
     if type is not None:
-        query = query.where(Transaction.type == type)
+        filters.append(Transaction.type == type)
     if principal_flow is not None:
-        query = query.where(Transaction.principal_flow == principal_flow)
+        filters.append(Transaction.principal_flow == principal_flow)
     if requires_review is not None:
-        query = query.where(Transaction.requires_review == requires_review)
+        filters.append(Transaction.requires_review == requires_review)
 
+    count_result = await db.execute(
+        select(func.count())
+        .select_from(Transaction)
+        .join(Holding, Holding.id == Transaction.holding_id)
+        .where(*filters)
+    )
+    total = count_result.scalar_one()
+
+    query = (
+        select(Transaction)
+        .join(Holding, Holding.id == Transaction.holding_id)
+        .where(*filters)
+        .options(
+            selectinload(Transaction.holding),
+            selectinload(Transaction.source_group),
+            selectinload(Transaction.transaction_labels).selectinload(TransactionLabel.label),
+        )
+        .order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     result = await db.execute(query)
     return TransactionListOut(
-        transactions=[_transaction_to_list_item(transaction) for transaction in result.scalars().all()]
+        transactions=[_transaction_to_list_item(transaction) for transaction in result.scalars().all()],
+        total=total,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -412,6 +431,7 @@ async def delete_transaction(
     transaction = _find_transaction_on_locked_holding(holding, transaction_id)
     _ensure_active_holding(holding)
     _ensure_lot_accounting_ready(holding)
+    _ensure_buy_lot_not_allocated(holding, transaction)
 
     remaining_transactions = [
         item for item in holding.transactions if item.id != transaction_id

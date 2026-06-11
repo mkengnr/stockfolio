@@ -277,14 +277,21 @@ def _holding_performance(
         (lot.remaining_quantity * lot.unit_price for lot in replay_result.lots.values()),
         ZERO,
     )
-    current_value = holding.quantity * current_price if current_price is not None else None
-    profit_loss = current_value - invested_principal if current_value is not None else None
+    # Derive the valued quantity from lots, not holding.quantity: the
+    # moving-average mirror must never disagree with the lot ledger that
+    # produced remaining_cost_basis.
+    remaining_quantity = sum(
+        (lot.remaining_quantity for lot in replay_result.lots.values()),
+        ZERO,
+    )
+    current_value = remaining_quantity * current_price if current_price is not None else None
+    profit_loss = current_value - remaining_cost_basis if current_value is not None else None
     performance = HoldingPerformanceOut(
         total_invested_principal=invested_principal,
         remaining_cost_basis=remaining_cost_basis,
         current_value=current_value,
         profit_loss=profit_loss,
-        profit_loss_pct=_profit_loss_pct(profit_loss, invested_principal),
+        profit_loss_pct=_profit_loss_pct(profit_loss, remaining_cost_basis),
     )
 
     source_by_id = {source_group.id: source_group for source_group in source_groups}
@@ -318,7 +325,7 @@ def _holding_performance(
             remaining_quantity * current_price if current_price is not None else None
         )
         group_profit_loss = (
-            group_current_value - group_invested_principal
+            group_current_value - group_cost_basis
             if group_current_value is not None
             else None
         )
@@ -332,7 +339,7 @@ def _holding_performance(
                 remaining_cost_basis=group_cost_basis,
                 current_value=group_current_value,
                 profit_loss=group_profit_loss,
-                profit_loss_pct=_profit_loss_pct(group_profit_loss, group_invested_principal),
+                profit_loss_pct=_profit_loss_pct(group_profit_loss, group_cost_basis),
             )
         )
     return performance, group_breakdown
@@ -970,6 +977,25 @@ async def update_transaction_classification(
     return _transaction_to_out(transaction)
 
 
+def _ensure_buy_lot_not_allocated(holding: Holding, transaction: Transaction) -> None:
+    """Block deleting a BUY whose lot is referenced by sell allocations.
+
+    The DB cascades buy_lots -> sell_lot_allocations on delete, which would
+    silently leave later SELLs under-allocated; surface an explicit conflict
+    instead. Uses only relationships eagerly loaded by _holding_load_options.
+    """
+    if transaction.type != TransactionType.BUY or transaction.buy_lot is None:
+        return
+    lot_id = transaction.buy_lot.id
+    for sibling in holding.transactions:
+        for allocation in sibling.sell_allocations:
+            if allocation.buy_lot_id == lot_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="매도 배분이 연결된 매수 거래는 삭제할 수 없습니다. 먼저 해당 매도 거래를 삭제하거나 배분을 해제하세요.",
+                )
+
+
 @router.delete("/{holding_id}/transactions/{tx_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_transaction(
     holding_id: uuid.UUID,
@@ -989,6 +1015,7 @@ async def delete_transaction(
     holding = await _get_owned_holding(db, holding_id, current_user.id, lock=True)
     _ensure_active_holding(holding)
     _ensure_lot_accounting_ready(holding)
+    _ensure_buy_lot_not_allocated(holding, tx)
 
     remaining_transactions = [item for item in holding.transactions if item.id != tx_id]
     try:

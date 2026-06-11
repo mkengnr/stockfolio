@@ -336,8 +336,8 @@ def test_get_holding_returns_performance_and_group_breakdown(client, user, db):
         "total_invested_principal": "170000",
         "remaining_cost_basis": "180000",
         "current_value": "240000",
-        "profit_loss": "70000",
-        "profit_loss_pct": "41.17647058823529411764705882",
+        "profit_loss": "60000",
+        "profit_loss_pct": "33.33333333333333333333333333",
     }
     assert payload["group_breakdown"] == [
         {
@@ -359,10 +359,68 @@ def test_get_holding_returns_performance_and_group_breakdown(client, user, db):
             "invested_principal": "70000",
             "remaining_cost_basis": "80000",
             "current_value": "120000",
-            "profit_loss": "50000",
-            "profit_loss_pct": "71.42857142857142857142857143",
+            "profit_loss": "40000",
+            "profit_loss_pct": "50.0",
         },
     ]
+
+
+def test_get_holding_profit_uses_remaining_cost_basis_for_reinvest_buys(client, user, db):
+    source = _source(user.id, name="모음통장", color="#2563eb")
+    holding = _holding(user.id)
+    _buy(
+        holding,
+        source_group_id=source.id,
+        quantity="2",
+        price="80000",
+        principal_flow=PrincipalFlow.REINVEST,
+        transaction_date=date(2026, 1, 1),
+    )
+    db.queue(_Result(one=holding), _Result(many=[source]))
+
+    with patch(
+        "app.routers.holdings.get_price",
+        new=AsyncMock(return_value=SimpleNamespace(price=Decimal("120000"))),
+    ):
+        response = client.get(f"/api/holdings/{holding.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["performance"] == {
+        "total_invested_principal": "0",
+        "remaining_cost_basis": "160000",
+        "current_value": "240000",
+        "profit_loss": "80000",
+        "profit_loss_pct": "50.0",
+    }
+    assert payload["group_breakdown"][0]["invested_principal"] == "0"
+    assert payload["group_breakdown"][0]["profit_loss"] == "80000"
+    assert payload["group_breakdown"][0]["profit_loss_pct"] == "50.0"
+
+
+def test_get_holding_performance_derives_value_from_lots_not_moving_average(client, user, db):
+    source = _source(user.id, name="모음통장", color="#2563eb")
+    holding = _holding(user.id)
+    _buy(
+        holding,
+        source_group_id=source.id,
+        quantity="2",
+        price="80000",
+        transaction_date=date(2026, 1, 1),
+    )
+    holding.quantity = Decimal("99")
+    db.queue(_Result(one=holding), _Result(many=[source]))
+
+    with patch(
+        "app.routers.holdings.get_price",
+        new=AsyncMock(return_value=SimpleNamespace(price=Decimal("120000"))),
+    ):
+        response = client.get(f"/api/holdings/{holding.id}")
+
+    assert response.status_code == 200
+    performance = response.json()["performance"]
+    assert performance["current_value"] == "240000"
+    assert performance["profit_loss"] == "80000"
 
 
 def test_get_holding_nulls_performance_when_lot_accounting_requires_review(client, user, db):
@@ -717,7 +775,8 @@ def test_delete_buy_rejects_when_later_sell_would_become_invalid(client, user, d
 
     response = client.delete(f"/api/holdings/{holding.id}/transactions/{buy.id}")
 
-    assert response.status_code == 422
+    assert response.status_code == 409
+    assert "매도 배분" in response.json()["detail"]
     assert db.deleted == []
 
 

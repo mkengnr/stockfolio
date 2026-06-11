@@ -29,6 +29,9 @@ class TransactionListItemOut(BaseModel):
 
 class TransactionListOut(BaseModel):
     transactions: list[TransactionListItemOut]
+    total: int
+    limit: int
+    offset: int
 
 
 class TransactionUpdateIn(BaseModel):

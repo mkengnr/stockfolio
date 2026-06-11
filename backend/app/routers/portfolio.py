@@ -422,7 +422,7 @@ def _build_scoped_dashboard_payload(
             scope,
         ).get(currency.value, Decimal(0))
         total_profit_loss = (
-            total_current_value - invested_principal
+            total_current_value - total_cost_basis
             if total_current_value is not None
             else None
         )
@@ -437,8 +437,8 @@ def _build_scoped_dashboard_payload(
             total_current_value=total_current_value,
             total_profit_loss=total_profit_loss,
             total_profit_loss_pct=(
-                total_profit_loss / invested_principal * 100
-                if total_profit_loss is not None and invested_principal > 0
+                total_profit_loss / total_cost_basis * 100
+                if total_profit_loss is not None and total_cost_basis > 0
                 else None
             ),
             holding_count=len(currency_holdings),
@@ -555,11 +555,11 @@ def _dashboard_summary_from_currency_summary(
         ),
         total_profit_loss=profit_loss,
         total_profit_loss_pct=(
-            profit_loss / invested_principal * 100
+            profit_loss / cost_basis * 100
             if (
                 profit_loss is not None
-                and invested_principal is not None
-                and invested_principal > 0
+                and cost_basis is not None
+                and cost_basis > 0
             )
             else None
         ),
@@ -693,11 +693,16 @@ def _build_dashboard_groups(
     current_prices: dict[str, Decimal | None],
     display_currency: DisplayCurrency,
     exchange_rate: ExchangeRate | None,
+    *,
+    panel_source_groups: list[SourceGroup] | None = None,
+    include_unclassified: bool = True,
 ) -> tuple[list[DashboardGroupSummary], list[str]]:
     groups: list[DashboardGroupSummary] = []
     warnings: list[str] = []
 
-    for source_group in source_groups:
+    for source_group in (
+        source_groups if panel_source_groups is None else panel_source_groups
+    ):
         scope = _source_group_scope(source_group)
         summary, scope_warnings = _scope_display_summary(
             holdings,
@@ -759,33 +764,34 @@ def _build_dashboard_groups(
                 )
             )
 
-    scope = PortfolioScope("unclassified")
-    summary, scope_warnings = _scope_display_summary(
-        holdings,
-        scope,
-        current_prices,
-        display_currency,
-        exchange_rate,
-    )
-    warnings.extend(scope_warnings)
-    if _dashboard_summary_has_values(summary):
-        groups.append(
-            DashboardGroupSummary(
-                kind="unclassified",
-                id=None,
-                name="미분류",
-                color=None,
-                summary=summary,
-                holdings=_build_dashboard_holdings(
-                    holdings,
-                    source_groups,
-                    current_prices,
-                    display_currency,
-                    exchange_rate,
-                    scope=scope,
-                ),
-            )
+    if include_unclassified:
+        scope = PortfolioScope("unclassified")
+        summary, scope_warnings = _scope_display_summary(
+            holdings,
+            scope,
+            current_prices,
+            display_currency,
+            exchange_rate,
         )
+        warnings.extend(scope_warnings)
+        if _dashboard_summary_has_values(summary):
+            groups.append(
+                DashboardGroupSummary(
+                    kind="unclassified",
+                    id=None,
+                    name="미분류",
+                    color=None,
+                    summary=summary,
+                    holdings=_build_dashboard_holdings(
+                        holdings,
+                        source_groups,
+                        current_prices,
+                        display_currency,
+                        exchange_rate,
+                        scope=scope,
+                    ),
+                )
+            )
 
     return groups, warnings
 
@@ -882,10 +888,13 @@ def _build_dashboard_history(
     rollup_groups: list[RollupGroup],
     display_currency: DisplayCurrency,
     exchange_rate: ExchangeRate | None,
+    *,
+    total_scope: PortfolioScope = PortfolioScope("all"),
+    include_unrepresented: bool = True,
 ) -> DashboardHistorySeries:
     rows = _history_rows_for_scope(
         holdings,
-        PortfolioScope("all"),
+        total_scope,
         group_kind="total",
         group_id=None,
         group_name="전체",
@@ -911,35 +920,36 @@ def _build_dashboard_history(
                 exchange_rate=exchange_rate,
             )
         )
-    represented_source_ids = {
-        group.id for group in groups if group.kind == "source"
-    }
-    for source_group in source_groups:
-        if source_group.id in represented_source_ids:
-            continue
-        rows.extend(
-            _history_rows_for_scope(
-                holdings,
-                _source_group_scope(source_group),
-                group_kind="source",
-                group_id=source_group.id,
-                group_name=source_group.name,
-                display_currency=display_currency,
-                exchange_rate=exchange_rate,
+    if include_unrepresented:
+        represented_source_ids = {
+            group.id for group in groups if group.kind == "source"
+        }
+        for source_group in source_groups:
+            if source_group.id in represented_source_ids:
+                continue
+            rows.extend(
+                _history_rows_for_scope(
+                    holdings,
+                    _source_group_scope(source_group),
+                    group_kind="source",
+                    group_id=source_group.id,
+                    group_name=source_group.name,
+                    display_currency=display_currency,
+                    exchange_rate=exchange_rate,
+                )
             )
-        )
-    if not any(group.kind == "unclassified" for group in groups):
-        rows.extend(
-            _history_rows_for_scope(
-                holdings,
-                PortfolioScope("unclassified"),
-                group_kind="unclassified",
-                group_id=None,
-                group_name="미분류",
-                display_currency=display_currency,
-                exchange_rate=exchange_rate,
+        if not any(group.kind == "unclassified" for group in groups):
+            rows.extend(
+                _history_rows_for_scope(
+                    holdings,
+                    PortfolioScope("unclassified"),
+                    group_kind="unclassified",
+                    group_id=None,
+                    group_name="미분류",
+                    display_currency=display_currency,
+                    exchange_rate=exchange_rate,
+                )
             )
-        )
     return DashboardHistorySeries(rows=rows)
 
 
@@ -1004,7 +1014,11 @@ def _source_group_matches_scope(
         return source_group_id == scope.id
     if scope.kind == "rollup":
         return source_group_id in scope.resolved_source_group_ids
-    return True
+    if scope.kind == "label":
+        # Label scopes cut across source groups; attaching source badges here
+        # would expose the owner's full group taxonomy on label shares.
+        return False
+    raise ValueError(f"Unsupported portfolio scope: {scope.kind}")
 
 
 def _holding_market(holding: Holding) -> Market:
@@ -1093,15 +1107,25 @@ def build_dashboard_response(
     display_currency: DisplayCurrency = "KRW",
     exchange_rate: ExchangeRate | None = None,
     warnings: list[str] | None = None,
+    scope: PortfolioScope = PortfolioScope("all"),
+    panel_source_groups: list[SourceGroup] | None = None,
 ) -> DashboardResponse:
+    """Assemble the dashboard payload for both the owner and shared views.
+
+    The owner view uses the defaults (all scope, every group panel). Shared
+    views pass the share scope plus an explicit panel list so the same summary,
+    history, and warning behavior applies to both.
+    """
     active_holdings = [holding for holding in holdings if holding.is_active]
-    scoped_summary, _ = _build_scoped_dashboard_payload(
+    summary_base, summary_warnings = _scope_display_summary(
         active_holdings,
-        PortfolioScope("all"),
+        scope,
         current_prices,
+        display_currency,
+        exchange_rate,
     )
     output_warnings = list(warnings or [])
-    output_warnings.extend(scoped_summary.warnings)
+    output_warnings.extend(summary_warnings)
     if _needs_exchange_warning(holdings, display_currency, exchange_rate):
         output_warnings.append("USD/KRW exchange rate unavailable; USD values are omitted")
 
@@ -1112,6 +1136,8 @@ def build_dashboard_response(
         current_prices,
         display_currency,
         exchange_rate,
+        panel_source_groups=panel_source_groups,
+        include_unclassified=panel_source_groups is None,
     )
     output_warnings.extend(group_warnings)
 
@@ -1122,15 +1148,13 @@ def build_dashboard_response(
         rollup_groups,
         display_currency,
         exchange_rate,
+        total_scope=scope,
+        include_unrepresented=panel_source_groups is None,
     )
     current_price_as_of = _dashboard_current_price_as_of(current_price_dates or {})
     comparison_as_of = _dashboard_comparison_as_of(history.rows, current_price_as_of)
     summary = _dashboard_summary_with_value_change(
-        _dashboard_summary_from_currency_summary(
-            scoped_summary,
-            display_currency,
-            exchange_rate,
-        ),
+        summary_base,
         history.rows,
         group_kind="total",
         group_id=None,
@@ -1162,6 +1186,7 @@ def build_dashboard_response(
             current_prices,
             display_currency,
             exchange_rate,
+            scope=scope,
         ),
         warnings=sorted(set(output_warnings)),
     )
@@ -1225,12 +1250,51 @@ async def build_scoped_portfolio_dashboard(
     return _build_scoped_dashboard_payload(holdings, scope, prices)
 
 
+def _scope_touches_transaction(transaction, scope: PortfolioScope) -> bool:
+    if scope.kind == "all":
+        return True
+    if scope.kind == "unclassified":
+        return transaction.source_group_id is None
+    if scope.kind == "source":
+        return transaction.source_group_id == scope.id
+    if scope.kind == "rollup":
+        return transaction.source_group_id in scope.resolved_source_group_ids
+    if scope.kind == "label":
+        return any(
+            transaction_label.label_id == scope.id
+            for transaction_label in transaction.transaction_labels
+        )
+    raise ValueError(f"Unsupported portfolio scope: {scope.kind}")
+
+
+def _scope_relevant_holdings(
+    holdings: list[Holding],
+    scope: PortfolioScope,
+) -> list[Holding]:
+    """Keep only holdings that ever traded inside the scope.
+
+    Shared views scope the data here, before any payload is built, so the
+    public serializer is a second barrier rather than the only one.
+    """
+    return [
+        holding
+        for holding in holdings
+        if any(
+            _scope_touches_transaction(transaction, scope)
+            for transaction in holding.transactions
+        )
+    ]
+
+
 async def build_shared_portfolio_dashboard(
     db: AsyncSession,
     user_id: uuid.UUID,
     scope: PortfolioScope,
 ) -> DashboardResponse:
-    holdings = await _load_scoped_holdings(db, user_id, include_inactive=True)
+    holdings = _scope_relevant_holdings(
+        await _load_scoped_holdings(db, user_id, include_inactive=True),
+        scope,
+    )
     active_holdings = [holding for holding in holdings if holding.is_active]
     source_groups, _ = await _load_dashboard_groups(db, user_id)
     child_source_groups = (
@@ -1254,94 +1318,19 @@ async def build_shared_portfolio_dashboard(
             logger.warning("shared USD/KRW exchange rate lookup failed: %r", exc)
             warnings.append("USD/KRW exchange rate lookup failed")
 
-    summary, summary_warnings = _scope_display_summary(
-        active_holdings,
-        scope,
-        prices,
-        "KRW",
-        exchange_rate,
-    )
-    warnings.extend(summary_warnings)
-    history_rows = _history_rows_for_scope(
-        holdings,
-        scope,
-        group_kind="total",
-        group_id=None,
-        group_name="전체",
+    # Snapshot recovery (see build_portfolio_dashboard_response) is deliberately
+    # skipped: a public share view must never write to the owner's data.
+    return build_dashboard_response(
+        holdings=holdings,
+        source_groups=source_groups,
+        rollup_groups=[],
+        current_prices=prices,
+        current_price_dates=price_dates,
         display_currency="KRW",
         exchange_rate=exchange_rate,
-    )
-    groups: list[DashboardGroupSummary] = []
-    for source_group in child_source_groups:
-        child_scope = _source_group_scope(source_group)
-        child_summary, child_warnings = _scope_display_summary(
-            active_holdings,
-            child_scope,
-            prices,
-            "KRW",
-            exchange_rate,
-        )
-        warnings.extend(child_warnings)
-        if not _dashboard_summary_has_values(child_summary):
-            continue
-        groups.append(
-            DashboardGroupSummary(
-                kind="source",
-                id=source_group.id,
-                name=source_group.name,
-                color=source_group.color,
-                source_group_ids=[source_group.id],
-                summary=child_summary,
-                holdings=_build_dashboard_holdings(
-                    active_holdings,
-                    source_groups,
-                    prices,
-                    "KRW",
-                    exchange_rate,
-                    scope=child_scope,
-                ),
-            )
-        )
-        history_rows.extend(
-            _history_rows_for_scope(
-                holdings,
-                child_scope,
-                group_kind="source",
-                group_id=source_group.id,
-                group_name=source_group.name,
-                display_currency="KRW",
-                exchange_rate=exchange_rate,
-            )
-        )
-
-    current_price_as_of = _dashboard_current_price_as_of(price_dates)
-    summary = _dashboard_summary_with_value_change(
-        summary,
-        history_rows,
-        group_kind="total",
-        group_id=None,
-        current_price_as_of=current_price_as_of,
-    )
-    groups = _dashboard_groups_with_value_change(groups, history_rows, current_price_as_of)
-    history = DashboardHistorySeries(rows=history_rows)
-    return DashboardResponse(
-        display_currency="KRW",
-        exchange_rate=None,
-        last_refreshed_at=datetime.now(timezone.utc),
-        current_price_as_of=current_price_as_of,
-        comparison_as_of=_dashboard_comparison_as_of(history_rows, current_price_as_of),
-        summary=summary,
-        groups=groups,
-        history=history,
-        holdings=_build_dashboard_holdings(
-            active_holdings,
-            source_groups,
-            prices,
-            "KRW",
-            exchange_rate,
-            scope=scope,
-        ),
-        warnings=sorted(set(warnings)),
+        warnings=warnings,
+        scope=scope,
+        panel_source_groups=child_source_groups,
     )
 
 

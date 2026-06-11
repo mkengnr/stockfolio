@@ -6,11 +6,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.schemas.portfolio import (
-    PortfolioSummaryOut,
-    ScopedPortfolioHistoryOut,
-    PublicScopedPortfolioHoldingsOut,
-)
 from app.models.holding import Currency, Market
 from app.schemas.dashboard import DashboardSummary, DisplayCurrency
 
@@ -144,9 +139,6 @@ class SharedGroupOut(BaseModel):
     name: str
     color: str
     description: str | None
-    summary: PortfolioSummaryOut
-    holdings: PublicScopedPortfolioHoldingsOut
-    history: ScopedPortfolioHistoryOut
     dashboard: "SharedDashboardOut"
 
 

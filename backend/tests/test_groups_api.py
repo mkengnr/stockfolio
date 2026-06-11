@@ -11,7 +11,7 @@ from app.database import get_db
 from app.models.group import Label, RollupGroup, RollupGroupMember, SourceGroup
 from app.routers.deps import get_current_user, get_current_user_optional
 from app.routers.groups import router
-from app.schemas.portfolio import ScopedPortfolioHoldingsOut
+from app.schemas.dashboard import DashboardResponse
 
 
 NOW = datetime(2026, 6, 2, tzinfo=timezone.utc)
@@ -420,131 +420,92 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
         calls.append(("scope", actual_db, user_id, scope_kind, scope_id))
         return scope
 
-    async def _build_scoped_portfolio_dashboard(actual_db, user_id, actual_scope):
-        calls.append(("dashboard", actual_db, user_id, actual_scope))
-        return (
+    dashboard = DashboardResponse.model_validate({
+        "display_currency": "KRW",
+        "exchange_rate": None,
+        "last_refreshed_at": NOW.isoformat(),
+        "current_price_as_of": "2026-06-02",
+        "comparison_as_of": "2026-06-01",
+        "summary": {
+            "total_invested_principal": "70000",
+            "total_cost_basis": "70000",
+            "total_current_value": "75000",
+            "total_current_value_change": "1000",
+            "total_unrealized_profit_loss": "5000",
+            "total_unrealized_profit_loss_pct": "7.14",
+            "total_profit_loss": "5000",
+            "total_profit_loss_pct": "7.14",
+        },
+        "groups": [
             {
-                "currencies": {},
-                "holding_count": 0,
-                "accounting_status": "ok",
-                "warnings": [],
-            },
-            ScopedPortfolioHoldingsOut.model_validate({
-                "holdings": [
+                "kind": "source",
+                "id": str(entity.id),
+                "name": entity.name,
+                "color": entity.color,
+                "source_group_ids": [str(entity.id)],
+                "summary": {
+                    "total_invested_principal": "70000",
+                    "total_cost_basis": "70000",
+                    "total_current_value": "75000",
+                    "total_current_value_change": "1000",
+                    "total_unrealized_profit_loss": "5000",
+                    "total_unrealized_profit_loss_pct": "7.14",
+                    "total_profit_loss": "5000",
+                    "total_profit_loss_pct": "7.14",
+                },
+                "holdings": [],
+            }
+        ],
+        "history": {
+            "rows": [
+                {
+                    "group_kind": "source",
+                    "group_id": str(entity.id),
+                    "group_name": entity.name,
+                    "snapshot_date": "2026-06-01",
+                    "total_value": "75000",
+                    "total_invested_principal": "70000",
+                    "total_cost_basis": "70000",
+                    "total_profit_loss": "5000",
+                }
+            ]
+        },
+        "holdings": [
+            {
+                "holding_id": str(uuid.uuid4()),
+                "ticker": "005930",
+                "name": "삼성전자",
+                "market": "KRX",
+                "currency": "KRW",
+                "quantity": "1",
+                "remaining_cost_basis": "70000",
+                "current_price": "75000",
+                "current_value": "75000",
+                "unrealized_profit_loss": "5000",
+                "groups": [
                     {
-                        "holding_id": str(uuid.uuid4()),
-                        "ticker": "005930",
-                        "name": "삼성전자",
-                        "currency": "KRW",
+                        "source_group_id": str(entity.id),
+                        "name": entity.name,
+                        "color": entity.color,
                         "remaining_quantity": "1",
-                        "remaining_cost_basis": "70000",
-                        "current_price": "75000",
-                        "current_value": "75000",
-                        "unrealized_profit_loss": "5000",
                     }
                 ],
-                "accounting_status": "ok",
-                "warnings": [],
-            }),
-        )
-
-    async def _build_scoped_portfolio_history(actual_db, user_id, actual_scope):
-        calls.append(("history", actual_db, user_id, actual_scope))
-        return {"series": {}}
+            }
+        ],
+        "warnings": [],
+    })
 
     async def _build_shared_portfolio_dashboard(actual_db, user_id, actual_scope):
         calls.append(("shared_dashboard", actual_db, user_id, actual_scope))
-        return {
-            "display_currency": "KRW",
-            "exchange_rate": None,
-            "last_refreshed_at": NOW.isoformat(),
-            "current_price_as_of": "2026-06-02",
-            "comparison_as_of": "2026-06-01",
-            "summary": {
-                "total_invested_principal": "70000",
-                "total_cost_basis": "70000",
-                "total_current_value": "75000",
-                "total_current_value_change": "1000",
-                "total_unrealized_profit_loss": "5000",
-                "total_unrealized_profit_loss_pct": "7.14",
-                "total_profit_loss": "5000",
-                "total_profit_loss_pct": "7.14",
-            },
-            "groups": [
-                {
-                    "kind": "source",
-                    "id": str(entity.id),
-                    "name": entity.name,
-                    "color": entity.color,
-                    "source_group_ids": [str(entity.id)],
-                    "summary": {
-                        "total_invested_principal": "70000",
-                        "total_cost_basis": "70000",
-                        "total_current_value": "75000",
-                        "total_current_value_change": "1000",
-                        "total_unrealized_profit_loss": "5000",
-                        "total_unrealized_profit_loss_pct": "7.14",
-                        "total_profit_loss": "5000",
-                        "total_profit_loss_pct": "7.14",
-                    },
-                    "holdings": [],
-                }
-            ],
-            "history": {
-                "rows": [
-                    {
-                        "group_kind": "source",
-                        "group_id": str(entity.id),
-                        "group_name": entity.name,
-                        "snapshot_date": "2026-06-01",
-                        "total_value": "75000",
-                        "total_invested_principal": "70000",
-                        "total_cost_basis": "70000",
-                        "total_profit_loss": "5000",
-                    }
-                ]
-            },
-            "holdings": [
-                {
-                    "holding_id": str(uuid.uuid4()),
-                    "ticker": "005930",
-                    "name": "삼성전자",
-                    "market": "KRX",
-                    "currency": "KRW",
-                    "quantity": "1",
-                    "remaining_cost_basis": "70000",
-                    "current_price": "75000",
-                    "current_value": "75000",
-                    "unrealized_profit_loss": "5000",
-                    "groups": [
-                        {
-                            "source_group_id": str(entity.id),
-                            "name": entity.name,
-                            "color": entity.color,
-                            "remaining_quantity": "1",
-                        }
-                    ],
-                }
-            ],
-            "warnings": [],
-        }
+        return dashboard
 
     monkeypatch.setattr(
         "app.routers.groups.resolve_portfolio_scope",
         _resolve_portfolio_scope,
     )
     monkeypatch.setattr(
-        "app.routers.groups.build_scoped_portfolio_dashboard",
-        _build_scoped_portfolio_dashboard,
-    )
-    monkeypatch.setattr(
-        "app.routers.groups.build_scoped_portfolio_history",
-        _build_scoped_portfolio_history,
-    )
-    monkeypatch.setattr(
         "app.routers.groups.build_shared_portfolio_dashboard",
         _build_shared_portfolio_dashboard,
-        raising=False,
     )
 
     response = client.get(f"/api/groups/share/{entity.share_token}")
@@ -554,29 +515,6 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
         "name": entity.name,
         "color": "#6366f1",
         "description": None,
-        "summary": {
-            "currencies": {},
-            "holding_count": 0,
-            "accounting_status": "ok",
-            "warnings": [],
-        },
-        "holdings": {
-            "holdings": [
-                {
-                    "ticker": "005930",
-                    "name": "삼성전자",
-                    "currency": "KRW",
-                    "remaining_quantity": "1",
-                    "remaining_cost_basis": "70000",
-                    "current_price": "75000",
-                    "current_value": "75000",
-                    "unrealized_profit_loss": "5000",
-                }
-            ],
-            "accounting_status": "ok",
-            "warnings": [],
-        },
-        "history": {"series": {}},
         "dashboard": {
             "display_currency": "KRW",
             "summary": {
@@ -646,13 +584,11 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
     }
     assert calls == [
         ("scope", db, entity.user_id, kind, entity.id),
-        ("dashboard", db, entity.user_id, scope),
-        ("history", db, entity.user_id, scope),
         ("shared_dashboard", db, entity.user_id, scope),
     ]
 
 
-def test_public_share_redacts_internal_transaction_ids_from_warnings(client, user, db, monkeypatch):
+def test_public_share_omits_internal_warnings_and_legacy_fields(client, user, db, monkeypatch):
     source = _source(user.id)
     source.share_token = str(uuid.uuid4())
     source.share_requires_auth = False
@@ -663,71 +599,32 @@ def test_public_share_redacts_internal_transaction_ids_from_warnings(client, use
     async def _resolve_portfolio_scope(*_args):
         return object()
 
-    async def _build_scoped_portfolio_dashboard(*_args):
-        return (
-            {
-                "currencies": {},
-                "holding_count": 0,
-                "accounting_status": "requires_review",
-                "warnings": [warning],
-            },
-            ScopedPortfolioHoldingsOut.model_validate({
-                "holdings": [],
-                "accounting_status": "requires_review",
-                "warnings": [warning],
-            }),
-        )
-
-    async def _build_scoped_portfolio_history(*_args):
-        return {
-            "series": {
-                "KRW": [
-                    {
-                        "snapshot_date": "2026-01-01",
-                        "total_value": None,
-                        "total_invested_principal": None,
-                        "total_cost_basis": None,
-                        "total_profit_loss": None,
-                        "unavailable_price_count": 1,
-                        "accounting_status": "requires_review",
-                        "warnings": [warning],
-                    }
-                ]
-            }
-        }
+    dashboard = DashboardResponse.model_validate({
+        "display_currency": "KRW",
+        "exchange_rate": None,
+        "last_refreshed_at": NOW.isoformat(),
+        "current_price_as_of": None,
+        "comparison_as_of": None,
+        "summary": {
+            "total_invested_principal": None,
+            "total_cost_basis": None,
+            "total_current_value": None,
+            "total_current_value_change": None,
+            "total_unrealized_profit_loss": None,
+            "total_unrealized_profit_loss_pct": None,
+            "total_profit_loss": None,
+            "total_profit_loss_pct": None,
+        },
+        "groups": [],
+        "history": {"rows": []},
+        "holdings": [],
+        "warnings": [warning],
+    })
 
     async def _build_shared_portfolio_dashboard(*_args):
-        return {
-            "display_currency": "KRW",
-            "exchange_rate": None,
-            "last_refreshed_at": NOW.isoformat(),
-            "current_price_as_of": None,
-            "comparison_as_of": None,
-            "summary": {
-                "total_invested_principal": None,
-                "total_cost_basis": None,
-                "total_current_value": None,
-                "total_current_value_change": None,
-                "total_unrealized_profit_loss": None,
-                "total_unrealized_profit_loss_pct": None,
-                "total_profit_loss": None,
-                "total_profit_loss_pct": None,
-            },
-            "groups": [],
-            "history": {"rows": []},
-            "holdings": [],
-            "warnings": [],
-        }
+        return dashboard
 
     monkeypatch.setattr("app.routers.groups.resolve_portfolio_scope", _resolve_portfolio_scope)
-    monkeypatch.setattr(
-        "app.routers.groups.build_scoped_portfolio_dashboard",
-        _build_scoped_portfolio_dashboard,
-    )
-    monkeypatch.setattr(
-        "app.routers.groups.build_scoped_portfolio_history",
-        _build_scoped_portfolio_history,
-    )
     monkeypatch.setattr(
         "app.routers.groups.build_shared_portfolio_dashboard",
         _build_shared_portfolio_dashboard,
@@ -736,16 +633,11 @@ def test_public_share_redacts_internal_transaction_ids_from_warnings(client, use
     response = client.get(f"/api/groups/share/{source.share_token}")
 
     assert response.status_code == 200
+    payload = response.json()
+    assert set(payload) == {"kind", "name", "color", "description", "dashboard"}
     assert str(transaction_id) not in response.text
-    assert response.json()["summary"]["warnings"] == [
-        "Sell transaction [redacted] requires review: lot allocations are missing"
-    ]
-    assert response.json()["holdings"]["warnings"] == [
-        "Sell transaction [redacted] requires review: lot allocations are missing"
-    ]
-    assert response.json()["history"]["series"]["KRW"][0]["warnings"] == [
-        "Sell transaction [redacted] requires review: lot allocations are missing"
-    ]
+    assert "warnings" not in payload["dashboard"]
+
 
 
 def test_public_share_honors_authentication_gate(client, user, db):

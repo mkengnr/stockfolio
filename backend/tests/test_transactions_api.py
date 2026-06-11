@@ -19,12 +19,16 @@ NOW = datetime(2026, 6, 2, tzinfo=timezone.utc)
 
 
 class _Result:
-    def __init__(self, *, one=None, many=None):
+    def __init__(self, *, one=None, many=None, count=None):
         self._one = one
         self._many = list(many or [])
+        self._count = count
 
     def scalar_one_or_none(self):
         return self._one
+
+    def scalar_one(self):
+        return self._count
 
     def scalars(self):
         return self
@@ -235,18 +239,42 @@ def test_transactions_list_requires_authentication(user, db):
     assert response.status_code == 401
 
 
+def test_list_paginates_with_limit_offset_and_total(client, user, db):
+    holding = _holding(user.id)
+    tx, _ = _buy(holding)
+    db.queue(_Result(count=3), _Result(many=[tx]))
+
+    response = client.get("/api/transactions", params={"limit": 1, "offset": 1})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 3
+    assert payload["limit"] == 1
+    assert payload["offset"] == 1
+    assert len(payload["transactions"]) == 1
+
+
+def test_list_rejects_limit_above_cap(client, user, db):
+    response = client.get("/api/transactions", params={"limit": 501})
+
+    assert response.status_code == 422
+
+
 def test_list_returns_owned_transactions_with_metadata_and_amount(client, user, db):
     source = _source(user.id)
     label = _label(user.id)
     holding = _holding(user.id)
     tx, _ = _buy(holding, source=source, quantity="2", price="80000")
     _attach_label(tx, label)
-    db.queue(_Result(many=[tx]))
+    db.queue(_Result(count=1), _Result(many=[tx]))
 
     response = client.get("/api/transactions")
 
     assert response.status_code == 200
     assert response.json() == {
+        "total": 1,
+        "limit": 200,
+        "offset": 0,
         "transactions": [
             {
                 "id": str(tx.id),
@@ -275,7 +303,7 @@ def test_list_builds_query_with_supported_filters(client, user, db):
     source = _source(user.id)
     holding = _holding(user.id)
     tx, _ = _buy(holding, source=source)
-    db.queue(_Result(many=[tx]))
+    db.queue(_Result(count=1), _Result(many=[tx]))
 
     response = client.get(
         "/api/transactions",
@@ -457,5 +485,6 @@ def test_delete_buy_rejects_when_later_sell_would_become_invalid(client, user, d
 
     response = client.delete(f"/api/transactions/{buy.id}")
 
-    assert response.status_code == 422
+    assert response.status_code == 409
+    assert "매도 배분" in response.json()["detail"]
     assert db.deleted == []
