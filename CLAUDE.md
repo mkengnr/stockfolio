@@ -34,7 +34,12 @@ cd frontend && npm run dev
 # Tests
 cd backend && .venv/bin/python -m pytest tests/
 cd frontend && npm test
+
+# 운영 서비스 (launchd, stock2.realchoi.com)
+./svc.sh status   # 상태 + 프로세스 시작시간
+./svc.sh deploy   # 코드 변경 반영: 프론트 빌드 → alembic upgrade → 재시작
 ```
+- 주의: 운영 프론트는 production 모드(`next start`)라 빌드 없이 재시작하면 구버전 UI가 유지됨. 코드 반영은 항상 `./svc.sh deploy` 사용.
 
 ## DB 설정
 - 로컬 DB: `postgresql://stockfolio:stockfolio@127.0.0.1:5432/stockfolio`

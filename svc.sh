@@ -1,6 +1,6 @@
 #!/bin/bash
 # stockfolio 서비스 관리 스크립트
-# 사용법: ./svc.sh [start|stop|restart|status]
+# 사용법: ./svc.sh [start|stop|restart|status|build|deploy]
 
 PROJECT=/Users/Shared/workspace/stockfolio
 BACKEND=$PROJECT/backend
@@ -126,6 +126,37 @@ process_started_at() {
     ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'
 }
 
+build_frontend() {
+    echo "=== 프론트엔드 빌드 ==="
+    # next start는 .next 빌드 산출물을 서빙하므로, 코드 변경은 빌드해야 반영된다.
+    if (cd "$FRONTEND" && "$NODE_BIN/npm" run build); then
+        echo "✅ 빌드 완료"
+    else
+        echo "❌ 빌드 실패 — 서비스는 변경하지 않음"
+        return 1
+    fi
+}
+
+migrate_backend() {
+    echo "=== DB 마이그레이션 ==="
+    if (cd "$BACKEND" && .venv/bin/alembic upgrade head); then
+        echo "✅ 마이그레이션 완료"
+    else
+        echo "❌ 마이그레이션 실패 — 서비스는 변경하지 않음"
+        return 1
+    fi
+}
+
+deploy_services() {
+    # 빌드/마이그레이션이 실패하면 기존 서비스를 건드리지 않는다.
+    build_frontend || exit 1
+    migrate_backend || exit 1
+    echo ""
+    stop_services
+    sleep 2
+    start_services
+}
+
 status_services() {
     echo "=== stockfolio 상태 ==="
 
@@ -176,13 +207,17 @@ case "$1" in
     stop)    stop_services ;;
     restart) stop_services; sleep 2; start_services ;;
     status)  status_services ;;
+    build)   build_frontend ;;
+    deploy)  deploy_services ;;
     *)
-        echo "사용법: $0 {start|stop|restart|status}"
+        echo "사용법: $0 {start|stop|restart|status|build|deploy}"
         echo ""
-        echo "  start    - 모든 서비스 시작"
+        echo "  start    - 모든 서비스 시작 (이미 실행 중이면 건너뜀 — 코드 반영 안 됨)"
         echo "  stop     - 모든 서비스 중지"
-        echo "  restart  - 재시작"
-        echo "  status   - 현재 상태 확인"
+        echo "  restart  - 재시작 (빌드/마이그레이션 없이 프로세스만 교체)"
+        echo "  status   - 현재 상태 확인 (프로세스 시작시간 포함)"
+        echo "  build    - 프론트엔드 프로덕션 빌드만 수행"
+        echo "  deploy   - 코드 변경 반영: 빌드 → DB 마이그레이션 → 재시작"
         exit 1
         ;;
 esac
