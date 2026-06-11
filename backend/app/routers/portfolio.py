@@ -421,14 +421,21 @@ def _build_scoped_dashboard_payload(
             ],
             scope,
         ).get(currency.value, Decimal(0))
-        total_profit_loss = (
+        realized_profit_loss = Decimal(0)
+        replay_result = replay_by_currency.get(currency)
+        if replay_result is not None:
+            realized_profit_loss = replay_result.realized_profit_loss_by_currency.get(
+                currency.value, Decimal(0)
+            )
+        total_unrealized_profit_loss = (
             total_current_value - total_cost_basis
             if total_current_value is not None
             else None
         )
-        total_unrealized_profit_loss = (
-            total_current_value - total_cost_basis
-            if total_current_value is not None
+        # 총손익 = 평가손익 + 실현손익 (lot 기반이라 REINVEST로 투자원금이 0이어도 정확)
+        total_profit_loss = (
+            total_unrealized_profit_loss + realized_profit_loss
+            if total_unrealized_profit_loss is not None
             else None
         )
         currencies[currency] = PortfolioCurrencySummary(
@@ -437,8 +444,8 @@ def _build_scoped_dashboard_payload(
             total_current_value=total_current_value,
             total_profit_loss=total_profit_loss,
             total_profit_loss_pct=(
-                total_profit_loss / total_cost_basis * 100
-                if total_profit_loss is not None and total_cost_basis > 0
+                total_profit_loss / invested_principal * 100
+                if total_profit_loss is not None and invested_principal > 0
                 else None
             ),
             holding_count=len(currency_holdings),
@@ -555,11 +562,11 @@ def _dashboard_summary_from_currency_summary(
         ),
         total_profit_loss=profit_loss,
         total_profit_loss_pct=(
-            profit_loss / cost_basis * 100
+            profit_loss / invested_principal * 100
             if (
                 profit_loss is not None
-                and cost_basis is not None
-                and cost_basis > 0
+                and invested_principal is not None
+                and invested_principal > 0
             )
             else None
         ),

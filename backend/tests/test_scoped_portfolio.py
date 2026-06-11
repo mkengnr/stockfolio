@@ -287,8 +287,47 @@ def test_dashboard_tracks_invested_principal_separately_from_remaining_cost_basi
     assert currency_summary.total_cost_basis == Decimal("1200")
     assert currency_summary.total_invested_principal == Decimal("760")
     assert currency_summary.total_current_value == Decimal("1430")
-    assert currency_summary.total_profit_loss == Decimal("230")
-    assert currency_summary.total_profit_loss_pct == Decimal("19.16666666666666666666666667")
+    # 총손익 = 평가손익(1430-1200) + 실현손익(2 × (120-100)); 총손익률은 투자원금 대비
+    assert currency_summary.total_profit_loss == Decimal("270")
+    assert currency_summary.total_profit_loss_pct == Decimal("35.52631578947368421052631579")
+
+
+def test_dashboard_total_profit_includes_realized_and_guards_zero_principal():
+    source_id = uuid.uuid4()
+    holding_id = uuid.uuid4()
+    reinvest_buy = _buy(
+        holding_id,
+        "005930",
+        Currency.KRW,
+        source_group_id=source_id,
+        quantity="2",
+        price="1000",
+        principal_flow=PrincipalFlow.REINVEST,
+    )
+    reinvest_sell = _sell(
+        holding_id,
+        reinvest_buy,
+        Currency.KRW,
+        source_group_id=source_id,
+        quantity="1",
+        price="1300",
+        principal_flow=PrincipalFlow.REINVEST,
+    )
+    holding = _holding("005930", Currency.KRW, reinvest_buy, reinvest_sell)
+
+    summary, _ = _build_scoped_dashboard_payload(
+        [holding],
+        PortfolioScope("source", source_id),
+        {"005930": Decimal("1500")},
+    )
+
+    currency_summary = summary.currencies[Currency.KRW]
+    assert currency_summary.total_invested_principal == Decimal("0")
+    assert currency_summary.total_cost_basis == Decimal("1000")
+    assert currency_summary.total_current_value == Decimal("1500")
+    # 평가손익 500 + 실현손익 300; 투자원금이 0이면 총손익률은 정의 불가
+    assert currency_summary.total_profit_loss == Decimal("800")
+    assert currency_summary.total_profit_loss_pct is None
 
 
 def test_dashboard_ignores_inactive_holdings_and_keeps_currencies_separate():
