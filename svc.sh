@@ -122,6 +122,10 @@ stop_services() {
     $BREW services stop postgresql@16 >/dev/null 2>&1 && echo "✅ 중지됨" || echo "❌ 실패"
 }
 
+process_started_at() {
+    ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'
+}
+
 status_services() {
     echo "=== stockfolio 상태 ==="
 
@@ -145,7 +149,7 @@ status_services() {
     echo -n "  백엔드     : "
     if curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1; then
         PID=$(listening_pids 8000 | head -1)
-        echo "🟢 실행 중 (:8000, PID $PID)"
+        echo "🟢 실행 중 (:8000, PID $PID, 시작 $(process_started_at "$PID"))"
     else
         echo "🔴 중지됨"
     fi
@@ -155,7 +159,7 @@ status_services() {
     CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null)
     if [ "$CODE" = "307" ] || [ "$CODE" = "200" ]; then
         PID=$(listening_pids 3000 | head -1)
-        echo "🟢 실행 중 (:3000, PID $PID)"
+        echo "🟢 실행 중 (:3000, PID $PID, 시작 $(process_started_at "$PID"))"
     else
         echo "🔴 중지됨"
     fi
