@@ -475,6 +475,11 @@ def build_history(
             value_unreliable = requires_review or (
                 unavailable_price_count > 0 and priced_count == 0
             )
+            # 총손익 = 평가손익 + 누적 실현손익 (lot 기반): 매도일에 일별손익이
+            # 실현분만큼 왜곡되지 않고, REINVEST로 투자원금이 0이어도 정확하다.
+            realized_profit_loss = replay_result.realized_profit_loss_by_currency.get(
+                currency, ZERO
+            )
             series[currency].append(
                 PortfolioHistoryPoint(
                     snapshot_date=snapshot_date,
@@ -484,7 +489,7 @@ def build_history(
                     total_profit_loss=(
                         None
                         if value_unreliable
-                        else total_value - total_cost_basis
+                        else total_value - total_cost_basis + realized_profit_loss
                     ),
                     unavailable_price_count=unavailable_price_count + int(requires_review),
                     accounting_status=replay_result.accounting_status,

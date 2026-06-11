@@ -802,6 +802,40 @@ def test_history_excludes_only_unpriced_tickers_from_totals():
     assert day_two.unavailable_price_count == 0
 
 
+def test_history_total_profit_includes_realized_after_sell():
+    transactions = [
+        buy(
+            "2026-01-01",
+            transaction_id=UUID(int=1),
+            lot_id=SAVINGS_LOT,
+            quantity="2",
+            price="80000",
+        ),
+        sell(
+            "2026-02-01",
+            transaction_id=UUID(int=2),
+            quantity="1",
+            price="100000",
+            allocations=[(SAVINGS_LOT, "1")],
+        ),
+    ]
+    closes = {
+        "005930": {
+            date(2026, 1, 1): Decimal("90000"),
+            date(2026, 2, 1): Decimal("95000"),
+        },
+    }
+
+    result = build_history(transactions, closes, PortfolioScope("all"))
+
+    before_sell, after_sell = result.series["KRW"]
+    assert before_sell.total_profit_loss == Decimal("20000")
+    # 매도 후: 평가손익 (95000-80000) + 실현손익 (100000-80000)
+    assert after_sell.total_value == Decimal("95000")
+    assert after_sell.total_cost_basis == Decimal("80000")
+    assert after_sell.total_profit_loss == Decimal("35000")
+
+
 def test_history_profit_uses_remaining_cost_basis_for_reinvest_buys():
     transactions = [
         buy(
