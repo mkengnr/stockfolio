@@ -666,3 +666,46 @@ def test_repair_migration_is_conservative_and_irreversible_by_design() -> None:
     assert "requires_review = true" in migration
     assert "remaining_quantity >= sells.quantity" in migration
     assert "COUNT(*)" in migration
+
+
+async def _assert_sell_transaction_succeeds(database_url: str) -> None:
+    from decimal import Decimal as D
+    from unittest.mock import AsyncMock, patch
+    from app.models.group import SourceGroup as SG, BuyLot as BL
+    from app.models.holding import PrincipalFlow
+    from app.schemas.holding import TransactionIn
+    from app.routers.holdings import add_transaction
+
+    engine = create_async_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    uid, hid, sgid, bid, lid = (uuid.uuid4() for _ in range(5))
+    async with engine.begin() as c:
+        await c.execute(User.__table__.insert().values(id=uid, email=f"{uid}@t.com", is_admin=False, is_active=True))
+        await c.execute(SG.__table__.insert().values(id=sgid, user_id=uid, name="긴급통장"))
+        await c.execute(Holding.__table__.insert().values(id=hid, user_id=uid, ticker="100790", market=Market.KRX, name="x", quantity=D("7"), avg_price=D("57400"), currency=Currency.KRW, first_buy_date=date(2026, 5, 27), is_active=True))
+        await c.execute(Transaction.__table__.insert().values(id=bid, holding_id=hid, user_id=uid, source_group_id=sgid, type=TransactionType.BUY, quantity=D("7"), price=D("57400"), transaction_date=date(2026, 5, 27), principal_flow=PrincipalFlow.DEPOSIT, requires_review=False))
+        await c.execute(BL.__table__.insert().values(id=lid, transaction_id=bid, holding_id=hid, user_id=uid, source_group_id=sgid, original_quantity=D("7"), remaining_quantity=D("7"), unit_price=D("57400")))
+
+    body = TransactionIn(type="SELL", quantity=D("7"), price=D("60000"), transaction_date=date(2026, 6, 15), principal_flow=PrincipalFlow.WITHDRAW, source_group_id=sgid, sell_allocations=[{"buy_lot_id": lid, "quantity": D("7")}])
+    user = type("U", (), {"id": uid})()
+    try:
+        async with sessions() as db:
+            with patch("app.routers.holdings.rebuild_holding_snapshots", new=AsyncMock(return_value=0)):
+                out = await add_transaction(hid, body, current_user=user, db=db)
+            await db.commit()
+            assert out.type == TransactionType.SELL
+        async with sessions() as db:
+            lot = (await db.execute(sa.select(BL).where(BL.id == lid))).scalar_one()
+            assert lot.remaining_quantity == D("0")
+    finally:
+        await engine.dispose()
+
+
+def test_full_sell_does_not_lazy_load_buy_lot_on_isolated_postgresql(
+    isolated_postgresql_url: str,
+) -> None:
+    config = Config(str(BACKEND_PATH / "alembic.ini"))
+    config.set_main_option("script_location", str(BACKEND_PATH / "alembic"))
+    config.set_main_option("sqlalchemy.url", isolated_postgresql_url)
+    command.upgrade(config, "head")
+    asyncio.run(_assert_sell_transaction_succeeds(isolated_postgresql_url))

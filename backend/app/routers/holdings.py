@@ -759,6 +759,7 @@ async def add_transaction(
         transaction_date=body.transaction_date,
         principal_flow=body.principal_flow,
         requires_review=False,
+        buy_lot=None,
         transaction_labels=[],
         sell_allocations=[],
     )
