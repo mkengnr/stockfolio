@@ -119,10 +119,16 @@ def _search_naver_krx(query: str, limit: int) -> list[StockSearchResult]:
 
 
 def _krx_name(ticker: str) -> str:
-    try:
-        return krx.get_market_ticker_name(ticker) or ticker
-    except Exception:
-        return ticker
+    # get_market_ticker_name covers KOSPI/KOSDAQ stocks but returns an empty
+    # result for ETFs; fall back to the ETF-specific lookup before giving up.
+    for lookup in (krx.get_market_ticker_name, krx.get_etf_ticker_name):
+        try:
+            name = lookup(ticker)
+        except Exception:
+            continue
+        if isinstance(name, str) and name.strip():
+            return name
+    return ticker
 
 
 def _krx_latest_price(ticker: str) -> tuple[Decimal, date]:
@@ -199,8 +205,13 @@ def _yf_latest_price(ticker: str) -> tuple[Decimal, date]:
     hist = t.history(period="5d")
     if hist.empty:
         raise ValueError(f"No yfinance price data for {ticker}")
-    last_close = hist["Close"].iloc[-1]
-    last_date = hist.index[-1].date()
+    # The most recent (unsettled) bar can carry a NaN close; use the last bar
+    # that actually has a price instead of blindly taking the final row.
+    closes = hist["Close"].dropna()
+    if closes.empty:
+        raise ValueError(f"No yfinance price data for {ticker}")
+    last_close = closes.iloc[-1]
+    last_date = closes.index[-1].date()
     return Decimal(str(round(last_close, 6))), last_date
 
 

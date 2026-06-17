@@ -102,6 +102,14 @@ class TestGetCurrentPriceKRX:
         result = get_current_price("000660")
         assert result.name == "000660"
 
+    @patch("app.services.stock_fetcher.krx.get_etf_ticker_name", return_value="KODEX 200")
+    @patch("app.services.stock_fetcher.krx.get_market_ticker_name", return_value="")
+    @patch("app.services.stock_fetcher.krx.get_market_ohlcv_by_date")
+    def test_falls_back_to_etf_name_for_etf_ticker(self, mock_ohlcv, mock_market_name, mock_etf_name):
+        mock_ohlcv.return_value = _make_krx_df(49_850)
+        result = get_current_price("069500")
+        assert result.name == "KODEX 200"
+
     @patch("app.services.stock_fetcher.krx.get_market_ticker_name", return_value="삼성전자")
     @patch("app.services.stock_fetcher.krx.get_market_ohlcv_by_date", return_value=pd.DataFrame())
     def test_raises_on_empty_df(self, mock_ohlcv, mock_name):
@@ -146,15 +154,30 @@ class TestGetCurrentPriceUS:
         assert result.name == "TSLA"
 
     @patch("app.services.stock_fetcher.yf.Ticker")
-    def test_non_finite_close_yields_unavailable_price(self, mock_ticker_cls):
+    def test_uses_last_valid_close_when_latest_bar_is_nan(self, mock_ticker_cls):
+        df = _make_yf_history(33.85)
+        trailing_nan = pd.DataFrame(
+            {"Open": [34.0], "High": [34.0], "Low": [34.0], "Close": [float("nan")], "Volume": [0]},
+            index=pd.DatetimeIndex([pd.Timestamp("2024-01-16")]),
+        )
+        mock_ticker = MagicMock()
+        mock_ticker.info = {"longName": "Dow Inc."}
+        mock_ticker.history.return_value = pd.concat([df, trailing_nan])
+        mock_ticker_cls.return_value = mock_ticker
+
+        result = get_current_price("DOW")
+        assert result.price == Decimal("33.85")
+        assert result.price_date == date(2024, 1, 15)
+
+    @patch("app.services.stock_fetcher.yf.Ticker")
+    def test_all_nan_close_raises_like_empty_history(self, mock_ticker_cls):
         mock_ticker = MagicMock()
         mock_ticker.info = {"longName": "Dow Inc."}
         mock_ticker.history.return_value = _make_yf_history(float("nan"))
         mock_ticker_cls.return_value = mock_ticker
 
-        result = get_current_price("DOW")
-        assert result.name == "Dow Inc."
-        assert result.price is None
+        with pytest.raises(ValueError, match="No yfinance price data"):
+            get_current_price("DOW")
 
     @patch("app.services.stock_fetcher.yf.Ticker")
     def test_raises_on_empty_history(self, mock_ticker_cls):
