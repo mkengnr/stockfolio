@@ -34,7 +34,7 @@ def _serialize(result: PriceResult) -> str:
         "market": result.market.value,
         "name": result.name,
         "currency": result.currency.value,
-        "price": str(result.price),
+        "price": None if result.price is None else str(result.price),
         "price_date": result.price_date.isoformat(),
     })
 
@@ -47,7 +47,7 @@ def _deserialize(raw: str) -> PriceResult:
         market=Market(data["market"]),
         name=data["name"],
         currency=Currency(data["currency"]),
-        price=Decimal(data["price"]),
+        price=None if data["price"] is None else Decimal(data["price"]),
         price_date=date.fromisoformat(data["price_date"]),
     )
 

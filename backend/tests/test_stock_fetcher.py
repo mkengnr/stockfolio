@@ -146,6 +146,17 @@ class TestGetCurrentPriceUS:
         assert result.name == "TSLA"
 
     @patch("app.services.stock_fetcher.yf.Ticker")
+    def test_non_finite_close_yields_unavailable_price(self, mock_ticker_cls):
+        mock_ticker = MagicMock()
+        mock_ticker.info = {"longName": "Dow Inc."}
+        mock_ticker.history.return_value = _make_yf_history(float("nan"))
+        mock_ticker_cls.return_value = mock_ticker
+
+        result = get_current_price("DOW")
+        assert result.name == "Dow Inc."
+        assert result.price is None
+
+    @patch("app.services.stock_fetcher.yf.Ticker")
     def test_raises_on_empty_history(self, mock_ticker_cls):
         mock_ticker = MagicMock()
         mock_ticker.info = {"longName": "Unknown"}

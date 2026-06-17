@@ -44,7 +44,7 @@ class PriceResult:
     market: Market
     name: str
     currency: Currency
-    price: Decimal
+    price: Decimal | None
     price_date: date
 
 
@@ -287,6 +287,11 @@ def get_current_price(ticker: str) -> PriceResult:
         info = _yf_info(ticker)
         name = info.get("longName") or info.get("shortName") or ticker
         price, price_date = _yf_latest_price(ticker)
+
+    # Providers sometimes return NaN/Inf (e.g. thin/halted tickers); treat such
+    # values as "price unavailable" so they don't poison summaries and charts.
+    if price is not None and not price.is_finite():
+        price = None
 
     return PriceResult(
         ticker=ticker,
