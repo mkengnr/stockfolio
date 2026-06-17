@@ -65,6 +65,23 @@ def test_build_snapshot_values_uses_historical_quantity():
     ]
 
 
+def test_build_snapshot_values_skips_non_finite_close_bars():
+    nan_bar = OHLCBar(
+        date=date(2024, 1, 3),
+        open=Decimal("NaN"),
+        high=Decimal("NaN"),
+        low=Decimal("NaN"),
+        close=Decimal("NaN"),
+        volume=0,
+    )
+    values = _build_snapshot_values(
+        [_tx(TransactionType.BUY, "10", date(2024, 1, 2))],
+        [_bar(date(2024, 1, 2), "100"), nan_bar, _bar(date(2024, 1, 4), "120")],
+    )
+
+    assert [value.snapshot_date for value in values] == [date(2024, 1, 2), date(2024, 1, 4)]
+
+
 def test_build_snapshot_values_uses_transaction_id_to_break_creation_time_ties():
     transaction_date = date(2024, 1, 2)
     created_at = datetime(2024, 1, 2, 12, 0)

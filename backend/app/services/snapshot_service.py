@@ -40,6 +40,10 @@ def _build_snapshot_values(
     values = []
 
     for bar in sorted(bars, key=lambda item: item.date):
+        # Price providers occasionally return NaN/Inf closes for some dates;
+        # skip those bars rather than storing a non-finite, unservable snapshot.
+        if not bar.close.is_finite() or bar.close <= 0:
+            continue
         while (
             transaction_index < len(sorted_transactions)
             and sorted_transactions[transaction_index].transaction_date <= bar.date
