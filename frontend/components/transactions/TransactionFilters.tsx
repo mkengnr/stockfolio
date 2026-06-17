@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { cn } from '@/lib/utils'
 import type { SourceGroup, TransactionFilters as TransactionFiltersValue } from '@/lib/types'
 
 interface Props {
@@ -13,6 +14,8 @@ interface Props {
 
 export function TransactionFilters({ sourceGroups, filters, onApply }: Props) {
   const [draft, setDraft] = useState<TransactionFiltersValue>(filters)
+  const activeCount = Object.values(filters).filter((value) => value !== undefined && value !== '').length
+  const [open, setOpen] = useState(activeCount > 0)
 
   function update<K extends keyof TransactionFiltersValue>(key: K, value: TransactionFiltersValue[K] | '') {
     setDraft((current) => {
@@ -26,6 +29,7 @@ export function TransactionFilters({ sourceGroups, filters, onApply }: Props) {
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     onApply(draft)
+    setOpen(false)
   }
 
   function resetFilters() {
@@ -34,7 +38,24 @@ export function TransactionFilters({ sourceGroups, filters, onApply }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="grid gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="rounded-xl border border-gray-200 bg-white">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 px-4 py-3 text-sm font-medium text-gray-700"
+      >
+        <span className="flex items-center gap-2">
+          필터
+          {activeCount > 0 && (
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-500 px-1.5 text-xs font-semibold text-white">
+              {activeCount}
+            </span>
+          )}
+        </span>
+        <span className={cn('text-gray-400 transition-transform', open && 'rotate-180')} aria-hidden>▾</span>
+      </button>
+      <form onSubmit={handleSubmit} className={cn('grid gap-3 border-t border-gray-100 p-4 sm:grid-cols-2 lg:grid-cols-4', !open && 'hidden')}>
       <Input
         id="transaction-date-from"
         type="date"
@@ -114,6 +135,7 @@ export function TransactionFilters({ sourceGroups, filters, onApply }: Props) {
         <Button type="submit" size="md">필터 적용</Button>
         <Button type="button" variant="secondary" size="md" onClick={resetFilters}>초기화</Button>
       </div>
-    </form>
+      </form>
+    </div>
   )
 }

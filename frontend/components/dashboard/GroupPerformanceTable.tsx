@@ -28,7 +28,7 @@ export function GroupPerformanceTable({ groups, displayCurrency }: Props) {
       <table className="min-w-[980px] text-sm">
         <thead>
           <tr className="border-b border-gray-100 bg-gray-50">
-            <th className="px-4 py-3 text-left font-medium text-gray-500">그룹</th>
+            <th className="sticky left-0 z-20 border-r border-gray-100 bg-gray-50 px-4 py-3 text-left font-medium text-gray-500">그룹</th>
             <th className="px-4 py-3 text-right font-medium text-gray-500">투자원금</th>
             <th className="px-4 py-3 text-right font-medium text-gray-500">잔여원금</th>
             <th className="px-4 py-3 text-right font-medium text-gray-500">평가금액</th>
@@ -40,8 +40,8 @@ export function GroupPerformanceTable({ groups, displayCurrency }: Props) {
         </thead>
         <tbody className="divide-y divide-gray-50">
           {sortedGroups.map((group) => (
-            <tr key={`${group.kind}:${group.id ?? 'unclassified'}`} className="hover:bg-gray-50">
-              <td className="px-4 py-3">
+            <tr key={`${group.kind}:${group.id ?? 'unclassified'}`} className="group/row hover:bg-gray-50">
+              <td className="sticky left-0 z-10 border-r border-gray-100 bg-white px-4 py-3 group-hover/row:bg-gray-50">
                 <div className="flex items-center gap-2">
                   <span
                     className="h-2.5 w-2.5 rounded-full border border-white shadow-sm"

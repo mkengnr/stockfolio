@@ -136,7 +136,7 @@ export function HoldingsTable({ holdings, displayCurrency }: Props) {
       <table className="min-w-[980px] text-sm">
         <thead>
           <tr className="border-b border-gray-100 bg-gray-50">
-            <SortableHeading label="종목" align="left" onClick={() => toggleSort('name')}><SortIcon column="name" /></SortableHeading>
+            <SortableHeading label="종목" align="left" sticky onClick={() => toggleSort('name')}><SortIcon column="name" /></SortableHeading>
             <th className="px-4 py-3 text-left font-medium text-gray-500">그룹</th>
             <th className="px-4 py-3 text-right font-medium text-gray-500">수량</th>
             <th className="px-4 py-3 text-right font-medium text-gray-500">평균매수가</th>
@@ -148,8 +148,8 @@ export function HoldingsTable({ holdings, displayCurrency }: Props) {
         </thead>
         <tbody className="divide-y divide-gray-50">
           {sorted.map((row) => (
-            <tr key={row.key} className="transition-colors hover:bg-gray-50">
-              <td className="px-4 py-3">{row.id ? <HoldingName row={row} linked /> : <HoldingName row={row} />}</td>
+            <tr key={row.key} className="group/row transition-colors hover:bg-gray-50">
+              <td className="sticky left-0 z-10 border-r border-gray-100 bg-white px-4 py-3 group-hover/row:bg-gray-50">{row.id ? <HoldingName row={row} linked /> : <HoldingName row={row} />}</td>
               <td className="px-4 py-3"><GroupBadges groups={row.groups} /></td>
               <td className="px-4 py-3 text-right tabular-nums text-gray-700">{formatShareQuantity(row.quantity)}</td>
               <td className="px-4 py-3 text-right tabular-nums text-gray-700">{formatCurrency(row.avgPrice, row.valueCurrency)}</td>
@@ -198,9 +198,16 @@ function parseNumeric(value: string | null) {
   return Number.isFinite(numeric) ? numeric : null
 }
 
-function SortableHeading({ label, align = 'right', onClick, children }: { label: string; align?: 'left' | 'right'; onClick: () => void; children: React.ReactNode }) {
+function SortableHeading({ label, align = 'right', sticky = false, onClick, children }: { label: string; align?: 'left' | 'right'; sticky?: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <th className={cn('cursor-pointer px-4 py-3 font-medium text-gray-500 hover:text-gray-700', align === 'left' ? 'text-left' : 'text-right')} onClick={onClick}>
+    <th
+      className={cn(
+        'cursor-pointer px-4 py-3 font-medium text-gray-500 hover:text-gray-700',
+        align === 'left' ? 'text-left' : 'text-right',
+        sticky && 'sticky left-0 z-20 border-r border-gray-100 bg-gray-50',
+      )}
+      onClick={onClick}
+    >
       {label} {children}
     </th>
   )
