@@ -31,21 +31,21 @@ export function TransactionsTable({ transactions, deletingId, onEdit, onDelete }
   const groups = groupByYear(transactions)
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+    <div className="max-h-[70vh] overflow-auto rounded-xl border border-gray-200 bg-white">
       <table className="min-w-full text-sm">
         <thead>
-          <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
-            <th className="sticky left-0 z-20 border-r border-gray-100 bg-gray-50 px-3 py-2">종목</th>
-            <th className="px-3 py-2">주문일</th>
-            <th className="px-3 py-2">주문</th>
-            <th className="px-3 py-2">그룹</th>
-            <th className="px-3 py-2">투자원금처리</th>
-            <th className="px-3 py-2 text-right">수량</th>
-            <th className="px-3 py-2 text-right">단가</th>
-            <th className="px-3 py-2 text-right">금액</th>
-            <th className="px-3 py-2">라벨</th>
-            <th className="px-3 py-2">상태</th>
-            <th className="px-3 py-2 text-right">작업</th>
+          <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500 uppercase">
+            <th className="sticky left-0 top-0 z-20 border-r border-gray-100 bg-gray-50 px-3 py-2">종목</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-3 py-2">주문일</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-3 py-2">주문</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-3 py-2">그룹</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-3 py-2">투자원금처리</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-3 py-2 text-right">수량</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-3 py-2 text-right">단가</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-3 py-2 text-right">금액</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-3 py-2">라벨</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-3 py-2">상태</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-3 py-2 text-right">작업</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-50">
@@ -77,11 +77,11 @@ function YearGroup({
 } & Pick<Props, 'deletingId' | 'onEdit' | 'onDelete'>) {
   return (
     <>
-      <tr className="bg-gray-50/70">
+      <tr>
         <th
           scope="rowgroup"
           colSpan={11}
-          className="sticky left-0 px-3 py-1.5 text-left text-xs font-semibold text-gray-500"
+          className="sticky left-0 bg-gray-100/90 px-3 py-1.5 text-left text-xs font-semibold text-gray-500"
         >
           {year}년
         </th>

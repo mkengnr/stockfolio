@@ -24,18 +24,18 @@ export function GroupPerformanceTable({ groups, displayCurrency }: Props) {
   const sortedGroups = [...groups].sort(compareGroups)
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+    <div className="max-h-[70vh] overflow-auto rounded-xl border border-gray-200 bg-white shadow-sm">
       <table className="min-w-[980px] text-sm">
         <thead>
-          <tr className="border-b border-gray-100 bg-gray-50">
-            <th className="sticky left-0 z-20 border-r border-gray-100 bg-gray-50 px-4 py-3 text-left font-medium text-gray-500">그룹</th>
-            <th className="px-4 py-3 text-right font-medium text-gray-500">투자원금</th>
-            <th className="px-4 py-3 text-right font-medium text-gray-500">잔여원금</th>
-            <th className="px-4 py-3 text-right font-medium text-gray-500">평가금액</th>
-            <th className="px-4 py-3 text-right font-medium text-gray-500">전일대비</th>
-            <th className="px-4 py-3 text-right font-medium text-gray-500">평가손익</th>
-            <th className="px-4 py-3 text-right font-medium text-gray-500">총손익</th>
-            <th className="px-4 py-3 text-right font-medium text-gray-500">총손익률</th>
+          <tr className="border-b border-gray-100">
+            <th className="sticky left-0 top-0 z-20 border-r border-gray-100 bg-gray-50 px-4 py-3 text-left font-medium text-gray-500">그룹</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">투자원금</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">잔여원금</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">평가금액</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">전일대비</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">평가손익</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">총손익</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">총손익률</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-50">

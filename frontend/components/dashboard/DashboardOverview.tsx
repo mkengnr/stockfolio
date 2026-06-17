@@ -110,7 +110,7 @@ export function DashboardOverview({
         </div>
       )}
 
-      <div className="sticky top-14 z-20 -mx-4 border-y border-gray-200 bg-gray-50/95 px-4 py-2 backdrop-blur sm:mx-0 sm:rounded-xl sm:border">
+      <div className="sticky top-14 z-30 -mx-4 border-y border-gray-200 bg-gray-50/95 px-4 py-2 backdrop-blur sm:mx-0 sm:rounded-xl sm:border">
         <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
           <span className="shrink-0">그룹 필터</span>
           <select

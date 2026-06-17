@@ -38,7 +38,7 @@ export function TransactionFilters({ sourceGroups, filters, onApply }: Props) {
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white">
+    <div className="sticky top-14 z-30 rounded-xl border border-gray-200 bg-white shadow-sm">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}

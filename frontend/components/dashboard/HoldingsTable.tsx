@@ -132,15 +132,15 @@ export function HoldingsTable({ holdings, displayCurrency }: Props) {
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+    <div className="max-h-[70vh] overflow-auto rounded-xl border border-gray-200 bg-white shadow-sm">
       <table className="min-w-[980px] text-sm">
         <thead>
-          <tr className="border-b border-gray-100 bg-gray-50">
+          <tr className="border-b border-gray-100">
             <SortableHeading label="종목" align="left" sticky onClick={() => toggleSort('name')}><SortIcon column="name" /></SortableHeading>
-            <th className="px-4 py-3 text-left font-medium text-gray-500">그룹</th>
-            <th className="px-4 py-3 text-right font-medium text-gray-500">수량</th>
-            <th className="px-4 py-3 text-right font-medium text-gray-500">평균매수가</th>
-            <th className="px-4 py-3 text-right font-medium text-gray-500">현재가</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-left font-medium text-gray-500">그룹</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">수량</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">평균매수가</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">현재가</th>
             <SortableHeading label="평가금액" onClick={() => toggleSort('currentValue')}><SortIcon column="currentValue" /></SortableHeading>
             <SortableHeading label="평가손익" onClick={() => toggleSort('profit')}><SortIcon column="profit" /></SortableHeading>
             <SortableHeading label="평가손익률" onClick={() => toggleSort('profitPct')}><SortIcon column="profitPct" /></SortableHeading>
@@ -202,9 +202,9 @@ function SortableHeading({ label, align = 'right', sticky = false, onClick, chil
   return (
     <th
       className={cn(
-        'cursor-pointer px-4 py-3 font-medium text-gray-500 hover:text-gray-700',
+        'sticky top-0 z-10 cursor-pointer bg-gray-50 px-4 py-3 font-medium text-gray-500 hover:text-gray-700',
         align === 'left' ? 'text-left' : 'text-right',
-        sticky && 'sticky left-0 z-20 border-r border-gray-100 bg-gray-50',
+        sticky && 'left-0 z-20 border-r border-gray-100',
       )}
       onClick={onClick}
     >
