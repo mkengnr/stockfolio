@@ -4,7 +4,7 @@
     {
       "name": "frontend-preview",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontend", "run", "dev", "--", "-p", "3100"],
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev:preview"],
       "port": 3100
     }
   ]

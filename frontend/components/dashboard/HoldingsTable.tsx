@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
+import { StickyScrollTable } from '@/components/ui/StickyScrollTable'
 import { cn, formatCurrency, formatNumber, formatPercent, profitColor } from '@/lib/utils'
 import type {
   Currency, DashboardHoldingGroupBadge, DashboardHoldingRow, DisplayCurrency, Holding,
@@ -132,7 +133,7 @@ export function HoldingsTable({ holdings, displayCurrency }: Props) {
   }
 
   return (
-    <div className="max-h-[70vh] overflow-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+    <StickyScrollTable className="rounded-xl border border-gray-200 bg-white shadow-sm">
       <table className="min-w-[980px] text-sm">
         <thead>
           <tr className="border-b border-gray-100">
@@ -161,7 +162,7 @@ export function HoldingsTable({ holdings, displayCurrency }: Props) {
           ))}
         </tbody>
       </table>
-    </div>
+    </StickyScrollTable>
   )
 }
 

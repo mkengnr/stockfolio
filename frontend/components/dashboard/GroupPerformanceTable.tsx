@@ -1,3 +1,4 @@
+import { StickyScrollTable } from '@/components/ui/StickyScrollTable'
 import { cn, formatCurrency, formatPercent, profitColor } from '@/lib/utils'
 import type { DashboardGroupKind, DashboardGroupSummary, DisplayCurrency } from '@/lib/types'
 
@@ -24,7 +25,7 @@ export function GroupPerformanceTable({ groups, displayCurrency }: Props) {
   const sortedGroups = [...groups].sort(compareGroups)
 
   return (
-    <div className="max-h-[70vh] overflow-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+    <StickyScrollTable className="rounded-xl border border-gray-200 bg-white shadow-sm">
       <table className="min-w-[980px] text-sm">
         <thead>
           <tr className="border-b border-gray-100">
@@ -79,7 +80,7 @@ export function GroupPerformanceTable({ groups, displayCurrency }: Props) {
           ))}
         </tbody>
       </table>
-    </div>
+    </StickyScrollTable>
   )
 }
 

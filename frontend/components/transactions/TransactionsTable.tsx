@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { StickyScrollTable } from '@/components/ui/StickyScrollTable'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 import type { TransactionListItem } from '@/lib/types'
 
@@ -31,7 +32,7 @@ export function TransactionsTable({ transactions, deletingId, onEdit, onDelete }
   const groups = groupByYear(transactions)
 
   return (
-    <div className="max-h-[70vh] overflow-auto rounded-xl border border-gray-200 bg-white">
+    <StickyScrollTable className="rounded-xl border border-gray-200 bg-white">
       <table className="min-w-full text-sm">
         <thead>
           <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500 uppercase">
@@ -61,7 +62,7 @@ export function TransactionsTable({ transactions, deletingId, onEdit, onDelete }
           ))}
         </tbody>
       </table>
-    </div>
+    </StickyScrollTable>
   )
 }
 
