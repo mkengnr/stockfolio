@@ -709,3 +709,44 @@ def test_full_sell_does_not_lazy_load_buy_lot_on_isolated_postgresql(
     config.set_main_option("sqlalchemy.url", isolated_postgresql_url)
     command.upgrade(config, "head")
     asyncio.run(_assert_sell_transaction_succeeds(isolated_postgresql_url))
+
+
+async def _assert_create_holding_succeeds(database_url: str) -> None:
+    from decimal import Decimal as D
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, patch
+    from app.models.group import SourceGroup as SG
+    from app.models.holding import Currency as Cur
+    from app.schemas.holding import HoldingCreateIn
+    from app.routers.holdings import create_holding
+
+    engine = create_async_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    uid, sgid = uuid.uuid4(), uuid.uuid4()
+    async with engine.begin() as c:
+        await c.execute(User.__table__.insert().values(id=uid, email=f"{uid}@t.com", is_admin=False, is_active=True))
+        await c.execute(SG.__table__.insert().values(id=sgid, user_id=uid, name="카카오페이증권"))
+    body = HoldingCreateIn(ticker="QQQ", quantity=D("2"), price=D("596"), transaction_date=date(2025, 10, 14), principal_flow="DEPOSIT", source_group_id=sgid)
+    user = type("U", (), {"id": uid})()
+    try:
+        async with sessions() as db:
+            with patch("app.routers.holdings.stock_fetcher.detect_market", return_value="US"), \
+                 patch("app.routers.holdings.stock_fetcher.detect_currency", return_value=Cur.USD), \
+                 patch("app.routers.holdings.stock_fetcher.get_current_price", return_value=SimpleNamespace(name="Invesco QQQ")), \
+                 patch("app.routers.holdings.backfill_holding_snapshots", new=AsyncMock(return_value=0)):
+                out = await create_holding(body, current_user=user, db=db)
+            await db.commit()
+            assert out.ticker == "QQQ"
+            assert out.transactions[0].buy_lot is not None
+    finally:
+        await engine.dispose()
+
+
+def test_create_holding_does_not_lazy_load_collections_on_isolated_postgresql(
+    isolated_postgresql_url: str,
+) -> None:
+    config = Config(str(BACKEND_PATH / "alembic.ini"))
+    config.set_main_option("script_location", str(BACKEND_PATH / "alembic"))
+    config.set_main_option("sqlalchemy.url", isolated_postgresql_url)
+    command.upgrade(config, "head")
+    asyncio.run(_assert_create_holding_succeeds(isolated_postgresql_url))

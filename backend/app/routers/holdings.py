@@ -582,6 +582,7 @@ async def create_holding(
         first_buy_date=body.transaction_date,
         notes=body.notes,
         is_active=True,
+        transactions=[],
     )
     db.add(holding)
     await db.flush()
@@ -595,6 +596,9 @@ async def create_holding(
         price=body.price,
         transaction_date=body.transaction_date,
         principal_flow=body.principal_flow,
+        buy_lot=None,
+        transaction_labels=[],
+        sell_allocations=[],
     )
     holding.transactions.append(tx)
     db.add(tx)
