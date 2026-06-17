@@ -114,7 +114,7 @@ function LegacySharedTagView({ tag }: { tag: SharedTag }) {
 
 function SharedLayout({ name, color, description, children }: { name: string; color: string; description: string | null; children: React.ReactNode }) {
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-8">
+    <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6">
       <div className="flex items-center gap-3">
         <h1 className="text-2xl font-bold text-gray-900">포트폴리오 공유</h1>
         <Badge color={color}>{name}</Badge>
