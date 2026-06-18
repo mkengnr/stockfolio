@@ -74,11 +74,11 @@ describe('formatNumber', () => {
 
 describe('profitColor', () => {
   it('returns green for positive', () => {
-    expect(profitColor(10)).toBe('text-green-600')
+    expect(profitColor(10)).toBe('text-red-500')
   })
 
   it('returns red for negative', () => {
-    expect(profitColor(-5)).toBe('text-red-500')
+    expect(profitColor(-5)).toBe('text-blue-500')
   })
 
   it('returns gray for zero', () => {
@@ -90,8 +90,8 @@ describe('profitColor', () => {
   })
 
   it('parses string input', () => {
-    expect(profitColor('3.5')).toBe('text-green-600')
-    expect(profitColor('-1.2')).toBe('text-red-500')
+    expect(profitColor('3.5')).toBe('text-red-500')
+    expect(profitColor('-1.2')).toBe('text-blue-500')
   })
 })
 

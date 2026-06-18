@@ -58,6 +58,7 @@ class DashboardHoldingRow(BaseModel):
     remaining_cost_basis: Decimal | None
     current_price: Decimal | None
     current_value: Decimal | None
+    current_value_change: Decimal | None = None
     unrealized_profit_loss: Decimal | None
     groups: list[DashboardHoldingGroupBadge]
 

@@ -24,6 +24,7 @@ jest.mock('@/lib/api', () => ({
 const metadata = {
   color: '#6366f1',
   description: null,
+  share_description: null,
   share_token: null,
   share_requires_auth: true,
   created_at: '2026-06-02T00:00:00Z',
@@ -67,6 +68,7 @@ describe('GroupManager', () => {
 
     fireEvent.change(screen.getByLabelText('그룹 종류'), { target: { value: 'rollups' } })
     fireEvent.change(screen.getByLabelText('그룹 이름'), { target: { value: '가족 자산' } })
+    fireEvent.change(screen.getByLabelText('공유 페이지 문구'), { target: { value: '가족용 공유 화면' } })
     fireEvent.click(screen.getByLabelText('월급 포함'))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '그룹 생성' }))
@@ -75,6 +77,7 @@ describe('GroupManager', () => {
     expect(mockedGroupsApi.create).toHaveBeenCalledWith('rollups', {
       name: '가족 자산',
       color: '#6366f1',
+      share_description: '가족용 공유 화면',
       source_group_ids: ['source-1'],
     })
     expect(mutateRollups).toHaveBeenCalled()
@@ -88,6 +91,7 @@ describe('GroupManager', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '배당 수정' }))
     fireEvent.change(screen.getByLabelText('그룹 이름 수정'), { target: { value: '핵심 배당' } })
+    fireEvent.change(screen.getByLabelText('공유 페이지 문구 수정'), { target: { value: '배당 공유 안내' } })
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '수정 저장' }))
     })
@@ -95,6 +99,7 @@ describe('GroupManager', () => {
       name: '핵심 배당',
       color: '#6366f1',
       description: '',
+      share_description: '배당 공유 안내',
     })
 
     await act(async () => {

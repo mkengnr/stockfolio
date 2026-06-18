@@ -26,11 +26,13 @@ export function GroupManager() {
   const [kind, setKind] = useState<GroupKind>('sources')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [shareDescription, setShareDescription] = useState('')
   const [color, setColor] = useState(DEFAULT_COLOR)
   const [memberIds, setMemberIds] = useState<string[]>([])
   const [editing, setEditing] = useState<{ kind: GroupKind; group: Group } | null>(null)
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
+  const [editShareDescription, setEditShareDescription] = useState('')
   const [editColor, setEditColor] = useState(DEFAULT_COLOR)
   const [editMemberIds, setEditMemberIds] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
@@ -63,10 +65,12 @@ export function GroupManager() {
         name: name.trim(),
         color,
         ...(description.trim() && { description: description.trim() }),
+        share_description: shareDescription.trim() || null,
         ...(kind === 'rollups' && { source_group_ids: memberIds }),
       })
       setName('')
       setDescription('')
+      setShareDescription('')
       setColor(DEFAULT_COLOR)
       setMemberIds([])
       await refresh(kind)
@@ -81,6 +85,7 @@ export function GroupManager() {
     setEditing({ kind: groupKind, group })
     setEditName(group.name)
     setEditDescription(group.description ?? '')
+    setEditShareDescription(group.share_description ?? '')
     setEditColor(group.color)
     setEditMemberIds(groupKind === 'rollups' ? (group as RollupGroup).source_group_ids : [])
     setError('')
@@ -96,6 +101,7 @@ export function GroupManager() {
         name: editName.trim(),
         color: editColor,
         description: editDescription.trim(),
+        share_description: editShareDescription.trim() || null,
         ...(editing.kind === 'rollups' && { source_group_ids: editMemberIds }),
       })
       await refresh(editing.kind)
@@ -180,6 +186,13 @@ export function GroupManager() {
             <Input label="설명" value={description} maxLength={200} onChange={(event) => setDescription(event.target.value)} />
             <ColorInput label="그룹 색상" value={color} onChange={setColor} />
           </div>
+          <Input
+            label="공유 페이지 문구"
+            value={shareDescription}
+            maxLength={200}
+            placeholder="공유 링크 상단에만 표시할 문구"
+            onChange={(event) => setShareDescription(event.target.value)}
+          />
           {kind === 'rollups' && (
             <MemberSelector sources={sources} selectedIds={memberIds} onChange={setMemberIds} />
           )}
@@ -199,6 +212,13 @@ export function GroupManager() {
               <Input label="설명 수정" value={editDescription} maxLength={200} onChange={(event) => setEditDescription(event.target.value)} />
               <ColorInput label="그룹 색상 수정" value={editColor} onChange={setEditColor} />
             </div>
+            <Input
+              label="공유 페이지 문구 수정"
+              value={editShareDescription}
+              maxLength={200}
+              placeholder="공유 링크 상단에만 표시할 문구"
+              onChange={(event) => setEditShareDescription(event.target.value)}
+            />
             {editing.kind === 'rollups' && (
               <MemberSelector sources={sources} selectedIds={editMemberIds} onChange={setEditMemberIds} />
             )}
@@ -371,6 +391,9 @@ function GroupCard({
           <p className="break-all">{shareUrl}</p>
           <p className="mt-2 text-gray-400">
             {group.share_requires_auth ? '로그인 필요' : '누구나 접근 가능'}
+          </p>
+          <p className="mt-1 text-gray-400">
+            공유 문구: {group.share_description || '없음'}
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <Button variant="secondary" size="sm" onClick={() => navigator.clipboard.writeText(shareUrl)} aria-label={`${group.name} 공유 링크 복사`}>

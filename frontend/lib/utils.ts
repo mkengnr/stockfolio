@@ -45,7 +45,8 @@ export function profitColor(value: number | string | null): string {
   if (value === null || value === undefined) return 'text-gray-500'
   const num = typeof value === 'string' ? parseFloat(value) : value
   if (isNaN(num) || num === 0) return 'text-gray-500'
-  return num > 0 ? 'text-green-600' : 'text-red-500'
+  // Korean market convention: gains are red, losses are blue.
+  return num > 0 ? 'text-red-500' : 'text-blue-500'
 }
 
 export function detectMarket(ticker: string): 'KRX' | 'US' {

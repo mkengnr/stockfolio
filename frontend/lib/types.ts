@@ -8,6 +8,7 @@ export interface GroupMetadata {
   name: string
   color: string
   description: string | null
+  share_description: string | null
   share_token: string | null
   share_requires_auth: boolean
   created_at: string
@@ -158,6 +159,7 @@ export interface DashboardHoldingRow {
   remaining_cost_basis: string | null
   current_price: string | null
   current_value: string | null
+  current_value_change?: string | null
   unrealized_profit_loss: string | null
   groups: DashboardHoldingGroupBadge[]
 }
@@ -335,6 +337,7 @@ export interface Tag {
   name: string
   color: string
   description: string | null
+  share_description: string | null
   share_token: string | null
   share_requires_auth: boolean
   holding_ids: string[]
@@ -349,6 +352,7 @@ export interface SharedTag {
   name: string
   color: string
   description: string | null
+  share_description: string | null
   summary: TagSummary | null
   holding_count: number
 }
@@ -358,6 +362,7 @@ export interface SharedGroup {
   name: string
   color: string
   description: string | null
+  share_description: string | null
   dashboard: SharedDashboard
 }
 
@@ -376,6 +381,7 @@ export interface SharedDashboardHolding {
   remaining_cost_basis: string | null
   current_price: string | null
   current_value: string | null
+  current_value_change?: string | null
   unrealized_profit_loss: string | null
   groups: SharedDashboardHoldingGroupBadge[]
 }

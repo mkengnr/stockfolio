@@ -28,6 +28,7 @@ const tag: Tag = {
   name: '장기 투자',
   color: '#2563eb',
   description: '10년 보유',
+  share_description: null,
   share_token: null,
   share_requires_auth: false,
   holding_ids: [],
@@ -47,6 +48,7 @@ describe('TagManager', () => {
     fireEvent.click(screen.getByRole('button', { name: '수정' }))
     fireEvent.change(screen.getByLabelText('그룹 이름 수정'), { target: { value: '장기 핵심' } })
     fireEvent.change(screen.getByLabelText('설명 수정'), { target: { value: '은퇴 자금' } })
+    fireEvent.change(screen.getByLabelText('공유 페이지 문구 수정'), { target: { value: '장기 투자 공유 화면' } })
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '수정 저장' }))
@@ -56,6 +58,7 @@ describe('TagManager', () => {
       name: '장기 핵심',
       color: '#2563eb',
       description: '은퇴 자금',
+      share_description: '장기 투자 공유 화면',
     })
     expect(mutate).toHaveBeenCalled()
   })

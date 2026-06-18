@@ -63,7 +63,7 @@ def _not_found() -> HTTPException:
 
 
 def _apply_metadata(entity: GroupEntity, body: GroupMetadataUpdateIn) -> None:
-    for field in ("name", "color", "description"):
+    for field in ("name", "color", "description", "share_description"):
         if field in body.model_fields_set:
             setattr(entity, field, getattr(body, field))
 
@@ -79,6 +79,7 @@ def _rollup_to_out(
         name=rollup.name,
         color=rollup.color,
         description=rollup.description,
+        share_description=rollup.share_description,
         share_token=rollup.share_token,
         share_requires_auth=rollup.share_requires_auth,
         source_group_ids=sorted(source_group_ids, key=str),
@@ -104,6 +105,7 @@ def _public_dashboard_holding(holding, allowed_group_names: set[str]) -> SharedD
         remaining_cost_basis=holding.remaining_cost_basis,
         current_price=holding.current_price,
         current_value=holding.current_value,
+        current_value_change=holding.current_value_change,
         unrealized_profit_loss=holding.unrealized_profit_loss,
         groups=[
             SharedDashboardHoldingGroupBadgeOut(
@@ -346,6 +348,7 @@ async def create_rollup_group(
         name=body.name,
         color=body.color,
         description=body.description,
+        share_description=body.share_description,
         share_requires_auth=True,
     )
     db.add(rollup)
@@ -473,5 +476,6 @@ async def get_shared_group(
         name=entity.name,
         color=entity.color,
         description=entity.description,
+        share_description=entity.share_description,
         dashboard=_public_shared_dashboard(dashboard),
     )

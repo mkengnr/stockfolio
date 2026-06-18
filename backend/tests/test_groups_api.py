@@ -102,7 +102,7 @@ def client(user, db):
 
 
 def _source(user_id, *, name="월급", source_id=None):
-    return SourceGroup(
+    source = SourceGroup(
         id=source_id or uuid.uuid4(),
         user_id=user_id,
         name=name,
@@ -111,10 +111,12 @@ def _source(user_id, *, name="월급", source_id=None):
         share_requires_auth=True,
         created_at=NOW,
     )
+    source.share_description = None
+    return source
 
 
 def _label(user_id, *, name="장기", label_id=None):
-    return Label(
+    label = Label(
         id=label_id or uuid.uuid4(),
         user_id=user_id,
         name=name,
@@ -123,10 +125,12 @@ def _label(user_id, *, name="장기", label_id=None):
         share_requires_auth=True,
         created_at=NOW,
     )
+    label.share_description = None
+    return label
 
 
 def _rollup(user_id, *sources, name="가족", rollup_id=None):
-    return RollupGroup(
+    rollup = RollupGroup(
         id=rollup_id or uuid.uuid4(),
         user_id=user_id,
         name=name,
@@ -136,16 +140,24 @@ def _rollup(user_id, *sources, name="가족", rollup_id=None):
         created_at=NOW,
         members=[RollupGroupMember(source_group_id=source.id) for source in sources],
     )
+    rollup.share_description = None
+    return rollup
 
 
 def test_source_group_crud_trims_name_and_normalizes_color(client, db):
     response = client.post(
         "/api/groups/sources",
-        json={"name": "  월급  ", "color": "#AABBCC", "description": "급여"},
+        json={
+            "name": "  월급  ",
+            "color": "#AABBCC",
+            "description": "급여",
+            "share_description": "공유 화면 전용 문구",
+        },
     )
     assert response.status_code == 201
     assert response.json()["name"] == "월급"
     assert response.json()["color"] == "#aabbcc"
+    assert response.json()["share_description"] == "공유 화면 전용 문구"
     source = db.added[-1]
 
     db.queue(_Result(many=[source]))
@@ -159,9 +171,13 @@ def test_source_group_crud_trims_name_and_normalizes_color(client, db):
     assert response.json()["name"] == "월급"
 
     db.queue(_Result(one=source))
-    response = client.put(f"/api/groups/sources/{source.id}", json={"name": "  비상금  "})
+    response = client.put(
+        f"/api/groups/sources/{source.id}",
+        json={"name": "  비상금  ", "share_description": "비상금 공유 안내"},
+    )
     assert response.status_code == 200
     assert response.json()["name"] == "비상금"
+    assert response.json()["share_description"] == "비상금 공유 안내"
 
     db.queue(_Result(one=source), _Result(), _Result(), _Result())
     response = client.delete(f"/api/groups/sources/{source.id}")
@@ -481,6 +497,7 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
                 "remaining_cost_basis": "70000",
                 "current_price": "75000",
                 "current_value": "75000",
+                "current_value_change": "1000",
                 "unrealized_profit_loss": "5000",
                 "groups": [
                     {
@@ -515,6 +532,7 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
         "name": entity.name,
         "color": "#6366f1",
         "description": None,
+        "share_description": None,
         "dashboard": {
             "display_currency": "KRW",
             "summary": {
@@ -570,6 +588,7 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
                     "remaining_cost_basis": "70000",
                     "current_price": "75000",
                     "current_value": "75000",
+                    "current_value_change": "1000",
                     "unrealized_profit_loss": "5000",
                     "groups": [
                         {
@@ -634,7 +653,7 @@ def test_public_share_omits_internal_warnings_and_legacy_fields(client, user, db
 
     assert response.status_code == 200
     payload = response.json()
-    assert set(payload) == {"kind", "name", "color", "description", "dashboard"}
+    assert set(payload) == {"kind", "name", "color", "description", "share_description", "dashboard"}
     assert str(transaction_id) not in response.text
     assert "warnings" not in payload["dashboard"]
 

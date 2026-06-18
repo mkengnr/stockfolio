@@ -32,6 +32,7 @@ class GroupMetadataCreateIn(BaseModel):
     name: str
     color: str = DEFAULT_COLOR
     description: str | None = None
+    share_description: str | None = None
 
     model_config = {"extra": "forbid"}
 
@@ -50,6 +51,7 @@ class GroupMetadataUpdateIn(BaseModel):
     name: str | None = None
     color: str | None = None
     description: str | None = None
+    share_description: str | None = None
 
     model_config = {"extra": "forbid"}
 
@@ -113,6 +115,7 @@ class GroupMetadataOut(BaseModel):
     name: str
     color: str
     description: str | None
+    share_description: str | None
     share_token: str | None
     share_requires_auth: bool
     created_at: datetime
@@ -139,6 +142,7 @@ class SharedGroupOut(BaseModel):
     name: str
     color: str
     description: str | None
+    share_description: str | None
     dashboard: "SharedDashboardOut"
 
 
@@ -157,6 +161,7 @@ class SharedDashboardHoldingOut(BaseModel):
     remaining_cost_basis: Decimal | None
     current_price: Decimal | None
     current_value: Decimal | None
+    current_value_change: Decimal | None = None
     unrealized_profit_loss: Decimal | None
     groups: list[SharedDashboardHoldingGroupBadgeOut]
 

@@ -163,7 +163,7 @@ export const groupsApi = {
 
   create: (
     kind: GroupKind,
-    data: { name: string; color?: string; description?: string; source_group_ids?: string[] },
+    data: { name: string; color?: string; description?: string; share_description?: string | null; source_group_ids?: string[] },
   ) => request<SourceGroup | RollupGroup | Label>(`/api/groups/${kind}`, {
     method: 'POST',
     body: JSON.stringify(data),
@@ -172,7 +172,7 @@ export const groupsApi = {
   update: (
     kind: GroupKind,
     id: string,
-    data: { name?: string; color?: string; description?: string; source_group_ids?: string[] },
+    data: { name?: string; color?: string; description?: string; share_description?: string | null; source_group_ids?: string[] },
   ) => request<SourceGroup | RollupGroup | Label>(`/api/groups/${kind}/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
@@ -225,12 +225,12 @@ export const stocksApi = {
 export const tagsApi = {
   list: () => request<Tag[]>('/api/tags'),
 
-  create: (data: { name: string; color?: string; description?: string }) =>
+  create: (data: { name: string; color?: string; description?: string; share_description?: string | null }) =>
     request<Tag>('/api/tags', { method: 'POST', body: JSON.stringify(data) }),
 
   get: (id: string) => request<TagDetail>(`/api/tags/${id}`),
 
-  update: (id: string, data: { name?: string; color?: string; description?: string }) =>
+  update: (id: string, data: { name?: string; color?: string; description?: string; share_description?: string | null }) =>
     request<Tag>(`/api/tags/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   delete: (id: string) => request(`/api/tags/${id}`, { method: 'DELETE' }),

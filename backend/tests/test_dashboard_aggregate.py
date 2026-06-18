@@ -621,6 +621,7 @@ def test_dashboard_daily_change_uses_current_price_date_as_reference_day(monkeyp
     assert response.comparison_as_of == date(2026, 6, 4)
     assert response.summary.total_current_value == Decimal("1500")
     assert response.summary.total_current_value_change == Decimal("400")
+    assert response.holdings[0].current_value_change == Decimal("400")
 
 
 def test_krw_history_without_rate_nulls_usd_only_values():

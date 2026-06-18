@@ -5,11 +5,12 @@ import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { DisplayCurrencyToggle } from './DisplayCurrencyToggle'
+import { GroupFilterMenu } from './GroupFilterMenu'
 import { GroupPerformanceTable } from './GroupPerformanceTable'
 import { HoldingsTable } from './HoldingsTable'
 import { PortfolioChart } from './PortfolioChart'
 import { PortfolioSummary } from './PortfolioSummary'
-import { ChartRangeControl, filterHistoryRowsByChartRange, type ChartRange } from './chartRange'
+import { ChartRangeControl, getChartVisibleDateRange, type ChartRange } from './chartRange'
 import type { DashboardGroupSummary, DashboardResponse, DisplayCurrency } from '@/lib/types'
 
 interface Props {
@@ -48,15 +49,18 @@ export function DashboardOverview({
     }),
     [dashboard.history.rows, selectedGroup],
   )
-  const chartHistoryRows = useMemo(
-    () => filterHistoryRowsByChartRange(selectedHistoryRows, chartRange),
+  const chartVisibleRange = useMemo(
+    () => getChartVisibleDateRange(selectedHistoryRows, chartRange),
     [selectedHistoryRows, chartRange],
   )
-  const compositionHistoryRows = useMemo(
-    () => filterHistoryRowsByChartRange(dashboard.history.rows, chartRange),
-    [dashboard.history.rows, chartRange],
-  )
   const selectedHoldings = selectedGroup?.holdings ?? dashboard.holdings
+  const groupFilterOptions = useMemo(
+    () => [
+      { value: 'total', label: '전체' },
+      ...dashboard.groups.map((group) => ({ value: groupKey(group), label: group.name })),
+    ],
+    [dashboard.groups],
+  )
 
   return (
     <div className="flex flex-col gap-6">
@@ -79,12 +83,6 @@ export function DashboardOverview({
             exchangeRate={dashboard.exchange_rate}
             onChange={onDisplayCurrencyChange}
           />
-          <Button type="button" variant="secondary" loading={isRefreshing} onClick={onRefresh} className="w-full sm:w-auto">
-            새로고침
-          </Button>
-          <Link href="/holdings/new" className="inline-flex w-full items-center justify-center rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-600 sm:w-auto">
-            + 종목 등록
-          </Link>
         </div>
       </div>
 
@@ -95,21 +93,16 @@ export function DashboardOverview({
       )}
 
       <div className="sticky top-14 z-30 -mx-4 border-y border-gray-200 bg-gray-50/95 px-4 py-2 backdrop-blur sm:mx-0 sm:rounded-xl sm:border">
-        <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-          <span className="shrink-0">그룹 필터</span>
-          <select
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+          <GroupFilterMenu
             value={selectedGroupKey}
-            onChange={(event) => setSelectedGroupKey(event.target.value)}
-            className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:flex-none sm:min-w-48"
-          >
-            <option value="total">전체</option>
-            {dashboard.groups.map((group) => (
-              <option key={groupKey(group)} value={groupKey(group)}>
-                {group.name}
-              </option>
-            ))}
-          </select>
-        </label>
+            options={groupFilterOptions}
+            onChange={setSelectedGroupKey}
+          />
+          <Button type="button" variant="secondary" loading={isRefreshing} onClick={onRefresh} className="h-full whitespace-nowrap px-3 sm:px-4">
+            새로고침
+          </Button>
+        </div>
       </div>
 
       <section className="flex flex-col gap-3">
@@ -141,10 +134,11 @@ export function DashboardOverview({
           </div>
         </div>
         <PortfolioChart
-          historyRows={chartHistoryRows}
-          compositionRows={compositionHistoryRows}
+          historyRows={selectedHistoryRows}
+          compositionRows={dashboard.history.rows}
           includeComposition={!selectedGroup}
           displayCurrency={displayCurrency}
+          visibleRange={chartVisibleRange}
         />
       </Card>
 

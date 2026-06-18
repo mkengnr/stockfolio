@@ -93,6 +93,7 @@ def _tag_to_out(tag: Tag) -> TagOut:
         name=tag.name,
         color=tag.color,
         description=tag.description,
+        share_description=tag.share_description,
         share_token=tag.share_token,
         share_requires_auth=tag.share_requires_auth,
         holding_ids=[ht.holding_id for ht in tag.holding_tags],
@@ -120,7 +121,13 @@ async def create_tag(
     db: AsyncSession = Depends(get_db),
 ):
     _legacy_writes_disabled()
-    tag = Tag(user_id=current_user.id, name=body.name, color=body.color, description=body.description)
+    tag = Tag(
+        user_id=current_user.id,
+        name=body.name,
+        color=body.color,
+        description=body.description,
+        share_description=body.share_description,
+    )
     db.add(tag)
     await db.flush()
     await db.refresh(tag, ["holding_tags"])
@@ -173,6 +180,8 @@ async def update_tag(
         tag.color = body.color
     if body.description is not None:
         tag.description = body.description
+    if "share_description" in body.model_fields_set:
+        tag.share_description = body.share_description
     return _tag_to_out(tag)
 
 
@@ -327,6 +336,7 @@ async def get_shared_tag(
         name=tag.name,
         color=tag.color,
         description=tag.description,
+        share_description=tag.share_description,
         summary=summary,
         holding_count=summary.holding_count,
     )

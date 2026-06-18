@@ -15,13 +15,17 @@ jest.mock('@/components/dashboard/PortfolioChart', () => ({
   PortfolioChart: ({
     historyRows,
     includeComposition,
+    visibleRange,
   }: {
-    historyRows: Array<{ group_name: string }>
+    historyRows: Array<{ group_name: string; snapshot_date: string }>
     includeComposition: boolean
+    visibleRange: { from: string; to: string } | null
   }) => (
     <div data-testid="portfolio-chart">
       selected:{historyRows.map((row) => row.group_name).join(',')}|
-      composition:{includeComposition ? 'on' : 'off'}
+      composition:{includeComposition ? 'on' : 'off'}|
+      dates:{historyRows.map((row) => row.snapshot_date).join(',')}|
+      visible:{visibleRange ? `${visibleRange.from}..${visibleRange.to}` : 'all'}
     </div>
   ),
 }))
@@ -33,6 +37,7 @@ const sharedGroup: SharedGroup = {
   name: '월급',
   color: '#6366f1',
   description: '급여 투자',
+  share_description: '함께 보는 월급 포트폴리오입니다.',
   dashboard: {
     display_currency: 'KRW',
     summary: {
@@ -69,12 +74,33 @@ const sharedGroup: SharedGroup = {
         remaining_cost_basis: '200',
         current_price: '120',
         current_value: '240',
+        current_value_change: '10',
         unrealized_profit_loss: '40',
         groups: [{ name: '급여', color: '#4f46e5', remaining_quantity: '2' }],
       }],
     }],
     history: {
       rows: [
+        {
+          group_key: 'total',
+          group_kind: 'total',
+          group_name: '전체',
+          snapshot_date: '2026-02-01',
+          total_value: '320',
+          total_invested_principal: '300',
+          total_cost_basis: '300',
+          total_profit_loss: '20',
+        },
+        {
+          group_key: 'group-1',
+          group_kind: 'source',
+          group_name: '급여',
+          snapshot_date: '2026-02-01',
+          total_value: '210',
+          total_invested_principal: '200',
+          total_cost_basis: '200',
+          total_profit_loss: '10',
+        },
         {
           group_key: 'total',
           group_kind: 'total',
@@ -106,6 +132,7 @@ const sharedGroup: SharedGroup = {
       remaining_cost_basis: '300',
       current_price: '130',
       current_value: '390',
+      current_value_change: '20',
       unrealized_profit_loss: '90',
       groups: [{ name: '급여', color: '#4f46e5', remaining_quantity: '2' }],
     }],
@@ -116,6 +143,7 @@ const legacyTag: SharedTag = {
   name: '기존 태그',
   color: '#6366f1',
   description: null,
+  share_description: null,
   summary: null,
   holding_count: 0,
 }
@@ -134,6 +162,7 @@ describe('SharePage', () => {
     render(<SharePage params={{ token: 'token-1' }} />)
 
     expect(await screen.findByText('월급')).toBeInTheDocument()
+    expect(screen.getByText('함께 보는 월급 포트폴리오입니다.')).toBeInTheDocument()
     expect(screen.getByText('Apple')).toBeInTheDocument()
     expect(mockedShareApi.getGroup).toHaveBeenCalledWith('token-1')
     expect(mockedShareApi.getLegacy).not.toHaveBeenCalled()
@@ -143,12 +172,15 @@ describe('SharePage', () => {
     mockedShareApi.getGroup.mockResolvedValue(sharedGroup)
     render(<SharePage params={{ token: 'token-1' }} />)
 
-    const filter = await screen.findByLabelText('그룹 필터')
+    await screen.findByRole('button', { name: /그룹 필터/ })
     expect(screen.getByText('3')).toBeInTheDocument()
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:전체')
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('composition:on')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('dates:2026-02-01,2026-06-01')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:2026-03-01..2026-06-01')
 
-    fireEvent.change(filter, { target: { value: 'group-1' } })
+    fireEvent.click(screen.getByRole('button', { name: /그룹 필터/ }))
+    fireEvent.click(screen.getByRole('option', { name: /급여/ }))
 
     expect(screen.getByText('2')).toBeInTheDocument()
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:급여')
@@ -159,7 +191,7 @@ describe('SharePage', () => {
     mockedShareApi.getGroup.mockResolvedValue(sharedGroup)
     const { container } = render(<SharePage params={{ token: 'token-1' }} />)
 
-    await screen.findByLabelText('그룹 필터')
+    await screen.findByRole('button', { name: /그룹 필터/ })
     const liveRegion = container.querySelector('[aria-live="polite"]')
     expect(liveRegion).not.toBeNull()
     expect(liveRegion!.textContent).toContain('평가금액')
@@ -168,8 +200,9 @@ describe('SharePage', () => {
   it('resets the group filter when a reloaded share no longer has the selected group', async () => {
     mockedShareApi.getGroup.mockResolvedValueOnce(sharedGroup)
     const { rerender } = render(<SharePage params={{ token: 'token-1' }} />)
-    const filter = await screen.findByLabelText('그룹 필터')
-    fireEvent.change(filter, { target: { value: 'group-1' } })
+    await screen.findByRole('button', { name: /그룹 필터/ })
+    fireEvent.click(screen.getByRole('button', { name: /그룹 필터/ }))
+    fireEvent.click(screen.getByRole('option', { name: /급여/ }))
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:급여')
 
     const reloadedGroup: SharedGroup = {
@@ -182,10 +215,71 @@ describe('SharePage', () => {
     mockedShareApi.getGroup.mockResolvedValueOnce(reloadedGroup)
     rerender(<SharePage params={{ token: 'token-2' }} />)
 
-    await screen.findByText('새그룹')
     await waitFor(() => {
-      expect((screen.getByLabelText('그룹 필터') as HTMLSelectElement).value).toBe('total')
+      expect(screen.getByRole('button', { name: /그룹 필터.*전체/ })).toBeInTheDocument()
     })
+    fireEvent.click(screen.getByRole('button', { name: /그룹 필터/ }))
+    expect(screen.getByRole('option', { name: /새그룹/ })).toBeInTheDocument()
+  })
+
+  it('refreshes the shared group payload without leaving the share page', async () => {
+    mockedShareApi.getGroup
+      .mockResolvedValueOnce(sharedGroup)
+      .mockResolvedValueOnce({
+        ...sharedGroup,
+        dashboard: {
+          ...sharedGroup.dashboard,
+          holdings: [{ ...sharedGroup.dashboard.holdings[0], name: 'Microsoft' }],
+        },
+      })
+    render(<SharePage params={{ token: 'token-1' }} />)
+
+    expect(await screen.findByText('Apple')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '새로고침' }))
+
+    expect(await screen.findByText('Microsoft')).toBeInTheDocument()
+    expect(mockedShareApi.getGroup).toHaveBeenCalledTimes(2)
+    expect(mockedShareApi.getLegacy).not.toHaveBeenCalled()
+  })
+
+  it('places share refresh in the page header, not the sticky toolbar', async () => {
+    mockedShareApi.getGroup.mockResolvedValue(sharedGroup)
+    render(<SharePage params={{ token: 'token-1' }} />)
+
+    await screen.findByText('Apple')
+
+    const refreshButton = screen.getByRole('button', { name: '새로고침' })
+    expect(refreshButton.closest('[data-testid="share-sticky-toolbar"]')).toBeNull()
+    const heading = screen.getByRole('heading', { name: '포트폴리오 공유' })
+    const headerRow = heading.parentElement?.parentElement
+    expect(headerRow?.contains(refreshButton)).toBe(true)
+  })
+
+  it('hides principal-based shared summary cards when invested principal is zero', async () => {
+    mockedShareApi.getGroup.mockResolvedValue({
+      ...sharedGroup,
+      dashboard: {
+        ...sharedGroup.dashboard,
+        summary: {
+          ...sharedGroup.dashboard.summary,
+          total_invested_principal: '0',
+          total_profit_loss: '90',
+          total_profit_loss_pct: '30',
+        },
+      },
+    })
+
+    render(<SharePage params={{ token: 'token-1' }} />)
+
+    await screen.findByText('Apple')
+
+    expect(screen.queryByText('투자원금')).not.toBeInTheDocument()
+    expect(screen.queryByText('총손익')).not.toBeInTheDocument()
+    expect(screen.queryByText('총손익률')).not.toBeInTheDocument()
+    expect(screen.getByText('잔여원금')).toBeInTheDocument()
+    expect(screen.getAllByText('평가금액').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('전일대비').length).toBeGreaterThan(0)
   })
 
   it('falls back to the legacy endpoint only after a 404', async () => {

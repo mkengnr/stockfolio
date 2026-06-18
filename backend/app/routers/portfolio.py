@@ -701,6 +701,7 @@ def _build_dashboard_groups(
     display_currency: DisplayCurrency,
     exchange_rate: ExchangeRate | None,
     *,
+    current_price_as_of: date | None = None,
     panel_source_groups: list[SourceGroup] | None = None,
     include_unclassified: bool = True,
 ) -> tuple[list[DashboardGroupSummary], list[str]]:
@@ -735,6 +736,7 @@ def _build_dashboard_groups(
                         display_currency,
                         exchange_rate,
                         scope=scope,
+                        current_price_as_of=current_price_as_of,
                     ),
                 )
             )
@@ -767,6 +769,7 @@ def _build_dashboard_groups(
                         display_currency,
                         exchange_rate,
                         scope=scope,
+                        current_price_as_of=current_price_as_of,
                     ),
                 )
             )
@@ -796,6 +799,7 @@ def _build_dashboard_groups(
                         display_currency,
                         exchange_rate,
                         scope=scope,
+                        current_price_as_of=current_price_as_of,
                     ),
                 )
             )
@@ -1032,6 +1036,46 @@ def _holding_market(holding: Holding) -> Market:
     return holding.market
 
 
+def _holding_previous_close_price(
+    holding: Holding,
+    reference_date: date,
+) -> Decimal | None:
+    previous_snapshots = [
+        snapshot
+        for snapshot in holding.snapshots
+        if snapshot.snapshot_date < reference_date
+    ]
+    if not previous_snapshots:
+        return None
+    return max(previous_snapshots, key=lambda snapshot: snapshot.snapshot_date).close_price
+
+
+def _dashboard_holding_value_change(
+    holding: Holding,
+    *,
+    quantity: Decimal,
+    current_value: Decimal | None,
+    display_currency: DisplayCurrency,
+    exchange_rate: ExchangeRate | None,
+    current_price_as_of: date | None,
+) -> Decimal | None:
+    if current_value is None:
+        return None
+    previous_close_price = _holding_previous_close_price(
+        holding,
+        current_price_as_of or date.today(),
+    )
+    if previous_close_price is None:
+        return None
+    previous_value = _convert_display_money(
+        quantity * previous_close_price,
+        holding.currency,
+        display_currency,
+        exchange_rate,
+    )
+    return current_value - previous_value if previous_value is not None else None
+
+
 def _build_dashboard_holdings(
     holdings: list[Holding],
     source_groups: list[SourceGroup],
@@ -1040,6 +1084,7 @@ def _build_dashboard_holdings(
     exchange_rate: ExchangeRate | None,
     *,
     scope: PortfolioScope = PortfolioScope("all"),
+    current_price_as_of: date | None = None,
 ) -> list[DashboardHoldingRow]:
     _, scoped_holdings = _build_scoped_dashboard_payload(
         holdings,
@@ -1048,6 +1093,7 @@ def _build_dashboard_holdings(
     )
     names = {(holding.currency, holding.ticker): holding.name for holding in holdings}
     holding_ids = {(holding.currency, holding.ticker): holding.id for holding in holdings}
+    holding_by_key = {(holding.currency, holding.ticker): holding for holding in holdings}
     markets = {
         (holding.currency, holding.ticker): _holding_market(holding)
         for holding in holdings
@@ -1059,6 +1105,12 @@ def _build_dashboard_holdings(
         if display_currency == "USD" and holding.currency != Currency.USD:
             continue
         key = (holding.currency, holding.ticker)
+        current_value = _convert_display_money(
+            holding.current_value,
+            holding.currency,
+            display_currency,
+            exchange_rate,
+        )
         rows.append(
             DashboardHoldingRow(
                 holding_id=holding_ids[key],
@@ -1074,11 +1126,14 @@ def _build_dashboard_holdings(
                     exchange_rate,
                 ),
                 current_price=holding.current_price,
-                current_value=_convert_display_money(
-                    holding.current_value,
-                    holding.currency,
-                    display_currency,
-                    exchange_rate,
+                current_value=current_value,
+                current_value_change=_dashboard_holding_value_change(
+                    holding_by_key[key],
+                    quantity=holding.remaining_quantity,
+                    current_value=current_value,
+                    display_currency=display_currency,
+                    exchange_rate=exchange_rate,
+                    current_price_as_of=current_price_as_of,
                 ),
                 unrealized_profit_loss=_convert_display_money(
                     holding.unrealized_profit_loss,
@@ -1136,6 +1191,7 @@ def build_dashboard_response(
     if _needs_exchange_warning(holdings, display_currency, exchange_rate):
         output_warnings.append("USD/KRW exchange rate unavailable; USD values are omitted")
 
+    current_price_as_of = _dashboard_current_price_as_of(current_price_dates or {})
     groups, group_warnings = _build_dashboard_groups(
         active_holdings,
         source_groups,
@@ -1143,6 +1199,7 @@ def build_dashboard_response(
         current_prices,
         display_currency,
         exchange_rate,
+        current_price_as_of=current_price_as_of,
         panel_source_groups=panel_source_groups,
         include_unclassified=panel_source_groups is None,
     )
@@ -1158,7 +1215,6 @@ def build_dashboard_response(
         total_scope=scope,
         include_unrepresented=panel_source_groups is None,
     )
-    current_price_as_of = _dashboard_current_price_as_of(current_price_dates or {})
     comparison_as_of = _dashboard_comparison_as_of(history.rows, current_price_as_of)
     summary = _dashboard_summary_with_value_change(
         summary_base,
@@ -1194,6 +1250,7 @@ def build_dashboard_response(
             display_currency,
             exchange_rate,
             scope=scope,
+            current_price_as_of=current_price_as_of,
         ),
         warnings=sorted(set(output_warnings)),
     )

@@ -112,14 +112,14 @@ describe('buildDashboardChartSeries', () => {
       id: 'total:total',
       name: '전체',
       kind: 'total',
-      points: [{ time: '2026-06-01', value: 600000 }],
+      points: [{ time: '2026-06-01', value: 700000 }],
     })
     expect(series[1]).toEqual(
       {
         id: 'source:source-1',
         name: '모음통장',
         kind: 'source',
-        points: [{ time: '2026-06-01', value: 250000 }],
+        points: [{ time: '2026-06-01', value: 260000 }],
       },
     )
   })
@@ -144,11 +144,11 @@ describe('buildIntegratedDashboardChartData', () => {
       { time: '2026-06-02', value: 780000 },
     ])
     expect(data.principal).toEqual([
-      { time: '2026-06-01', value: 600000 },
-      { time: '2026-06-02', value: 600000 },
+      { time: '2026-06-01', value: 700000 },
+      { time: '2026-06-02', value: 700000 },
     ])
     expect(data.dailyProfitChange).toEqual([
-      { time: '2026-06-02', value: 15000, color: '#16a34a' },
+      { time: '2026-06-02', value: 15000, color: '#dc2626' },
     ])
     expect(data.composition.map((series) => series.kind)).toEqual(['source', 'unclassified'])
     expect(data.composition[0].points).toEqual([
@@ -168,7 +168,7 @@ describe('buildIntegratedDashboardChartData', () => {
 
     expect(data.composition).toEqual([])
     expect(data.dailyProfitChange).toEqual([
-      { time: '2026-06-02', value: 15000, color: '#16a34a' },
+      { time: '2026-06-02', value: 15000, color: '#dc2626' },
     ])
     expect(formatDashboardMoney(1234567.89)).toBe('1,234,568')
   })

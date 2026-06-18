@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { HoldingsTable } from '@/components/dashboard/HoldingsTable'
 import type { DashboardHoldingRow, Holding, PublicScopedPortfolioHolding, ScopedPortfolioHolding } from '@/lib/types'
 
@@ -33,6 +33,14 @@ const makeHolding = (overrides: Partial<Holding> = {}): Holding => ({
 })
 
 describe('HoldingsTable', () => {
+  function visibleRowNames() {
+    return screen
+      .getAllByRole('row')
+      .slice(1)
+      .filter((row) => within(row).queryByRole('link'))
+      .map((row) => within(row).getByRole('link').querySelector('span')?.textContent)
+  }
+
   it('renders a scoped public holding without exposing a detail link', () => {
     const scopedHolding: PublicScopedPortfolioHolding = {
       ticker: 'AAPL',
@@ -49,7 +57,7 @@ describe('HoldingsTable', () => {
 
     expect(screen.getByText('Apple')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Apple/ })).not.toBeInTheDocument()
-    expect(screen.getByText('$40.00')).toBeInTheDocument()
+    expect(screen.getAllByText('$40.00').length).toBeGreaterThan(0)
   })
 
   it('links an authenticated scoped holding to its detail page', () => {
@@ -81,6 +89,7 @@ describe('HoldingsTable', () => {
       remaining_cost_basis: '500',
       current_price: '120',
       current_value: '600',
+      current_value_change: '15',
       unrealized_profit_loss: '100',
       groups: [
         { source_group_id: 'source-1', name: '모음통장', color: '#4f46e5', remaining_quantity: '3' },
@@ -106,6 +115,7 @@ describe('HoldingsTable', () => {
       remaining_cost_basis: '650000',
       current_price: '120',
       current_value: '780000',
+      current_value_change: '-13000',
       unrealized_profit_loss: '130000',
       groups: [],
     }
@@ -113,8 +123,58 @@ describe('HoldingsTable', () => {
     render(<HoldingsTable holdings={[dashboardHolding]} displayCurrency="KRW" />)
 
     expect(screen.getByText('$120.00')).toBeInTheDocument()
-    expect(screen.getByText('₩780,000')).toBeInTheDocument()
+    expect(screen.getAllByText('₩780,000').length).toBeGreaterThan(0)
     expect(screen.queryByText('$780,000.00')).not.toBeInTheDocument()
+  })
+
+  it('renders holding daily change and a total row', () => {
+    const holdings = [
+      makeHolding({
+        id: '1',
+        name: '삼성전자',
+        current_value: '750000',
+        cost_basis: '700000',
+        profit_loss: '50000',
+      }),
+      makeHolding({
+        id: '2',
+        name: 'SK하이닉스',
+        ticker: '000660',
+        current_value: '320000',
+        cost_basis: '300000',
+        profit_loss: '20000',
+      }),
+    ]
+    const dashboardRows: DashboardHoldingRow[] = holdings.map((holding, index) => ({
+      holding_id: holding.id,
+      ticker: holding.ticker,
+      name: holding.name,
+      market: holding.market,
+      currency: holding.currency,
+      quantity: holding.quantity,
+      remaining_cost_basis: holding.cost_basis,
+      current_price: holding.current_price,
+      current_value: holding.current_value,
+      current_value_change: index === 0 ? '10000' : '-5000',
+      unrealized_profit_loss: holding.profit_loss,
+      groups: [],
+    }))
+
+    render(<HoldingsTable holdings={dashboardRows} displayCurrency="KRW" />)
+
+    expect(screen.getByText('전일대비')).toBeInTheDocument()
+    expect(screen.getByText('+₩10,000')).toBeInTheDocument()
+    expect(screen.getByText('합계')).toBeInTheDocument()
+    expect(screen.getByText('+₩5,000')).toBeInTheDocument()
+    expect(screen.getByText('₩1,070,000')).toBeInTheDocument()
+    expect(screen.getByText('+7.00%')).toBeInTheDocument()
+  })
+
+  it('renders remaining principal as the 원금 column', () => {
+    render(<HoldingsTable holdings={[makeHolding()]} />)
+
+    expect(screen.getByText('원금')).toBeInTheDocument()
+    expect(screen.getAllByText('₩700,000').length).toBeGreaterThan(0)
   })
 
   it('renders empty state with link when no holdings', () => {
@@ -127,6 +187,14 @@ describe('HoldingsTable', () => {
     render(<HoldingsTable holdings={[makeHolding()]} />)
     expect(screen.getByText('삼성전자')).toBeInTheDocument()
     expect(screen.getByText(/005930/)).toBeInTheDocument()
+  })
+
+  it('keeps the sticky holding name column compact on mobile', () => {
+    render(<HoldingsTable holdings={[makeHolding({ name: '아주긴종목명이있는삼성전자우선주' })]} />)
+
+    expect(screen.getByText(/^종목/).closest('th')).toHaveClass('w-[9rem]')
+    expect(screen.getByText('아주긴종목명이있는삼성전자우선주')).toHaveClass('truncate')
+    expect(screen.getByText(/005930/).closest('td')).toHaveClass('max-w-[9rem]')
   })
 
   it('renders — for null current_price', () => {
@@ -150,16 +218,16 @@ describe('HoldingsTable', () => {
     expect(link).toHaveAttribute('href', '/holdings/abc123')
   })
 
-  it('shows positive P&L in green', () => {
+  it('shows positive P&L in red (Korean convention)', () => {
     render(<HoldingsTable holdings={[makeHolding({ profit_loss_pct: '7.14' })]} />)
-    const pctCell = screen.getByText('+7.14%')
-    expect(pctCell).toHaveClass('text-green-600')
+    const pctCell = screen.getAllByText('+7.14%')[0]
+    expect(pctCell).toHaveClass('text-red-500')
   })
 
-  it('shows negative P&L in red', () => {
+  it('shows negative P&L in blue (Korean convention)', () => {
     render(<HoldingsTable holdings={[makeHolding({ profit_loss_pct: '-3.50' })]} />)
-    const pctCell = screen.getByText('-3.50%')
-    expect(pctCell).toHaveClass('text-red-500')
+    const pctCell = screen.getAllByText('-3.50%')[0]
+    expect(pctCell).toHaveClass('text-blue-500')
   })
 
   it('re-renders without crash when name column header clicked', () => {
@@ -175,5 +243,54 @@ describe('HoldingsTable', () => {
 
     fireEvent.click(screen.getByText(/^종목/))
     expect(screen.getByText('삼성전자')).toBeInTheDocument()
+  })
+
+  it('sorts every holding table column from its header', () => {
+    const holdings: DashboardHoldingRow[] = [
+      {
+        holding_id: '1',
+        name: '카카오',
+        ticker: '035720',
+        market: 'KRX',
+        currency: 'KRW',
+        quantity: '3',
+        remaining_cost_basis: '150000',
+        current_price: '51000',
+        current_value: '153000',
+        current_value_change: '-1000',
+        unrealized_profit_loss: '3000',
+        groups: [],
+      },
+      {
+        holding_id: '2',
+        name: '삼성전자',
+        ticker: '005930',
+        market: 'KRX',
+        currency: 'KRW',
+        quantity: '1',
+        remaining_cost_basis: '70000',
+        current_price: '73000',
+        current_value: '73000',
+        current_value_change: '5000',
+        unrealized_profit_loss: '3000',
+        groups: [],
+      },
+    ]
+    render(<HoldingsTable holdings={holdings} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /수량/ }))
+    expect(visibleRowNames()).toEqual(['삼성전자', '카카오'])
+
+    fireEvent.click(screen.getByRole('button', { name: /평균매수가/ }))
+    expect(visibleRowNames()).toEqual(['카카오', '삼성전자'])
+
+    fireEvent.click(screen.getByRole('button', { name: /원금/ }))
+    expect(visibleRowNames()).toEqual(['삼성전자', '카카오'])
+
+    fireEvent.click(screen.getByRole('button', { name: /현재가/ }))
+    expect(visibleRowNames()).toEqual(['카카오', '삼성전자'])
+
+    fireEvent.click(screen.getByRole('button', { name: /전일대비/ }))
+    expect(visibleRowNames()).toEqual(['삼성전자', '카카오'])
   })
 })

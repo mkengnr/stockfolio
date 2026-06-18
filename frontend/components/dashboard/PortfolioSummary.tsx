@@ -23,22 +23,39 @@ function SummaryCard({ title, value, sub, subColor }: SummaryCardProps) {
 }
 
 type Props =
-  | { summary: SummaryPayload; displayCurrency?: never; holdings?: never }
-  | { summary: DashboardSummary; displayCurrency: DisplayCurrency; holdings?: never }
-  | { holdings: Holding[]; summary?: never; displayCurrency?: never }
+  | { summary: SummaryPayload; displayCurrency?: never; holdings?: never; hideZeroPrincipalMetrics?: never }
+  | { summary: DashboardSummary; displayCurrency: DisplayCurrency; holdings?: never; hideZeroPrincipalMetrics?: boolean }
+  | { holdings: Holding[]; summary?: never; displayCurrency?: never; hideZeroPrincipalMetrics?: never }
 
 export function PortfolioSummary(props: Props) {
   if (props.summary) {
     if ('currencies' in props.summary) return <ScopedSummary summary={props.summary} />
-    return <DashboardSummaryCards summary={props.summary} displayCurrency={props.displayCurrency ?? 'KRW'} />
+    return (
+      <DashboardSummaryCards
+        summary={props.summary}
+        displayCurrency={props.displayCurrency ?? 'KRW'}
+        hideZeroPrincipalMetrics={props.hideZeroPrincipalMetrics ?? false}
+      />
+    )
   }
   return <LegacySummary holdings={props.holdings} />
 }
 
-function DashboardSummaryCards({ summary, displayCurrency }: { summary: DashboardSummary; displayCurrency: DisplayCurrency }) {
+function DashboardSummaryCards({
+  summary,
+  displayCurrency,
+  hideZeroPrincipalMetrics,
+}: {
+  summary: DashboardSummary
+  displayCurrency: DisplayCurrency
+  hideZeroPrincipalMetrics: boolean
+}) {
+  const hidePrincipalMetrics = hideZeroPrincipalMetrics && parseNumeric(summary.total_invested_principal) === 0
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-5">
-      <SummaryCard title="투자원금" value={displayCurrencyValue(summary.total_invested_principal, displayCurrency)} />
+      {!hidePrincipalMetrics && (
+        <SummaryCard title="투자원금" value={displayCurrencyValue(summary.total_invested_principal, displayCurrency)} />
+      )}
       <SummaryCard title="잔여원금" value={displayCurrencyValue(summary.total_cost_basis, displayCurrency)} />
       <SummaryCard title="평가금액" value={displayCurrencyValue(summary.total_current_value, displayCurrency)} />
       <SummaryCard
@@ -52,17 +69,21 @@ function DashboardSummaryCards({ summary, displayCurrency }: { summary: Dashboar
         sub={formatPercent(summary.total_unrealized_profit_loss_pct)}
         subColor={profitColor(summary.total_unrealized_profit_loss)}
       />
-      <SummaryCard
-        title="총손익"
-        value={displayCurrencyValue(summary.total_profit_loss, displayCurrency)}
-        sub="평가금액 - 투자원금"
-        subColor={profitColor(summary.total_profit_loss)}
-      />
-      <SummaryCard
-        title="총손익률"
-        value={formatPercent(summary.total_profit_loss_pct)}
-        subColor={profitColor(summary.total_profit_loss_pct)}
-      />
+      {!hidePrincipalMetrics && (
+        <>
+          <SummaryCard
+            title="총손익"
+            value={displayCurrencyValue(summary.total_profit_loss, displayCurrency)}
+            sub="평가금액 - 투자원금"
+            subColor={profitColor(summary.total_profit_loss)}
+          />
+          <SummaryCard
+            title="총손익률"
+            value={formatPercent(summary.total_profit_loss_pct)}
+            subColor={profitColor(summary.total_profit_loss_pct)}
+          />
+        </>
+      )}
     </div>
   )
 }
@@ -115,6 +136,12 @@ function displayCurrency(value: string | null, currency: Currency) {
 
 function displayCurrencyValue(value: string | null, currency: DisplayCurrency) {
   return value === null ? '—' : formatCurrency(value, currency)
+}
+
+function parseNumeric(value: string | null) {
+  if (value === null) return null
+  const numeric = parseFloat(value)
+  return Number.isFinite(numeric) ? numeric : null
 }
 
 function LegacySummary({ holdings }: { holdings: Holding[] }) {

@@ -8,6 +8,7 @@ type DashboardChartMetric = 'value' | 'principal' | 'profit'
 type ChartPoint = { time: string; value: number }
 type ColoredChartPoint = ChartPoint & { color: string }
 type CurrencyChartSeries = Record<LegacyMeasure, ChartPoint[]>
+type ChartVisibleRange = { from: string; to: string } | null
 
 export interface DashboardBuiltChartSeries {
   id: string
@@ -36,6 +37,7 @@ type DashboardProps = {
   compositionRows: DashboardHistoryRow[]
   includeComposition: boolean
   displayCurrency: DisplayCurrency
+  visibleRange: ChartVisibleRange
   series?: never
 }
 
@@ -50,6 +52,7 @@ const legacyColors: Record<Currency, Record<LegacyMeasure, string>> = {
 }
 
 const dashboardColors = ['#4f46e5', '#059669', '#dc2626', '#d97706', '#7c3aed', '#0891b2', '#be123c']
+const dashboardChartRightPadding = 2
 
 const legacyFieldByMeasure = {
   value: 'total_value',
@@ -59,7 +62,7 @@ const legacyFieldByMeasure = {
 
 const dashboardFieldByMetric = {
   value: 'total_value',
-  principal: 'total_invested_principal',
+  principal: 'total_cost_basis',
   profit: 'total_profit_loss',
 } as const
 
@@ -116,7 +119,7 @@ export function buildIntegratedDashboardChartData(
 ): IntegratedDashboardChartData {
   const orderedSelectedRows = [...selectedRows].sort((left, right) => left.snapshot_date.localeCompare(right.snapshot_date))
   const value = buildPointsForField(orderedSelectedRows, 'total_value')
-  const principal = buildPointsForField(orderedSelectedRows, 'total_invested_principal')
+  const principal = buildPointsForField(orderedSelectedRows, 'total_cost_basis')
   const dailyProfitChange: ColoredChartPoint[] = []
   let previousProfit: number | null = null
 
@@ -127,7 +130,7 @@ export function buildIntegratedDashboardChartData(
       dailyProfitChange.push({
         time: row.snapshot_date,
         value: change,
-        color: change >= 0 ? '#16a34a' : '#dc2626',
+        color: change >= 0 ? '#dc2626' : '#2563eb',
       })
     }
     if (currentProfit !== null) previousProfit = currentProfit
@@ -154,7 +157,7 @@ export function getDashboardChartLayout() {
 
 function buildPointsForField(
   rows: DashboardHistoryRow[],
-  field: 'total_value' | 'total_invested_principal',
+  field: 'total_value' | 'total_invested_principal' | 'total_cost_basis',
 ): ChartPoint[] {
   return rows.flatMap((row) => {
     const value = parseNullableNumber(row[field])
@@ -197,6 +200,7 @@ export function PortfolioChart(props: Props) {
         compositionRows={props.compositionRows}
         includeComposition={props.includeComposition}
         displayCurrency={props.displayCurrency}
+        visibleRange={props.visibleRange}
       />
     )
   }
@@ -208,11 +212,13 @@ function DashboardPortfolioChart({
   compositionRows,
   includeComposition,
   displayCurrency,
+  visibleRange,
 }: {
   rows: DashboardHistoryRow[]
   compositionRows: DashboardHistoryRow[]
   includeComposition: boolean
   displayCurrency: DisplayCurrency
+  visibleRange: ChartVisibleRange
 }) {
   const mainContainerRef = useRef<HTMLDivElement>(null)
   const profitContainerRef = useRef<HTMLDivElement>(null)
@@ -241,6 +247,16 @@ function DashboardPortfolioChart({
         vertLines: { color: '#f3f4f6' },
         horzLines: { color: '#f3f4f6' },
       }
+      const applyChartVisibleRange = (chart: ReturnType<typeof createChart>) => {
+        if (visibleRange) {
+          chart.timeScale().setVisibleRange({
+            from: visibleRange.from as import('lightweight-charts').Time,
+            to: visibleRange.to as import('lightweight-charts').Time,
+          })
+        } else {
+          chart.timeScale().fitContent()
+        }
+      }
 
       mainChart = createChart(mainContainerRef.current, {
         width: mainContainerRef.current.clientWidth,
@@ -260,8 +276,8 @@ function DashboardPortfolioChart({
           visible: false,
           borderColor: '#e5e7eb',
           fixLeftEdge: true,
-          fixRightEdge: true,
-          rightOffset: 1,
+          fixRightEdge: false,
+          rightOffset: dashboardChartRightPadding,
         },
       })
 
@@ -279,7 +295,12 @@ function DashboardPortfolioChart({
           scaleMargins: { top: 0.1, bottom: 0.1 },
         },
         rightPriceScale: { visible: false },
-        timeScale: { borderColor: '#e5e7eb', fixLeftEdge: true, fixRightEdge: true },
+        timeScale: {
+          borderColor: '#e5e7eb',
+          fixLeftEdge: true,
+          fixRightEdge: false,
+          rightOffset: dashboardChartRightPadding,
+        },
       })
 
       ;[...chartData.composition].reverse().forEach((item, reverseIndex) => {
@@ -331,8 +352,8 @@ function DashboardPortfolioChart({
         color: point.color,
       })))
 
-      mainChart.timeScale().fitContent()
-      profitChart.timeScale().fitContent()
+      applyChartVisibleRange(mainChart)
+      applyChartVisibleRange(profitChart)
       let syncingTimeScale = false
       const syncRange = (
         target: ReturnType<typeof import('lightweight-charts')['createChart']>,
@@ -349,9 +370,11 @@ function DashboardPortfolioChart({
       handleResize = () => {
         if (mainContainerRef.current && mainChart) {
           mainChart.applyOptions({ width: mainContainerRef.current.clientWidth })
+          applyChartVisibleRange(mainChart)
         }
         if (profitContainerRef.current && profitChart) {
           profitChart.applyOptions({ width: profitContainerRef.current.clientWidth })
+          applyChartVisibleRange(profitChart)
         }
       }
       window.addEventListener('resize', handleResize)
@@ -363,7 +386,7 @@ function DashboardPortfolioChart({
       mainChart?.remove()
       profitChart?.remove()
     }
-  }, [chartData, hasData])
+  }, [chartData, hasData, visibleRange])
 
   if (!hasData) {
     return <div className="flex h-60 items-center justify-center text-sm text-gray-400">차트 데이터가 없습니다.</div>
@@ -374,7 +397,7 @@ function DashboardPortfolioChart({
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500">
         <strong className="text-gray-600">{displayCurrency}</strong>
         <Legend color="#312e81" label="평가금액" />
-        <Legend color="#818cf8" label="투자원금" dashed />
+        <Legend color="#818cf8" label="잔여원금" dashed />
         {chartData.composition.map((series, index) => (
           <HistogramLegend
             key={series.id}

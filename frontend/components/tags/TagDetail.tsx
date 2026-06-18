@@ -105,6 +105,9 @@ export function TagDetailView({ tagId, allHoldings }: Props) {
               <p className="text-xs text-gray-400">
                 {tag.share_requires_auth ? '🔒 로그인 필요' : '🌐 누구나 접근 가능'}
               </p>
+              <p className="text-xs text-gray-400">
+                공유 문구: {tag.share_description || '없음'}
+              </p>
               <Button variant="danger" size="sm" loading={sharingLoading} onClick={handleDisableShare}>
                 공유 비활성화
               </Button>

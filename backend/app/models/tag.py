@@ -13,6 +13,7 @@ class Tag(Base):
     name: Mapped[str] = mapped_column(String(50), nullable=False)
     color: Mapped[str] = mapped_column(String(7), nullable=False, default="#6366f1")
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    share_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     share_token: Mapped[str | None] = mapped_column(String(36), nullable=True, unique=True, index=True)
     share_requires_auth: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

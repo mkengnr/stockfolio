@@ -10,6 +10,7 @@ class TagCreateIn(BaseModel):
     name: str
     color: str = "#6366f1"
     description: str | None = None
+    share_description: str | None = None
 
     @field_validator("color")
     @classmethod
@@ -23,6 +24,7 @@ class TagUpdateIn(BaseModel):
     name: str | None = None
     color: str | None = None
     description: str | None = None
+    share_description: str | None = None
 
     @field_validator("color")
     @classmethod
@@ -56,6 +58,7 @@ class TagOut(BaseModel):
     name: str
     color: str
     description: str | None
+    share_description: str | None
     share_token: str | None
     share_requires_auth: bool
     holding_ids: list[uuid.UUID] = []
@@ -78,5 +81,6 @@ class SharedTagOut(BaseModel):
     name: str
     color: str
     description: str | None
+    share_description: str | None
     summary: TagSummary | None = None
     holding_count: int

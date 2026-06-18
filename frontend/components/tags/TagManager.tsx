@@ -16,11 +16,13 @@ export function TagManager() {
   const { data: tags, isLoading, mutate } = useSWR<Tag[]>('/api/tags', fetcher)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [shareDescription, setShareDescription] = useState('')
   const [color, setColor] = useState(DEFAULT_COLOR)
   const [creating, setCreating] = useState(false)
   const [editingTag, setEditingTag] = useState<Tag | null>(null)
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
+  const [editShareDescription, setEditShareDescription] = useState('')
   const [editColor, setEditColor] = useState(DEFAULT_COLOR)
   const [updating, setUpdating] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -38,9 +40,11 @@ export function TagManager() {
         name: trimmedName,
         color,
         ...(description.trim() && { description: description.trim() }),
+        share_description: shareDescription.trim() || null,
       })
       setName('')
       setDescription('')
+      setShareDescription('')
       setColor(DEFAULT_COLOR)
       await mutate()
     } catch (err) {
@@ -69,6 +73,7 @@ export function TagManager() {
     setEditingTag(tag)
     setEditName(tag.name)
     setEditDescription(tag.description ?? '')
+    setEditShareDescription(tag.share_description ?? '')
     setEditColor(tag.color)
     setError('')
   }
@@ -90,6 +95,7 @@ export function TagManager() {
         name: trimmedName,
         color: editColor,
         description: editDescription.trim(),
+        share_description: editShareDescription.trim() || null,
       })
       setEditingTag(null)
       await mutate()
@@ -138,6 +144,13 @@ export function TagManager() {
               />
             </label>
           </div>
+          <Input
+            label="공유 페이지 문구"
+            value={shareDescription}
+            maxLength={200}
+            placeholder="공유 링크 상단에만 표시할 문구"
+            onChange={(event) => setShareDescription(event.target.value)}
+          />
           {error && <p className="text-sm text-red-500">{error}</p>}
           <Button className="self-start" type="submit" loading={creating} disabled={!name.trim()}>
             그룹 생성
@@ -174,6 +187,13 @@ export function TagManager() {
                 />
               </label>
             </div>
+            <Input
+              label="공유 페이지 문구 수정"
+              value={editShareDescription}
+              maxLength={200}
+              placeholder="공유 링크 상단에만 표시할 문구"
+              onChange={(event) => setEditShareDescription(event.target.value)}
+            />
             {error && <p className="text-sm text-red-500">{error}</p>}
             <div className="flex gap-2">
               <Button type="submit" loading={updating} disabled={!editName.trim()}>

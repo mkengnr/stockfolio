@@ -10,6 +10,7 @@ const sharedHolding: SharedDashboardHolding = {
   remaining_cost_basis: '200',
   current_price: '120',
   current_value: '240',
+  current_value_change: '10',
   unrealized_profit_loss: '40',
   groups: [{ name: '급여', color: '#4f46e5', remaining_quantity: '2' }],
 }
@@ -20,6 +21,7 @@ describe('toDashboardHolding', () => {
 
     expect(row.holding_id).toBeNull()
     expect(row.ticker).toBe('AAPL')
+    expect(row.current_value_change).toBe('10')
     expect(row.groups).toEqual([
       { name: '급여', color: '#4f46e5', remaining_quantity: '2', source_group_id: null },
     ])

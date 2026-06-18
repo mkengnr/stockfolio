@@ -28,6 +28,15 @@ class TestTagCreateIn:
         t = TagCreateIn(name="Tech")
         assert t.color == "#6366f1"
 
+    def test_accepts_share_description_separately_from_description(self):
+        t = TagCreateIn(
+            name="Tech",
+            description="내부 설명",
+            share_description="공유 화면 문구",
+        )
+        assert t.description == "내부 설명"
+        assert t.share_description == "공유 화면 문구"
+
 
 class TestTagUpdateIn:
     def test_all_none_is_valid(self):
@@ -38,6 +47,11 @@ class TestTagUpdateIn:
     def test_none_color_passes_through(self):
         t = TagUpdateIn(color=None)
         assert t.color is None
+
+    def test_can_clear_share_description(self):
+        t = TagUpdateIn(share_description=None)
+        assert "share_description" in t.model_fields_set
+        assert t.share_description is None
 
     def test_invalid_color_still_raises(self):
         with pytest.raises(ValidationError):

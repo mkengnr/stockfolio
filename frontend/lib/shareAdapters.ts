@@ -29,6 +29,7 @@ export function toDashboardHolding(holding: SharedDashboardHolding): DashboardHo
     remaining_cost_basis: holding.remaining_cost_basis,
     current_price: holding.current_price,
     current_value: holding.current_value,
+    current_value_change: holding.current_value_change,
     unrealized_profit_loss: holding.unrealized_profit_loss,
     groups: holding.groups.map((badge) => ({ ...badge, source_group_id: null })),
   }

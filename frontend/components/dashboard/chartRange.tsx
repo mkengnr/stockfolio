@@ -26,6 +26,20 @@ export function filterHistoryRowsByChartRange<T extends { snapshot_date: string 
   return rows.filter((row) => row.snapshot_date >= cutoffDate)
 }
 
+export function getChartVisibleDateRange<T extends { snapshot_date: string }>(
+  rows: T[],
+  range: ChartRange,
+): { from: string; to: string } | null {
+  if (range === 'all' || rows.length === 0) return null
+  const latestDate = rows.reduce((latest, row) => (
+    row.snapshot_date > latest ? row.snapshot_date : latest
+  ), rows[0].snapshot_date)
+  return {
+    from: subtractMonthsFromIsoDate(latestDate, chartRangeMonths[range]),
+    to: latestDate,
+  }
+}
+
 function subtractMonthsFromIsoDate(value: string, months: number) {
   const [year, month, day] = value.split('-').map(Number)
   const date = new Date(Date.UTC(year, month - 1, day))

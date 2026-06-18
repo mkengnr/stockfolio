@@ -18,15 +18,18 @@ jest.mock('@/components/dashboard/PortfolioChart', () => ({
     historyRows,
     compositionRows,
     includeComposition,
+    visibleRange,
   }: {
     historyRows: Array<{ group_name: string; snapshot_date: string }>
     compositionRows: Array<{ group_name: string; snapshot_date: string }>
     includeComposition: boolean
+    visibleRange: { from: string; to: string } | null
   }) => (
     <div data-testid="portfolio-chart">
       selected:{historyRows.map((row) => row.group_name).join(',')}|
       composition:{includeComposition ? compositionRows.map((row) => row.group_name).join(',') : 'off'}|
-      dates:{historyRows.map((row) => row.snapshot_date).join(',')}
+      dates:{historyRows.map((row) => row.snapshot_date).join(',')}|
+      visible:{visibleRange ? `${visibleRange.from}..${visibleRange.to}` : 'all'}
     </div>
   ),
 }))
@@ -219,8 +222,9 @@ describe('DashboardOverview', () => {
     )
 
     expect(screen.getByText('전체 수익현황')).toBeInTheDocument()
-    expect(screen.getByLabelText('그룹 필터')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /그룹 필터/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '새로고침' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '+ 종목 등록' })).not.toBeInTheDocument()
     expect(screen.getByText('그룹별 수익현황')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '거래내역 보기' })).toHaveAttribute('href', '/transactions')
     expect(screen.getByText('AAPL 시세를 가져오지 못했습니다.')).toBeInTheDocument()
@@ -230,8 +234,9 @@ describe('DashboardOverview', () => {
     expect(screen.queryByRole('button', { name: '전체+그룹' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '전체만' })).not.toBeInTheDocument()
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:전체')
-    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('composition:전체,모음통장,장기투자')
-    expect(screen.getByTestId('portfolio-chart')).not.toHaveTextContent('2026-02-01')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('composition:전체,모음통장,전체,모음통장,장기투자')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('2026-02-01')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:2026-03-01..2026-06-01')
     expect(screen.getByText(/마지막 조회/)).toHaveTextContent('2026-06-06')
     expect(screen.getByText(/현재가 기준/)).toHaveTextContent('2026-06-05')
     expect(screen.getByText(/비교 기준\(직전 거래일\)/)).toHaveTextContent('2026-06-04')
@@ -250,11 +255,13 @@ describe('DashboardOverview', () => {
     )
 
     expect(screen.getByRole('button', { name: '3개월' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByTestId('portfolio-chart')).not.toHaveTextContent('2026-02-01')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('2026-02-01')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:2026-03-01..2026-06-01')
 
     fireEvent.click(screen.getByRole('button', { name: '전체' }))
 
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('2026-02-01')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:all')
   })
 
   it('filters the dashboard by selected group', () => {
@@ -306,17 +313,18 @@ describe('DashboardOverview', () => {
       />,
     )
 
-    fireEvent.change(screen.getByLabelText('그룹 필터'), { target: { value: 'source:source-1' } })
+    fireEvent.click(screen.getByRole('button', { name: /그룹 필터/ }))
+    fireEvent.click(screen.getByRole('option', { name: /모음통장/ }))
 
     expect(screen.getByText('모음통장 수익현황')).toBeInTheDocument()
     expect(screen.getByText('삼성전자')).toBeInTheDocument()
     expect(screen.getByText('0.25')).toBeInTheDocument()
-    expect(screen.getByText('₩145,000')).toBeInTheDocument()
+    expect(screen.getAllByText('₩145,000').length).toBeGreaterThan(0)
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:모음통장')
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('composition:off')
   })
 
-  it('passes the selected range to both selected and composition chart rows', () => {
+  it('keeps all chart rows while passing the selected range as the visible window', () => {
     render(
       <DashboardOverview
         dashboard={dashboard}
@@ -328,8 +336,10 @@ describe('DashboardOverview', () => {
       />,
     )
 
-    expect(screen.getByTestId('portfolio-chart')).not.toHaveTextContent('2026-02-01')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('2026-02-01')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:2026-03-01..2026-06-01')
     fireEvent.click(screen.getByRole('button', { name: '전체' }))
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('2026-02-01')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:all')
   })
 })
