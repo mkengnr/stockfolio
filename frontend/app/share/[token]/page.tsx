@@ -101,7 +101,7 @@ function SharedGroupView({
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="font-semibold text-gray-900">포트폴리오 변화</h2>
-            <p className="mt-1 text-sm text-gray-500">평가금액, 잔여원금, 그룹 구성과 일별손익을 표시합니다.</p>
+            <p className="mt-1 text-sm text-gray-500">평가금액, 원금(투자/잔여 선택), 그룹 구성과 일별손익을 표시합니다.</p>
           </div>
           <ChartRangeControl value={chartRange} onChange={setChartRange} />
         </div>

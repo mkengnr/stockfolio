@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Currency, DashboardHistoryGroupKind, DashboardHistoryRow, DisplayCurrency, ScopedPortfolioHistory } from '@/lib/types'
 
 type LegacyMeasure = 'value' | 'cost' | 'profit'
@@ -42,6 +42,7 @@ type DashboardProps = {
   displayCurrency: DisplayCurrency
   visibleRange: ChartVisibleRange
   showGainLossBand?: boolean
+  referenceDefault?: ChartReferenceField | 'auto'
   series?: never
 }
 
@@ -116,17 +117,31 @@ export function buildDashboardChartSeries(
     .sort(compareDashboardSeries)
 }
 
+export type ChartReferenceField = 'invested' | 'cost'
+
+const referenceRowField: Record<ChartReferenceField, 'total_invested_principal' | 'total_cost_basis'> = {
+  invested: 'total_invested_principal',
+  cost: 'total_cost_basis',
+}
+
+export const referenceFieldLabel: Record<ChartReferenceField, string> = {
+  invested: '투자원금',
+  cost: '잔여원금',
+}
+
 export function buildIntegratedDashboardChartData(
   allRows: DashboardHistoryRow[],
   selectedRows: DashboardHistoryRow[],
-  options: { includeComposition: boolean },
+  options: { includeComposition: boolean; referenceField?: ChartReferenceField },
 ): IntegratedDashboardChartData {
+  const referenceField = options.referenceField ?? 'cost'
+  const principalRowField = referenceRowField[referenceField]
   const orderedSelectedRows = [...selectedRows].sort((left, right) => left.snapshot_date.localeCompare(right.snapshot_date))
   const value = buildPointsForField(orderedSelectedRows, 'total_value')
-  const principal = buildPointsForField(orderedSelectedRows, 'total_cost_basis')
+  const principal = buildPointsForField(orderedSelectedRows, principalRowField)
   const gainLossBand = orderedSelectedRows.flatMap((row) => {
     const rowValue = parseNullableNumber(row.total_value)
-    const rowPrincipal = parseNullableNumber(row.total_cost_basis)
+    const rowPrincipal = parseNullableNumber(row[principalRowField])
     return rowValue === null || rowPrincipal === null
       ? []
       : [{ time: row.snapshot_date, value: rowValue, principal: rowPrincipal }]
@@ -177,6 +192,25 @@ function buildPointsForField(
   })
 }
 
+// 투자원금이 "있는지" — 가장 최근의 non-null 투자원금이 0이 아니면 존재로 본다
+// (전량 재투자 시 투자원금이 0이 되어 차트 기준선으로 의미가 없어짐).
+export function hasInvestedPrincipal(rows: DashboardHistoryRow[]): boolean {
+  const ordered = [...rows].sort((left, right) => left.snapshot_date.localeCompare(right.snapshot_date))
+  for (let i = ordered.length - 1; i >= 0; i -= 1) {
+    const value = parseNullableNumber(ordered[i].total_invested_principal)
+    if (value !== null) return value !== 0
+  }
+  return false
+}
+
+function resolveReferenceDefault(
+  referenceDefault: ChartReferenceField | 'auto',
+  rows: DashboardHistoryRow[],
+): ChartReferenceField {
+  if (referenceDefault === 'auto') return hasInvestedPrincipal(rows) ? 'invested' : 'cost'
+  return referenceDefault
+}
+
 function buildCumulativeComposition(rows: DashboardHistoryRow[]): DashboardBuiltChartSeries[] {
   const individualSeries = buildDashboardChartSeries(
     rows.filter((row) => row.group_kind === 'source' || row.group_kind === 'unclassified'),
@@ -214,6 +248,7 @@ export function PortfolioChart(props: Props) {
         displayCurrency={props.displayCurrency}
         visibleRange={props.visibleRange}
         showGainLossBand={props.showGainLossBand ?? false}
+        referenceDefault={props.referenceDefault ?? 'auto'}
       />
     )
   }
@@ -227,6 +262,7 @@ function DashboardPortfolioChart({
   displayCurrency,
   visibleRange,
   showGainLossBand,
+  referenceDefault,
 }: {
   rows: DashboardHistoryRow[]
   compositionRows: DashboardHistoryRow[]
@@ -234,12 +270,15 @@ function DashboardPortfolioChart({
   displayCurrency: DisplayCurrency
   visibleRange: ChartVisibleRange
   showGainLossBand: boolean
+  referenceDefault: ChartReferenceField | 'auto'
 }) {
   const mainContainerRef = useRef<HTMLDivElement>(null)
   const profitContainerRef = useRef<HTMLDivElement>(null)
+  const [referenceOverride, setReferenceOverride] = useState<ChartReferenceField | null>(null)
+  const referenceField = referenceOverride ?? resolveReferenceDefault(referenceDefault, rows)
   const chartData = useMemo(
-    () => buildIntegratedDashboardChartData(compositionRows, rows, { includeComposition }),
-    [compositionRows, includeComposition, rows],
+    () => buildIntegratedDashboardChartData(compositionRows, rows, { includeComposition, referenceField }),
+    [compositionRows, includeComposition, rows, referenceField],
   )
   const hasData = chartData.value.length > 0 || chartData.principal.length > 0
 
@@ -417,7 +456,7 @@ function DashboardPortfolioChart({
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500">
         <strong className="text-gray-600">{displayCurrency}</strong>
         <Legend color="#312e81" label="평가금액" />
-        <Legend color="#818cf8" label="잔여원금" dashed />
+        <ReferenceFieldToggle value={referenceField} onChange={setReferenceOverride} />
         {chartData.composition.map((series, index) => (
           <HistogramLegend
             key={series.id}
@@ -704,6 +743,38 @@ function HistogramLegend({ color, label }: { color: string; label: string }) {
     <span className="flex items-center gap-1">
       <span className="inline-block h-2.5 w-3 rounded-sm" style={{ backgroundColor: color }} />
       {label}
+    </span>
+  )
+}
+
+const referenceToggleOptions: ChartReferenceField[] = ['invested', 'cost']
+
+function ReferenceFieldToggle({
+  value,
+  onChange,
+}: {
+  value: ChartReferenceField
+  onChange: (value: ChartReferenceField) => void
+}) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="inline-block w-4 border-t-2 border-dashed" style={{ borderColor: '#818cf8' }} />
+      <span className="inline-flex rounded-md border border-gray-200 bg-white p-0.5" role="group" aria-label="원금 기준">
+        {referenceToggleOptions.map((option) => (
+          <button
+            key={option}
+            type="button"
+            aria-pressed={value === option}
+            className={[
+              'rounded px-1.5 py-0.5 text-xs font-medium transition-colors',
+              value === option ? 'bg-indigo-50 text-indigo-700' : 'text-gray-400 hover:text-gray-600',
+            ].join(' ')}
+            onClick={() => onChange(option)}
+          >
+            {referenceFieldLabel[option]}
+          </button>
+        ))}
+      </span>
     </span>
   )
 }

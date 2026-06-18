@@ -3,6 +3,7 @@ import {
   buildIntegratedDashboardChartData,
   formatDashboardMoney,
   getDashboardChartLayout,
+  hasInvestedPrincipal,
 } from '@/components/dashboard/PortfolioChart'
 import type { DashboardHistoryRow } from '@/lib/types'
 
@@ -163,6 +164,35 @@ describe('buildIntegratedDashboardChartData', () => {
       { time: '2026-06-01', value: 350000 },
       { time: '2026-06-02', value: 380000 },
     ])
+  })
+
+  it('builds the principal line and gain/loss band from 투자원금 when referenceField is invested', () => {
+    const selectedRows = rows.filter((row) => row.group_kind === 'total')
+
+    const data = buildIntegratedDashboardChartData(rows, selectedRows, {
+      includeComposition: false,
+      referenceField: 'invested',
+    })
+
+    expect(data.principal).toEqual([
+      { time: '2026-06-01', value: 600000 },
+      { time: '2026-06-02', value: 600000 },
+    ])
+    expect(data.gainLossBand).toEqual([
+      { time: '2026-06-01', value: 750000, principal: 600000 },
+      { time: '2026-06-02', value: 780000, principal: 600000 },
+    ])
+  })
+
+  it('detects whether 투자원금 is available for the auto default', () => {
+    const withPrincipal = rows.filter((row) => row.group_kind === 'total')
+    expect(hasInvestedPrincipal(withPrincipal)).toBe(true)
+
+    const zeroed = withPrincipal.map((row) => ({ ...row, total_invested_principal: '0' }))
+    expect(hasInvestedPrincipal(zeroed)).toBe(false)
+
+    const missing = withPrincipal.map((row) => ({ ...row, total_invested_principal: null }))
+    expect(hasInvestedPrincipal(missing)).toBe(false)
   })
 
   it('excludes composition for a selected group and formats rounded money', () => {

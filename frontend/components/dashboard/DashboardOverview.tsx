@@ -139,6 +139,7 @@ export function DashboardOverview({
           includeComposition={!selectedGroup}
           displayCurrency={displayCurrency}
           visibleRange={chartVisibleRange}
+          referenceDefault="invested"
         />
       </Card>
 
