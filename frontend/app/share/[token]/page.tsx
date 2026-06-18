@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { HoldingsTable } from '@/components/dashboard/HoldingsTable'
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart'
 import { PortfolioSummary } from '@/components/dashboard/PortfolioSummary'
+import { ChartRangeControl, filterHistoryRowsByChartRange, type ChartRange } from '@/components/dashboard/chartRange'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardTitle } from '@/components/ui/Card'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
@@ -15,6 +16,7 @@ import type { SharedGroup, SharedTag } from '@/lib/types'
 
 function SharedGroupView({ group }: { group: SharedGroup }) {
   const [selectedGroupKey, setSelectedGroupKey] = useState('total')
+  const [chartRange, setChartRange] = useState<ChartRange>('3m')
   useEffect(() => {
     // A reloaded share may drop (or later reintroduce) the selected key;
     // reset instead of silently keeping stale state.
@@ -38,6 +40,14 @@ function SharedGroupView({ group }: { group: SharedGroup }) {
   const selectedHistoryRows = historyRows.filter((row) => (
     selectedGroup ? row.group_id === selectedGroup.key : row.group_kind === 'total'
   ))
+  const chartHistoryRows = useMemo(
+    () => filterHistoryRowsByChartRange(selectedHistoryRows, chartRange),
+    [selectedHistoryRows, chartRange],
+  )
+  const compositionHistoryRows = useMemo(
+    () => filterHistoryRowsByChartRange(historyRows, chartRange),
+    [historyRows, chartRange],
+  )
 
   return (
     <SharedLayout name={group.name} color={group.color} description={group.description}>
@@ -68,11 +78,16 @@ function SharedGroupView({ group }: { group: SharedGroup }) {
         </div>
       </section>
       <Card>
-        <h2 className="font-semibold text-gray-900">포트폴리오 변화</h2>
-        <p className="mb-4 mt-1 text-sm text-gray-500">평가금액, 투자원금, 그룹 구성과 일별손익을 표시합니다.</p>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-semibold text-gray-900">포트폴리오 변화</h2>
+            <p className="mt-1 text-sm text-gray-500">평가금액, 투자원금, 그룹 구성과 일별손익을 표시합니다.</p>
+          </div>
+          <ChartRangeControl value={chartRange} onChange={setChartRange} />
+        </div>
         <PortfolioChart
-          historyRows={selectedHistoryRows}
-          compositionRows={historyRows}
+          historyRows={chartHistoryRows}
+          compositionRows={compositionHistoryRows}
           includeComposition={!selectedGroup}
           displayCurrency={group.dashboard.display_currency}
         />

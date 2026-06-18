@@ -261,6 +261,7 @@ function DashboardPortfolioChart({
           borderColor: '#e5e7eb',
           fixLeftEdge: true,
           fixRightEdge: true,
+          rightOffset: 1,
         },
       })
 
