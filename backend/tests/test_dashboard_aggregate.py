@@ -579,6 +579,8 @@ def test_dashboard_daily_change_uses_previous_trading_day_not_today_snapshot(mon
 
     assert response.summary.total_current_value == Decimal("1500")
     assert response.summary.total_current_value_change == Decimal("400")
+    # 전일대비율 = 400 / 전일 평가금액(1100) × 100
+    assert round(response.summary.total_current_value_change_pct, 2) == Decimal("36.36")
 
 
 def test_dashboard_daily_change_uses_current_price_date_as_reference_day(monkeypatch):

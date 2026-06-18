@@ -17,10 +17,13 @@ export interface DashboardBuiltChartSeries {
   points: ChartPoint[]
 }
 
+type GainLossBandPoint = { time: string; value: number; principal: number }
+
 export interface IntegratedDashboardChartData {
   value: ChartPoint[]
   principal: ChartPoint[]
   dailyProfitChange: ColoredChartPoint[]
+  gainLossBand: GainLossBandPoint[]
   composition: DashboardBuiltChartSeries[]
 }
 
@@ -38,6 +41,7 @@ type DashboardProps = {
   includeComposition: boolean
   displayCurrency: DisplayCurrency
   visibleRange: ChartVisibleRange
+  showGainLossBand?: boolean
   series?: never
 }
 
@@ -120,6 +124,13 @@ export function buildIntegratedDashboardChartData(
   const orderedSelectedRows = [...selectedRows].sort((left, right) => left.snapshot_date.localeCompare(right.snapshot_date))
   const value = buildPointsForField(orderedSelectedRows, 'total_value')
   const principal = buildPointsForField(orderedSelectedRows, 'total_cost_basis')
+  const gainLossBand = orderedSelectedRows.flatMap((row) => {
+    const rowValue = parseNullableNumber(row.total_value)
+    const rowPrincipal = parseNullableNumber(row.total_cost_basis)
+    return rowValue === null || rowPrincipal === null
+      ? []
+      : [{ time: row.snapshot_date, value: rowValue, principal: rowPrincipal }]
+  })
   const dailyProfitChange: ColoredChartPoint[] = []
   let previousProfit: number | null = null
 
@@ -140,6 +151,7 @@ export function buildIntegratedDashboardChartData(
     value,
     principal,
     dailyProfitChange,
+    gainLossBand,
     composition: options.includeComposition ? buildCumulativeComposition(allRows) : [],
   }
 }
@@ -201,6 +213,7 @@ export function PortfolioChart(props: Props) {
         includeComposition={props.includeComposition}
         displayCurrency={props.displayCurrency}
         visibleRange={props.visibleRange}
+        showGainLossBand={props.showGainLossBand ?? false}
       />
     )
   }
@@ -213,12 +226,14 @@ function DashboardPortfolioChart({
   includeComposition,
   displayCurrency,
   visibleRange,
+  showGainLossBand,
 }: {
   rows: DashboardHistoryRow[]
   compositionRows: DashboardHistoryRow[]
   includeComposition: boolean
   displayCurrency: DisplayCurrency
   visibleRange: ChartVisibleRange
+  showGainLossBand: boolean
 }) {
   const mainContainerRef = useRef<HTMLDivElement>(null)
   const profitContainerRef = useRef<HTMLDivElement>(null)
@@ -340,6 +355,11 @@ function DashboardPortfolioChart({
       })
       principalSeries.setData(chartData.principal.map(toLightweightPoint))
 
+      if (showGainLossBand && chartData.gainLossBand.length > 1) {
+        const band = new GainLossBandPrimitive(chartData.gainLossBand)
+        valueSeries.attachPrimitive(band as unknown as Parameters<typeof valueSeries.attachPrimitive>[0])
+      }
+
       const profitSeries = profitChart.addHistogramSeries({
         priceScaleId: 'left',
         priceLineVisible: false,
@@ -386,7 +406,7 @@ function DashboardPortfolioChart({
       mainChart?.remove()
       profitChart?.remove()
     }
-  }, [chartData, hasData, visibleRange])
+  }, [chartData, hasData, visibleRange, showGainLossBand])
 
   if (!hasData) {
     return <div className="flex h-60 items-center justify-center text-sm text-gray-400">차트 데이터가 없습니다.</div>
@@ -424,6 +444,149 @@ function toLightweightPoint(point: ChartPoint) {
   return {
     time: point.time as import('lightweight-charts').Time,
     value: point.value,
+  }
+}
+
+// Faintly shade the gap between the 평가금액 and 잔여원금 lines: red where the
+// portfolio is in profit, blue where it is at a loss — the way most brokerage
+// apps visualise unrealised P&L. lightweight-charts has no native "fill between
+// two moving lines" series, so we draw it as a series primitive that, on every
+// redraw, projects both lines to pixels and fills the polygon (splitting any
+// segment where the lines cross so each side gets its own colour).
+const gainBandColor = 'rgba(220, 38, 38, 0.14)'
+const lossBandColor = 'rgba(37, 99, 235, 0.14)'
+
+type BandRenderScope = {
+  context: CanvasRenderingContext2D
+  horizontalPixelRatio: number
+  verticalPixelRatio: number
+}
+type BandRenderTarget = { useBitmapCoordinateSpace: (callback: (scope: BandRenderScope) => void) => void }
+type BandCoordSeries = { priceToCoordinate: (price: number) => number | null }
+type BandCoordChart = { timeScale: () => { timeToCoordinate: (time: unknown) => number | null } }
+
+class GainLossBandPrimitive {
+  private _chart: BandCoordChart | null = null
+  private _series: BandCoordSeries | null = null
+  private readonly _data: GainLossBandPoint[]
+  private readonly _paneViews: GainLossBandPaneView[]
+
+  constructor(data: GainLossBandPoint[]) {
+    this._data = data
+    this._paneViews = [new GainLossBandPaneView(this)]
+  }
+
+  attached(param: { chart: BandCoordChart; series: BandCoordSeries }) {
+    this._chart = param.chart
+    this._series = param.series
+  }
+
+  detached() {
+    this._chart = null
+    this._series = null
+  }
+
+  updateAllViews() {}
+
+  paneViews() {
+    return this._paneViews
+  }
+
+  get chart() {
+    return this._chart
+  }
+
+  get series() {
+    return this._series
+  }
+
+  get data() {
+    return this._data
+  }
+}
+
+class GainLossBandPaneView {
+  private readonly _renderer: GainLossBandRenderer
+
+  constructor(source: GainLossBandPrimitive) {
+    this._renderer = new GainLossBandRenderer(source)
+  }
+
+  zOrder() {
+    return 'top' as const
+  }
+
+  renderer() {
+    return this._renderer
+  }
+}
+
+type ProjectedBandPoint = { x: number; valueY: number; principalY: number; gain: boolean }
+
+class GainLossBandRenderer {
+  constructor(private readonly _source: GainLossBandPrimitive) {}
+
+  draw(target: BandRenderTarget) {
+    const chart = this._source.chart
+    const series = this._source.series
+    if (!chart || !series) return
+    const timeScale = chart.timeScale()
+    const points = this._source.data
+      .map((point): ProjectedBandPoint | null => {
+        const x = timeScale.timeToCoordinate(point.time as unknown)
+        const valueY = series.priceToCoordinate(point.value)
+        const principalY = series.priceToCoordinate(point.principal)
+        return x === null || valueY === null || principalY === null
+          ? null
+          : { x, valueY, principalY, gain: point.value >= point.principal }
+      })
+      .filter((point): point is ProjectedBandPoint => point !== null)
+    if (points.length < 2) return
+
+    target.useBitmapCoordinateSpace(({ context: ctx, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
+      const fill = (color: string, corners: Array<[number, number]>) => {
+        ctx.beginPath()
+        corners.forEach(([x, y], index) => {
+          const px = x * hr
+          const py = y * vr
+          if (index === 0) ctx.moveTo(px, py)
+          else ctx.lineTo(px, py)
+        })
+        ctx.closePath()
+        ctx.fillStyle = color
+        ctx.fill()
+      }
+
+      for (let i = 0; i < points.length - 1; i += 1) {
+        const a = points[i]
+        const b = points[i + 1]
+        const gapA = a.valueY - a.principalY
+        const gapB = b.valueY - b.principalY
+        const crosses = gapA !== 0 && gapB !== 0 && gapA < 0 !== gapB < 0
+        if (!crosses) {
+          fill(a.gain ? gainBandColor : lossBandColor, [
+            [a.x, a.valueY],
+            [b.x, b.valueY],
+            [b.x, b.principalY],
+            [a.x, a.principalY],
+          ])
+          continue
+        }
+        const t = gapA / (gapA - gapB)
+        const xCross = a.x + t * (b.x - a.x)
+        const yCross = a.valueY + t * (b.valueY - a.valueY)
+        fill(a.gain ? gainBandColor : lossBandColor, [
+          [a.x, a.valueY],
+          [xCross, yCross],
+          [a.x, a.principalY],
+        ])
+        fill(b.gain ? gainBandColor : lossBandColor, [
+          [xCross, yCross],
+          [b.x, b.valueY],
+          [b.x, b.principalY],
+        ])
+      }
+    })
   }
 }
 

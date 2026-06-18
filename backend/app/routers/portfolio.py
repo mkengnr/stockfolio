@@ -488,6 +488,7 @@ def _empty_dashboard_summary() -> DashboardSummary:
         total_cost_basis=Decimal(0),
         total_current_value=Decimal(0),
         total_current_value_change=None,
+        total_current_value_change_pct=None,
         total_unrealized_profit_loss=Decimal(0),
         total_unrealized_profit_loss_pct=None,
         total_profit_loss=Decimal(0),
@@ -608,7 +609,17 @@ def _dashboard_summary_with_value_change(
         if summary.total_current_value is not None and previous_value is not None
         else None
     )
-    return summary.model_copy(update={"total_current_value_change": current_value_change})
+    current_value_change_pct = (
+        current_value_change / previous_value * 100
+        if current_value_change is not None and previous_value is not None and previous_value != 0
+        else None
+    )
+    return summary.model_copy(
+        update={
+            "total_current_value_change": current_value_change,
+            "total_current_value_change_pct": current_value_change_pct,
+        }
+    )
 
 
 def _dashboard_groups_with_value_change(

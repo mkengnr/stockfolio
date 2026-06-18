@@ -139,6 +139,7 @@ describe('PortfolioSummary', () => {
       total_cost_basis: '50881120',
       total_current_value: '72788995',
       total_current_value_change: '-6598515',
+      total_current_value_change_pct: '-8.31',
       total_unrealized_profit_loss: '21907875',
       total_unrealized_profit_loss_pct: '43.06',
       total_profit_loss: '19449675',
@@ -148,5 +149,24 @@ describe('PortfolioSummary', () => {
     render(<PortfolioSummary summary={summary} displayCurrency="KRW" />)
 
     expect(screen.getByText('-₩6,598,515')).toHaveClass('whitespace-nowrap')
+  })
+
+  it('shows a daily-change percentage under the 전일대비 card', () => {
+    const summary: DashboardSummary = {
+      total_invested_principal: '600000',
+      total_cost_basis: '700000',
+      total_current_value: '750000',
+      total_current_value_change: '15000',
+      total_current_value_change_pct: '2.04',
+      total_unrealized_profit_loss: '50000',
+      total_unrealized_profit_loss_pct: '7.14',
+      total_profit_loss: '150000',
+      total_profit_loss_pct: '25',
+    }
+
+    render(<PortfolioSummary summary={summary} displayCurrency="KRW" />)
+
+    expect(screen.getByText('전일대비')).toBeInTheDocument()
+    expect(screen.getByText('+2.04%')).toBeInTheDocument()
   })
 })

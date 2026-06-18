@@ -150,6 +150,10 @@ describe('buildIntegratedDashboardChartData', () => {
     expect(data.dailyProfitChange).toEqual([
       { time: '2026-06-02', value: 15000, color: '#dc2626' },
     ])
+    expect(data.gainLossBand).toEqual([
+      { time: '2026-06-01', value: 750000, principal: 700000 },
+      { time: '2026-06-02', value: 780000, principal: 700000 },
+    ])
     expect(data.composition.map((series) => series.kind)).toEqual(['source', 'unclassified'])
     expect(data.composition[0].points).toEqual([
       { time: '2026-06-01', value: 300000 },

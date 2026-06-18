@@ -111,6 +111,7 @@ function SharedGroupView({
           includeComposition={!selectedGroup}
           displayCurrency={group.dashboard.display_currency}
           visibleRange={chartVisibleRange}
+          showGainLossBand
         />
       </Card>
       <Card noPad>

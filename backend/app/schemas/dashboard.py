@@ -25,6 +25,7 @@ class DashboardSummary(BaseModel):
     total_cost_basis: Decimal | None
     total_current_value: Decimal | None
     total_current_value_change: Decimal | None = None
+    total_current_value_change_pct: Decimal | None = None
     total_unrealized_profit_loss: Decimal | None = None
     total_unrealized_profit_loss_pct: Decimal | None = None
     total_profit_loss: Decimal | None
