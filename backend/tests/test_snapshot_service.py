@@ -216,6 +216,36 @@ async def test_rebuild_fetches_values_before_invalidating_derived_snapshots():
 
 
 @pytest.mark.asyncio
+async def test_rebuild_deletes_from_start_when_edit_moves_date_earlier():
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.flush = AsyncMock()
+    holding = SimpleNamespace(
+        id=uuid.uuid4(),
+        ticker="005930",
+        transactions=[_tx(TransactionType.BUY, "10", date(2024, 1, 2))],
+    )
+
+    with patch(
+        "app.services.snapshot_service.stock_fetcher.get_price_history",
+        return_value=[_bar(date(2024, 1, 2), "100"), _bar(date(2024, 1, 3), "110")],
+    ):
+        await rebuild_holding_snapshots(
+            db,
+            holding,
+            start=date(2024, 1, 2),
+            invalidate_start=date(2024, 1, 4),
+            end=date(2024, 1, 3),
+        )
+
+    statement = db.execute.await_args.args[0]
+    compiled = str(statement.compile(compile_kwargs={"literal_binds": True}))
+    # Must clear from the earliest re-inserted date (start), not the later
+    # invalidate_start, otherwise re-inserting 01-02/01-03 duplicates rows.
+    assert "daily_snapshots.snapshot_date >= '2024-01-02'" in compiled
+
+
+@pytest.mark.asyncio
 async def test_rebuild_does_not_delete_snapshots_when_history_fetch_fails():
     db = MagicMock()
     db.execute = AsyncMock()

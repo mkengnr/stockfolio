@@ -139,11 +139,18 @@ async def rebuild_holding_snapshots(
         bars = await asyncio.to_thread(stock_fetcher.get_price_history, holding.ticker, start, end)
         values = _build_snapshot_values(holding.transactions, bars)
 
-    if invalidate_start is not None:
+    # Delete from the earliest affected date so every date we are about to
+    # re-insert (from `start`) is cleared first; otherwise a backdated-earlier
+    # edit (start < invalidate_start) re-inserts existing rows and violates the
+    # (holding_id, snapshot_date) unique constraint.
+    delete_start = invalidate_start
+    if start is not None and (delete_start is None or start < delete_start):
+        delete_start = start
+    if delete_start is not None:
         await db.execute(
             delete(DailySnapshot)
             .where(DailySnapshot.holding_id == holding.id)
-            .where(DailySnapshot.snapshot_date >= invalidate_start)
+            .where(DailySnapshot.snapshot_date >= delete_start)
         )
 
     for value in values:
