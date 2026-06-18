@@ -245,17 +245,26 @@ describe('SharePage', () => {
     expect(mockedShareApi.getLegacy).not.toHaveBeenCalled()
   })
 
-  it('places share refresh in the page header, not the sticky toolbar', async () => {
+  it('keeps share refresh in the sticky toolbar so it stays visible on scroll', async () => {
     mockedShareApi.getGroup.mockResolvedValue(sharedGroup)
     render(<SharePage params={{ token: 'token-1' }} />)
 
     await screen.findByText('Apple')
 
     const refreshButton = screen.getByRole('button', { name: '새로고침' })
-    expect(refreshButton.closest('[data-testid="share-sticky-toolbar"]')).toBeNull()
-    const heading = screen.getByRole('heading', { name: '포트폴리오 공유' })
-    const headerRow = heading.parentElement?.parentElement
-    expect(headerRow?.contains(refreshButton)).toBe(true)
+    expect(refreshButton.closest('[data-testid="share-sticky-toolbar"]')).not.toBeNull()
+  })
+
+  it('shows the sticky refresh toolbar even when there is no group filter', async () => {
+    mockedShareApi.getGroup.mockRejectedValue(apiError(404))
+    mockedShareApi.getLegacy.mockResolvedValue(legacyTag)
+    render(<SharePage params={{ token: 'token-2' }} />)
+
+    await screen.findByText('기존 태그')
+
+    const refreshButton = screen.getByRole('button', { name: '새로고침' })
+    expect(refreshButton.closest('[data-testid="share-sticky-toolbar"]')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: /그룹 필터/ })).not.toBeInTheDocument()
   })
 
   it('hides principal-based shared summary cards when invested principal is zero', async () => {
