@@ -87,10 +87,13 @@ async def _send_otp(email: str, code: str) -> None:
     message = EmailMessage()
     message["From"] = settings.smtp_from or settings.smtp_user
     message["To"] = email
-    message["Subject"] = "Your Stockfolio verification code"
+    message["Subject"] = "[Stockfolio] 인증 코드 안내"
     message.set_content(
-        f"Your Stockfolio verification code is: {code}\n\n"
-        f"This code expires in {settings.otp_expire_minutes} minutes."
+        f"안녕하세요, Stockfolio입니다.\n\n"
+        f"요청하신 인증 코드는 다음과 같습니다: {code}\n\n"
+        f"이 코드는 {settings.otp_expire_minutes}분 후 만료됩니다.\n"
+        f"본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다.\n\n"
+        f"문의 사항은 담당자(오*환)에게 문의해 주세요."
     )
 
     try:

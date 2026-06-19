@@ -37,8 +37,10 @@ async def test_send_otp_uses_configured_smtp(smtp_settings):
     message = send.await_args.args[0]
     assert message["From"] == "sender@example.com"
     assert message["To"] == "user@example.com"
-    assert message["Subject"] == "Your Stockfolio verification code"
-    assert "123456" in message.get_content()
+    assert message["Subject"] == "[Stockfolio] 인증 코드 안내"
+    content = message.get_content()
+    assert "123456" in content
+    assert "오*환" in content
     assert send.await_args.kwargs == {
         "hostname": "smtp.gmail.com",
         "port": 587,

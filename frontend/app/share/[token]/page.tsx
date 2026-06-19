@@ -203,7 +203,7 @@ function SharedLayout({
         </div>
       </div>
       {children}
-      <p className="mt-8 text-center text-xs text-gray-300">powered by stockfolio</p>
+      <p className="mt-8 text-center text-xs text-gray-300">powered by realchoi</p>
     </div>
   )
 }
