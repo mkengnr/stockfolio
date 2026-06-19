@@ -29,6 +29,11 @@ describe('AuthForm — email step', () => {
     expect(screen.getByRole('button', { name: '인증 코드 받기' })).toBeInTheDocument()
   })
 
+  it('shows the contact guidance on the email step', () => {
+    render(<AuthForm />)
+    expect(screen.getByText(/문의 사항은 담당자\(오\*환\)에게 문의/)).toBeInTheDocument()
+  })
+
   it('advances to OTP step after email submit', async () => {
     mockedAuthApi.requestOtp.mockResolvedValue({} as never)
     render(<AuthForm />)
@@ -119,5 +124,10 @@ describe('AuthForm — OTP step', () => {
     await renderAtOtpStep()
     await userEvent.click(screen.getByText('이메일 다시 입력'))
     expect(screen.getByLabelText('이메일')).toBeInTheDocument()
+  })
+
+  it('keeps the contact guidance on the OTP step', async () => {
+    await renderAtOtpStep()
+    expect(screen.getByText(/문의 사항은 담당자\(오\*환\)에게 문의/)).toBeInTheDocument()
   })
 })

@@ -178,6 +178,10 @@ export function AuthForm({ returnTo }: { returnTo?: string }) {
           </button>
         </form>
       )}
+
+      <p className="mt-8 text-center text-xs text-gray-400">
+        문의 사항은 담당자(오*환)에게 문의해 주세요.
+      </p>
     </div>
   )
 }
