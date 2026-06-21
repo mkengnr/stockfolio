@@ -207,6 +207,10 @@ export const portfolioApi = {
     `/api/portfolio/dashboard?display_currency=${displayCurrency}`,
   dashboard: (displayCurrency: DisplayCurrency = 'KRW') =>
     request<DashboardResponse>(portfolioApi.dashboardPath(displayCurrency)),
+  labelDashboardPath: (labelId: string, displayCurrency: DisplayCurrency = 'KRW') =>
+    `/api/portfolio/labels/${labelId}/dashboard?display_currency=${displayCurrency}`,
+  labelDashboard: (labelId: string, displayCurrency: DisplayCurrency = 'KRW') =>
+    request<DashboardResponse>(portfolioApi.labelDashboardPath(labelId, displayCurrency)),
   summaryPath: (scope: PortfolioScope) => portfolioPath('summary', scope),
   holdingsPath: (scope: PortfolioScope) => portfolioPath('holdings', scope),
   historyPath: (scope: PortfolioScope) => portfolioPath('history', scope),
