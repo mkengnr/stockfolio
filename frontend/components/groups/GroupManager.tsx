@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { fetcher, groupsApi } from '@/lib/api'
+import { GROUP_COLOR_PRESETS } from '@/lib/groupColors'
 import type { GroupKind, Label, RollupGroup, SourceGroup } from '@/lib/types'
 
 type Group = SourceGroup | RollupGroup | Label
@@ -245,18 +246,50 @@ export function GroupManager() {
   )
 }
 
-function ColorInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+export function ColorInput({
+  label,
+  value,
+  onChange,
+  usedColors = [],
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  usedColors?: string[]
+}) {
+  const used = new Set(usedColors.map((color) => color.trim().toLowerCase()))
   return (
-    <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+    <div className="flex flex-col gap-2 text-sm font-medium text-gray-700">
       {label}
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label={`${label} 프리셋`}>
+        {GROUP_COLOR_PRESETS.map((preset) => {
+          const selected = preset.value.toLowerCase() === value.toLowerCase()
+          const isUsed = used.has(preset.value.toLowerCase())
+          return (
+            <button
+              key={preset.value}
+              type="button"
+              aria-label={`${preset.name}${isUsed ? ' (사용중)' : ''}`}
+              aria-pressed={selected}
+              onClick={() => onChange(preset.value)}
+              className={`relative h-7 w-7 rounded-md border transition-transform ${
+                selected ? 'ring-2 ring-offset-1 ring-gray-700' : 'border-gray-200'
+              } ${isUsed ? 'opacity-40' : ''}`}
+              style={{ backgroundColor: preset.value }}
+            >
+              {isUsed && <span aria-hidden className="absolute inset-0 flex items-center justify-center text-[11px] text-white">✓</span>}
+            </button>
+          )
+        })}
+      </div>
       <input
         aria-label={label}
         type="color"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-[38px] w-20 cursor-pointer rounded-lg border border-gray-300 bg-white px-1"
+        className="h-[34px] w-16 cursor-pointer rounded-lg border border-gray-300 bg-white px-1"
       />
-    </label>
+    </div>
   )
 }
 

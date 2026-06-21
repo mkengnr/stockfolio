@@ -1,7 +1,8 @@
 import '@testing-library/jest-dom'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import useSWR from 'swr'
-import { GroupManager } from '@/components/groups/GroupManager'
+import { ColorInput, GroupManager } from '@/components/groups/GroupManager'
+import { GROUP_COLOR_PRESETS } from '@/lib/groupColors'
 import { groupsApi } from '@/lib/api'
 import type { Label, RollupGroup, SourceGroup } from '@/lib/types'
 
@@ -176,5 +177,30 @@ describe('GroupManager', () => {
       `${window.location.origin}/share/public-token`,
     )
     expect(screen.getByRole('link', { name: '월급 공유 링크 열기' })).toHaveAttribute('target', '_blank')
+  })
+})
+
+describe('ColorInput presets', () => {
+  it('renders a swatch button per preset and selects on click', () => {
+    const onChange = jest.fn()
+    render(<ColorInput label="그룹 색상" value="#6366f1" onChange={onChange} usedColors={[]} />)
+
+    const second = GROUP_COLOR_PRESETS[1]
+    const swatch = screen.getByRole('button', { name: new RegExp(second.name) })
+    fireEvent.click(swatch)
+    expect(onChange).toHaveBeenCalledWith(second.value)
+  })
+
+  it('marks used colors as 사용중', () => {
+    render(
+      <ColorInput
+        label="그룹 색상"
+        value="#6366f1"
+        onChange={() => {}}
+        usedColors={[GROUP_COLOR_PRESETS[0].value]}
+      />,
+    )
+    const firstSwatch = screen.getByRole('button', { name: new RegExp(`${GROUP_COLOR_PRESETS[0].name}.*사용중`) })
+    expect(firstSwatch).toBeInTheDocument()
   })
 })
