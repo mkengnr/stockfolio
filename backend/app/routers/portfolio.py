@@ -1365,6 +1365,7 @@ async def build_shared_portfolio_dashboard(
     db: AsyncSession,
     user_id: uuid.UUID,
     scope: PortfolioScope,
+    display_currency: DisplayCurrency = "KRW",
 ) -> DashboardResponse:
     holdings = _scope_relevant_holdings(
         await _load_scoped_holdings(db, user_id, include_inactive=True),
@@ -1386,7 +1387,7 @@ async def build_shared_portfolio_dashboard(
     price_dates = {ticker: quote.price_date for ticker, quote in price_quotes.items()}
     exchange_rate = None
     warnings: list[str] = []
-    if any(holding.currency == Currency.USD for holding in holdings):
+    if display_currency == "KRW" and any(holding.currency == Currency.USD for holding in holdings):
         try:
             exchange_rate = await asyncio.to_thread(get_usd_krw_rate)
         except Exception as exc:
@@ -1401,7 +1402,7 @@ async def build_shared_portfolio_dashboard(
         rollup_groups=[],
         current_prices=prices,
         current_price_dates=price_dates,
-        display_currency="KRW",
+        display_currency=display_currency,
         exchange_rate=exchange_rate,
         warnings=warnings,
         scope=scope,
@@ -1556,6 +1557,17 @@ async def get_portfolio_dashboard(
         current_user.id,
         display_currency,
     )
+
+
+@router.get("/labels/{label_id}/dashboard", response_model=DashboardResponse)
+async def get_label_dashboard(
+    label_id: uuid.UUID,
+    display_currency: DisplayCurrency = "KRW",
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    scope = await resolve_portfolio_scope(db, current_user.id, "label", label_id)
+    return await build_shared_portfolio_dashboard(db, current_user.id, scope, display_currency)
 
 
 @router.get("/summary", response_model=PortfolioSummaryOut)
