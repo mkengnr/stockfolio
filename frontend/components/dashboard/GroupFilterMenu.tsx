@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 export interface GroupFilterOption {
   value: string
   label: string
+  section?: string
 }
 
 interface Props {
@@ -40,23 +41,30 @@ export function GroupFilterMenu({ value, options, onChange, className }: Props) 
       {open && (
         <div className="absolute right-0 z-50 mt-2 max-h-72 w-full min-w-56 overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
           <div role="listbox" aria-label="그룹 필터" className="outline-none">
-            {options.map((option) => {
+            {options.map((option, index) => {
               const active = option.value === selected?.value
+              const showHeader = option.section && option.section !== options[index - 1]?.section
               return (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="option"
-                  aria-selected={active}
-                  onClick={() => select(option.value)}
-                  className={cn(
-                    'flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors',
-                    active ? 'bg-brand-50 font-medium text-brand-700' : 'text-gray-700 hover:bg-gray-50',
+                <div key={option.value}>
+                  {showHeader && (
+                    <div className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                      {option.section}
+                    </div>
                   )}
-                >
-                  <span className="truncate">{option.label}</span>
-                  {active && <span className="text-xs" aria-hidden>*</span>}
-                </button>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => select(option.value)}
+                    className={cn(
+                      'flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors',
+                      active ? 'bg-brand-50 font-medium text-brand-700' : 'text-gray-700 hover:bg-gray-50',
+                    )}
+                  >
+                    <span className="truncate">{option.label}</span>
+                    {active && <span className="text-xs" aria-hidden>*</span>}
+                  </button>
+                </div>
               )
             })}
           </div>
