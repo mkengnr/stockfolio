@@ -1,13 +1,13 @@
 'use client'
 
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import useSWR from 'swr'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { fetcher, groupsApi } from '@/lib/api'
-import { GROUP_COLOR_PRESETS } from '@/lib/groupColors'
+import { GROUP_COLOR_PRESETS, recommendGroupColor } from '@/lib/groupColors'
 import type { GroupKind, Label, RollupGroup, SourceGroup } from '@/lib/types'
 
 type Group = SourceGroup | RollupGroup | Label
@@ -42,10 +42,19 @@ export function GroupManager() {
   const [error, setError] = useState('')
 
   const sources = sourcesState.data ?? []
+  const rollups = rollupsState.data ?? []
+  const labels = labelsState.data ?? []
+  const usedColors = [...sources, ...rollups, ...labels].map((group) => group.color)
+  const recommendedColor = recommendGroupColor(usedColors)
+
+  useEffect(() => {
+    setColor((current) => (current === DEFAULT_COLOR ? recommendedColor : current))
+  }, [recommendedColor])
+
   const sections: Array<{ kind: GroupKind; groups: Group[]; loading: boolean; error: unknown; onRetry: () => Promise<unknown> }> = [
     { kind: 'sources', groups: sources, loading: sourcesState.isLoading, error: sourcesState.error, onRetry: sourcesState.mutate },
-    { kind: 'rollups', groups: rollupsState.data ?? [], loading: rollupsState.isLoading, error: rollupsState.error, onRetry: rollupsState.mutate },
-    { kind: 'labels', groups: labelsState.data ?? [], loading: labelsState.isLoading, error: labelsState.error, onRetry: labelsState.mutate },
+    { kind: 'rollups', groups: rollups, loading: rollupsState.isLoading, error: rollupsState.error, onRetry: rollupsState.mutate },
+    { kind: 'labels', groups: labels, loading: labelsState.isLoading, error: labelsState.error, onRetry: labelsState.mutate },
   ]
 
   async function refresh(targetKind: GroupKind) {
@@ -72,7 +81,7 @@ export function GroupManager() {
       setName('')
       setDescription('')
       setShareDescription('')
-      setColor(DEFAULT_COLOR)
+      setColor(recommendGroupColor(usedColors))
       setMemberIds([])
       await refresh(kind)
     } catch (err) {
@@ -185,7 +194,7 @@ export function GroupManager() {
           <div className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
             <Input label="그룹 이름" value={name} maxLength={50} onChange={(event) => setName(event.target.value)} />
             <Input label="설명" value={description} maxLength={200} onChange={(event) => setDescription(event.target.value)} />
-            <ColorInput label="그룹 색상" value={color} onChange={setColor} />
+            <ColorInput label="그룹 색상" value={color} onChange={setColor} usedColors={usedColors} />
           </div>
           <Input
             label="공유 페이지 문구"

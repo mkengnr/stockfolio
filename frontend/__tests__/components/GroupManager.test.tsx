@@ -77,7 +77,8 @@ describe('GroupManager', () => {
 
     expect(mockedGroupsApi.create).toHaveBeenCalledWith('rollups', {
       name: '가족 자산',
-      color: '#6366f1',
+      // beforeEach has all groups using '#6366f1', so recommendedColor → '#3b82f6' (second preset)
+      color: '#3b82f6',
       share_description: '가족용 공유 화면',
       source_group_ids: ['source-1'],
     })
@@ -145,6 +146,32 @@ describe('GroupManager', () => {
     expect(mutateRollups).toHaveBeenCalled()
     expect(mutateSources).not.toHaveBeenCalled()
     expect(mutateLabels).not.toHaveBeenCalled()
+  })
+
+  it('defaults a new group color to the first unused preset', () => {
+    mockedUseSWR.mockImplementation((key: string) => ({
+      '/api/groups/sources': {
+        data: [{ ...source, color: '#6366f1' }],
+        isLoading: false,
+        mutate: mutateSources,
+      },
+      '/api/groups/rollups': {
+        data: [{ ...rollup, color: '#3b82f6' }],
+        isLoading: false,
+        mutate: mutateRollups,
+      },
+      '/api/groups/labels': {
+        data: [{ ...label, color: '#3b82f6' }],
+        isLoading: false,
+        mutate: mutateLabels,
+      },
+    })[key])
+    render(<GroupManager />)
+
+    // '#6366f1' and '#3b82f6' are used; first unused preset is '#06b6d4' (시안)
+    const colorInput = document.querySelector('input[type="color"][aria-label="그룹 색상"]') as HTMLInputElement
+    expect(colorInput).not.toBeNull()
+    expect(colorInput.value).toBe('#06b6d4')
   })
 
   it('shows access indicators and copy and open controls for active share links', () => {
