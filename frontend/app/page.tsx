@@ -7,7 +7,7 @@ import { DashboardLoadError } from '@/components/dashboard/DashboardLoadError'
 import { AuthGuard } from '@/components/layout/AuthGuard'
 import { PageLoader } from '@/components/ui/LoadingSpinner'
 import { fetcher, portfolioApi } from '@/lib/api'
-import type { DashboardResponse, DisplayCurrency } from '@/lib/types'
+import type { DashboardResponse, DisplayCurrency, Label } from '@/lib/types'
 
 function DashboardContent() {
   const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>('KRW')
@@ -15,6 +15,7 @@ function DashboardContent() {
   const { data: dashboard, error, isLoading, isValidating, mutate } = useSWR<DashboardResponse>(portfolioApi.dashboardPath(displayCurrency), fetcher, {
     refreshInterval: 30_000,
   })
+  const { data: labels } = useSWR<Label[]>('/api/groups/labels', fetcher)
 
   useEffect(() => {
     if (dashboard) setLastUpdated(new Date())
@@ -31,6 +32,7 @@ function DashboardContent() {
       onRefresh={() => void mutate()}
       isRefreshing={isValidating}
       lastUpdated={lastUpdated}
+      labels={labels ?? []}
     />
   )
 }

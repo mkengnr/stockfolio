@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import useSWR from 'swr'
 import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -11,7 +12,8 @@ import { HoldingsTable } from './HoldingsTable'
 import { PortfolioChart } from './PortfolioChart'
 import { PortfolioSummary } from './PortfolioSummary'
 import { ChartRangeControl, getChartVisibleDateRange, type ChartRange } from './chartRange'
-import type { DashboardGroupSummary, DashboardResponse, DisplayCurrency } from '@/lib/types'
+import { portfolioApi } from '@/lib/api'
+import type { DashboardGroupSummary, DashboardResponse, DisplayCurrency, Label } from '@/lib/types'
 
 interface Props {
   dashboard: DashboardResponse
@@ -20,6 +22,7 @@ interface Props {
   onRefresh: () => void
   isRefreshing: boolean
   lastUpdated: Date | null
+  labels?: Label[]
 }
 
 export function DashboardOverview({
@@ -29,16 +32,38 @@ export function DashboardOverview({
   onRefresh,
   isRefreshing,
   lastUpdated,
+  labels = [],
 }: Props) {
   const [chartRange, setChartRange] = useState<ChartRange>('3m')
   const [selectedGroupKey, setSelectedGroupKey] = useState('total')
   const selectedGroup = dashboard.groups.find((group) => groupKey(group) === selectedGroupKey) ?? null
+
+  // Only reset to 'total' when the selected key is a group key that no longer exists.
+  // Do NOT reset label: keys — they aren't in dashboard.groups by design.
   useEffect(() => {
-    if (selectedGroupKey !== 'total' && !dashboard.groups.some((group) => groupKey(group) === selectedGroupKey)) {
+    if (
+      selectedGroupKey !== 'total' &&
+      !selectedGroupKey.startsWith('label:') &&
+      !dashboard.groups.some((group) => groupKey(group) === selectedGroupKey)
+    ) {
       setSelectedGroupKey('total')
     }
   }, [dashboard.groups, selectedGroupKey])
-  const selectedName = selectedGroup?.name ?? '전체'
+
+  // ── Label-mode SWR ──────────────────────────────────────────────────────────
+  const selectedLabelId = selectedGroupKey.startsWith('label:')
+    ? selectedGroupKey.slice('label:'.length)
+    : null
+  const { data: labelDashboard, isLoading: labelLoading } = useSWR(
+    selectedLabelId ? ['label-dashboard', selectedLabelId, displayCurrency] : null,
+    () => portfolioApi.labelDashboard(selectedLabelId as string, displayCurrency),
+  )
+  const labelMode = selectedLabelId !== null
+
+  // ── Derived values (non-label) ───────────────────────────────────────────────
+  const selectedName = labelMode
+    ? (labels.find((l) => l.id === selectedLabelId)?.name ?? '라벨')
+    : (selectedGroup?.name ?? '전체')
   const selectedSummary = selectedGroup?.summary ?? dashboard.summary
   const selectedHistoryRows = useMemo(
     () => dashboard.history.rows.filter((row) => {
@@ -49,17 +74,37 @@ export function DashboardOverview({
     }),
     [dashboard.history.rows, selectedGroup],
   )
-  const chartVisibleRange = useMemo(
-    () => getChartVisibleDateRange(selectedHistoryRows, chartRange),
-    [selectedHistoryRows, chartRange],
-  )
   const selectedHoldings = selectedGroup?.holdings ?? dashboard.holdings
+
+  // ── Active values (switch to label data when in label mode) ─────────────────
+  const activeSummary = labelMode ? (labelDashboard?.summary ?? dashboard.summary) : selectedSummary
+  const activeHoldings = labelMode ? (labelDashboard?.holdings ?? []) : selectedHoldings
+  const activeHistoryRows = useMemo(
+    () =>
+      labelMode
+        ? (labelDashboard?.history.rows ?? []).filter((row) => row.group_kind === 'total')
+        : selectedHistoryRows,
+    [labelMode, labelDashboard, selectedHistoryRows],
+  )
+
+  const chartVisibleRange = useMemo(
+    () => getChartVisibleDateRange(activeHistoryRows, chartRange),
+    [activeHistoryRows, chartRange],
+  )
+
+  // ── Group filter options (with sections; labels in their own section) ─────────
   const groupFilterOptions = useMemo(
     () => [
       { value: 'total', label: '전체' },
-      ...dashboard.groups.map((group) => ({ value: groupKey(group), label: group.name })),
+      ...dashboard.groups
+        .filter((g) => g.kind === 'source' || g.kind === 'unclassified')
+        .map((g) => ({ value: groupKey(g), label: g.name, section: '출처 그룹' })),
+      ...dashboard.groups
+        .filter((g) => g.kind === 'combined')
+        .map((g) => ({ value: groupKey(g), label: g.name, section: '통합 그룹' })),
+      ...labels.map((label) => ({ value: `label:${label.id}`, label: label.name, section: '라벨' })),
     ],
-    [dashboard.groups],
+    [dashboard.groups, labels],
   )
 
   return (
@@ -110,7 +155,10 @@ export function DashboardOverview({
           <h2 className="font-semibold text-gray-900">{selectedName} 수익현황</h2>
           <p className="mt-1 text-sm text-gray-500">손익은 평가손익과 총손익을 분리해서 표시합니다.</p>
         </div>
-        <PortfolioSummary summary={selectedSummary} displayCurrency={displayCurrency} />
+        {labelLoading && (
+          <p className="text-sm text-gray-400">라벨 데이터를 불러오는 중…</p>
+        )}
+        <PortfolioSummary summary={activeSummary} displayCurrency={displayCurrency} />
       </section>
 
       <section className="flex flex-col gap-3">
@@ -134,9 +182,9 @@ export function DashboardOverview({
           </div>
         </div>
         <PortfolioChart
-          historyRows={selectedHistoryRows}
+          historyRows={activeHistoryRows}
           compositionRows={dashboard.history.rows}
-          includeComposition={!selectedGroup}
+          includeComposition={!selectedGroup && !labelMode}
           displayCurrency={displayCurrency}
           visibleRange={chartVisibleRange}
           referenceDefault="invested"
@@ -147,7 +195,7 @@ export function DashboardOverview({
         <div className="border-b border-gray-100 px-6 py-4">
           <h2 className="font-semibold text-gray-900">보유 종목</h2>
         </div>
-        <HoldingsTable holdings={selectedHoldings} displayCurrency={displayCurrency} />
+        <HoldingsTable holdings={activeHoldings} displayCurrency={displayCurrency} />
       </Card>
 
       <div className="flex justify-end">

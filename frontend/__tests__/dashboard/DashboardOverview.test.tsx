@@ -1,9 +1,18 @@
 import '@testing-library/jest-dom'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { DashboardOverview } from '@/components/dashboard/DashboardOverview'
 import { DisplayCurrencyToggle } from '@/components/dashboard/DisplayCurrencyToggle'
 import { GroupPerformanceTable } from '@/components/dashboard/GroupPerformanceTable'
+import { portfolioApi } from '@/lib/api'
 import type { DashboardResponse } from '@/lib/types'
+
+jest.mock('@/lib/api', () => ({
+  portfolioApi: {
+    labelDashboard: jest.fn(),
+    dashboardPath: jest.fn((c) => `/api/portfolio/dashboard?display_currency=${c}`),
+  },
+  fetcher: jest.fn(),
+}))
 
 jest.mock('next/link', () => {
   const MockLink = ({ children, href }: { children: React.ReactNode; href: string }) => (
@@ -345,5 +354,27 @@ describe('DashboardOverview', () => {
     fireEvent.click(screen.getByRole('button', { name: '전체' }))
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('2026-02-01')
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:all')
+  })
+
+  it('fetches the label dashboard on demand when a label is selected', async () => {
+    ;(portfolioApi.labelDashboard as jest.Mock).mockResolvedValue({
+      ...dashboard,
+      summary: { ...dashboard.summary, total_current_value: '999' },
+      groups: [],
+    })
+    render(
+      <DashboardOverview
+        dashboard={dashboard}
+        labels={[{ id: '9', name: '배당주', color: '#f59e0b' }]}
+        displayCurrency="KRW"
+        onDisplayCurrencyChange={jest.fn()}
+        onRefresh={jest.fn()}
+        isRefreshing={false}
+        lastUpdated={new Date('2026-06-05T09:00:00Z')}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /그룹 필터/ }))
+    fireEvent.click(screen.getByRole('option', { name: /배당주/ }))
+    await waitFor(() => expect(portfolioApi.labelDashboard).toHaveBeenCalledWith('9', 'KRW'))
   })
 })
