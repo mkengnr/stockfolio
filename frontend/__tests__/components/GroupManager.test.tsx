@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import useSWR from 'swr'
 import { ColorInput, GroupManager } from '@/components/groups/GroupManager'
 import { GROUP_COLOR_PRESETS } from '@/lib/groupColors'
@@ -91,11 +91,13 @@ describe('GroupManager', () => {
     jest.spyOn(window, 'confirm').mockReturnValue(true)
     render(<GroupManager />)
 
-    fireEvent.click(screen.getByRole('button', { name: '배당 수정' }))
-    fireEvent.change(screen.getByLabelText('그룹 이름 수정'), { target: { value: '핵심 배당' } })
-    fireEvent.change(screen.getByLabelText('공유 페이지 문구 수정'), { target: { value: '배당 공유 안내' } })
+    // Inline edit: find the label card and click 수정 inside it
+    const labelCard = screen.getByText('배당').closest('[data-testid="group-card"]') as HTMLElement
+    fireEvent.click(within(labelCard).getByRole('button', { name: '배당 수정' }))
+    fireEvent.change(within(labelCard).getByLabelText('그룹 이름 수정'), { target: { value: '핵심 배당' } })
+    fireEvent.change(within(labelCard).getByLabelText('공유 페이지 문구 수정'), { target: { value: '배당 공유 안내' } })
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: '수정 저장' }))
+      fireEvent.click(within(labelCard).getByRole('button', { name: '수정 저장' }))
     })
     expect(mockedGroupsApi.update).toHaveBeenCalledWith('labels', 'label-1', {
       name: '핵심 배당',
@@ -108,6 +110,32 @@ describe('GroupManager', () => {
       fireEvent.click(screen.getByRole('button', { name: '가족 삭제' }))
     })
     expect(mockedGroupsApi.delete).toHaveBeenCalledWith('rollups', 'rollup-1')
+  })
+
+  it('edits a group inline in its own card without a top edit panel', async () => {
+    ;(groupsApi.update as jest.Mock).mockResolvedValue({})
+    render(<GroupManager />)
+
+    // Find the source group card by its badge text
+    const card = screen.getByText('월급').closest('[data-testid="group-card"]') as HTMLElement
+    fireEvent.click(within(card).getByRole('button', { name: '월급 수정' }))
+
+    // The inline form should appear inside that card
+    const nameInput = within(card).getByLabelText('그룹 이름 수정') as HTMLInputElement
+    expect(nameInput).toBeInTheDocument()
+    fireEvent.change(nameInput, { target: { value: '새이름' } })
+    fireEvent.click(within(card).getByRole('button', { name: '수정 저장' }))
+
+    await waitFor(() =>
+      expect(groupsApi.update).toHaveBeenCalledWith(
+        'sources',
+        'source-1',
+        expect.objectContaining({ name: '새이름' }),
+      ),
+    )
+
+    // No separate top edit panel heading should exist for the inline case
+    expect(screen.queryByRole('heading', { name: '출처 그룹 수정' })).not.toBeInTheDocument()
   })
 
   it('enables and disables sharing for a source group', async () => {

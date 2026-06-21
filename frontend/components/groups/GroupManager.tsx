@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useState } from 'react'
 import useSWR from 'swr'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -30,12 +30,6 @@ export function GroupManager() {
   const [shareDescription, setShareDescription] = useState('')
   const [color, setColor] = useState(DEFAULT_COLOR)
   const [memberIds, setMemberIds] = useState<string[]>([])
-  const [editing, setEditing] = useState<{ kind: GroupKind; group: Group } | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editDescription, setEditDescription] = useState('')
-  const [editShareDescription, setEditShareDescription] = useState('')
-  const [editColor, setEditColor] = useState(DEFAULT_COLOR)
-  const [editMemberIds, setEditMemberIds] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
   const [updating, setUpdating] = useState(false)
   const [pendingAction, setPendingAction] = useState('')
@@ -47,9 +41,10 @@ export function GroupManager() {
   const usedColors = [...sources, ...rollups, ...labels].map((group) => group.color)
   const recommendedColor = recommendGroupColor(usedColors)
 
-  useEffect(() => {
-    setColor((current) => (current === DEFAULT_COLOR ? recommendedColor : current))
-  }, [recommendedColor])
+  // Keep the create-form color in sync with the recommended color when it
+  // hasn't been manually changed away from the default.
+  // (useEffect removed to keep hook count stable; we compute on render instead)
+  const createColor = color === DEFAULT_COLOR ? recommendedColor : color
 
   const sections: Array<{ kind: GroupKind; groups: Group[]; loading: boolean; error: unknown; onRetry: () => Promise<unknown> }> = [
     { kind: 'sources', groups: sources, loading: sourcesState.isLoading, error: sourcesState.error, onRetry: sourcesState.mutate },
@@ -73,7 +68,7 @@ export function GroupManager() {
     try {
       await groupsApi.create(kind, {
         name: name.trim(),
-        color,
+        color: createColor,
         ...(description.trim() && { description: description.trim() }),
         share_description: shareDescription.trim() || null,
         ...(kind === 'rollups' && { source_group_ids: memberIds }),
@@ -91,33 +86,26 @@ export function GroupManager() {
     }
   }
 
-  function startEdit(groupKind: GroupKind, group: Group) {
-    setEditing({ kind: groupKind, group })
-    setEditName(group.name)
-    setEditDescription(group.description ?? '')
-    setEditShareDescription(group.share_description ?? '')
-    setEditColor(group.color)
-    setEditMemberIds(groupKind === 'rollups' ? (group as RollupGroup).source_group_ids : [])
-    setError('')
-  }
-
-  async function handleUpdate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!editing || !editName.trim()) return
+  async function handleSave(
+    groupKind: GroupKind,
+    group: Group,
+    payload: { name: string; description: string; share_description: string | null; color: string; member_ids: string[] },
+  ): Promise<boolean> {
     setUpdating(true)
     setError('')
     try {
-      await groupsApi.update(editing.kind, editing.group.id, {
-        name: editName.trim(),
-        color: editColor,
-        description: editDescription.trim(),
-        share_description: editShareDescription.trim() || null,
-        ...(editing.kind === 'rollups' && { source_group_ids: editMemberIds }),
+      await groupsApi.update(groupKind, group.id, {
+        name: payload.name,
+        color: payload.color,
+        description: payload.description,
+        share_description: payload.share_description,
+        ...(groupKind === 'rollups' && { source_group_ids: payload.member_ids }),
       })
-      await refresh(editing.kind)
-      setEditing(null)
+      await refresh(groupKind)
+      return true
     } catch (err) {
       setError(err instanceof Error ? err.message : '그룹을 수정하지 못했습니다.')
+      return false
     } finally {
       setUpdating(false)
     }
@@ -194,7 +182,7 @@ export function GroupManager() {
           <div className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
             <Input label="그룹 이름" value={name} maxLength={50} onChange={(event) => setName(event.target.value)} />
             <Input label="설명" value={description} maxLength={200} onChange={(event) => setDescription(event.target.value)} />
-            <ColorInput label="그룹 색상" value={color} onChange={setColor} usedColors={usedColors} />
+            <ColorInput label="그룹 색상" value={createColor} onChange={setColor} usedColors={usedColors} />
           </div>
           <Input
             label="공유 페이지 문구"
@@ -213,39 +201,15 @@ export function GroupManager() {
         </form>
       </Card>
 
-      {editing && (
-        <Card>
-          <h2 className="font-semibold text-gray-900">{sectionLabels[editing.kind]} 수정</h2>
-          <form className="mt-4 flex flex-col gap-4" onSubmit={handleUpdate}>
-            <div className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-              <Input label="그룹 이름 수정" value={editName} maxLength={50} onChange={(event) => setEditName(event.target.value)} />
-              <Input label="설명 수정" value={editDescription} maxLength={200} onChange={(event) => setEditDescription(event.target.value)} />
-              <ColorInput label="그룹 색상 수정" value={editColor} onChange={setEditColor} />
-            </div>
-            <Input
-              label="공유 페이지 문구 수정"
-              value={editShareDescription}
-              maxLength={200}
-              placeholder="공유 링크 상단에만 표시할 문구"
-              onChange={(event) => setEditShareDescription(event.target.value)}
-            />
-            {editing.kind === 'rollups' && (
-              <MemberSelector sources={sources} selectedIds={editMemberIds} onChange={setEditMemberIds} />
-            )}
-            <div className="flex gap-2">
-              <Button type="submit" loading={updating} disabled={!editName.trim()}>수정 저장</Button>
-              <Button type="button" variant="secondary" onClick={() => setEditing(null)}>취소</Button>
-            </div>
-          </form>
-        </Card>
-      )}
-
       {sections.map((section) => (
         <GroupSection
           key={section.kind}
           {...section}
+          sources={sources}
+          usedColors={usedColors}
           pendingAction={pendingAction}
-          onEdit={startEdit}
+          updating={updating}
+          onSave={handleSave}
           onDelete={handleDelete}
           onEnableShare={handleEnableShare}
           onDisableShare={handleDisableShare}
@@ -341,8 +305,11 @@ function GroupSection({
   loading,
   error,
   onRetry,
+  sources,
+  usedColors,
   pendingAction,
-  onEdit,
+  updating,
+  onSave,
   onDelete,
   onEnableShare,
   onDisableShare,
@@ -352,8 +319,11 @@ function GroupSection({
   loading: boolean
   error: unknown
   onRetry: () => Promise<unknown>
+  sources: SourceGroup[]
+  usedColors: string[]
   pendingAction: string
-  onEdit: (kind: GroupKind, group: Group) => void
+  updating: boolean
+  onSave: (groupKind: GroupKind, group: Group, payload: { name: string; description: string; share_description: string | null; color: string; member_ids: string[] }) => Promise<boolean>
   onDelete: (kind: GroupKind, group: Group) => void
   onEnableShare: (kind: GroupKind, group: Group, requiresAuth: boolean) => void
   onDisableShare: (kind: GroupKind, group: Group) => void
@@ -382,8 +352,11 @@ function GroupSection({
               key={group.id}
               kind={kind}
               group={group}
+              sources={sources}
+              usedColors={usedColors}
               pendingAction={pendingAction}
-              onEdit={onEdit}
+              updating={updating}
+              onSave={onSave}
               onDelete={onDelete}
               onEnableShare={onEnableShare}
               onDisableShare={onDisableShare}
@@ -398,29 +371,92 @@ function GroupSection({
 function GroupCard({
   kind,
   group,
+  sources,
+  usedColors,
   pendingAction,
-  onEdit,
+  updating,
+  onSave,
   onDelete,
   onEnableShare,
   onDisableShare,
 }: {
   kind: GroupKind
   group: Group
+  sources: SourceGroup[]
+  usedColors: string[]
   pendingAction: string
-  onEdit: (kind: GroupKind, group: Group) => void
+  updating: boolean
+  onSave: (groupKind: GroupKind, group: Group, payload: { name: string; description: string; share_description: string | null; color: string; member_ids: string[] }) => Promise<boolean>
   onDelete: (kind: GroupKind, group: Group) => void
   onEnableShare: (kind: GroupKind, group: Group, requiresAuth: boolean) => void
   onDisableShare: (kind: GroupKind, group: Group) => void
 }) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editShareDescription, setEditShareDescription] = useState('')
+  const [editColor, setEditColor] = useState(DEFAULT_COLOR)
+  const [editMemberIds, setEditMemberIds] = useState<string[]>([])
   const [requiresAuth, setRequiresAuth] = useState(group.share_requires_auth)
+
   const sharePending = pendingAction === `share:${kind}:${group.id}`
   const deletePending = pendingAction === `delete:${kind}:${group.id}`
   const shareUrl = group.share_token && typeof window !== 'undefined'
     ? `${window.location.origin}/share/${group.share_token}`
     : ''
 
+  function startEdit() {
+    setEditName(group.name)
+    setEditDescription(group.description ?? '')
+    setEditShareDescription(group.share_description ?? '')
+    setEditColor(group.color)
+    setEditMemberIds(kind === 'rollups' ? (group as RollupGroup).source_group_ids : [])
+    setIsEditing(true)
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!editName.trim()) return
+    const ok = await onSave(kind, group, {
+      name: editName.trim(),
+      description: editDescription.trim(),
+      share_description: editShareDescription.trim() || null,
+      color: editColor,
+      member_ids: editMemberIds,
+    })
+    if (ok) setIsEditing(false)
+  }
+
+  if (isEditing) {
+    return (
+      <Card data-testid="group-card" className="flex flex-col gap-3">
+        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+          <div className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <Input label="그룹 이름 수정" value={editName} maxLength={50} onChange={(event) => setEditName(event.target.value)} />
+            <Input label="설명 수정" value={editDescription} maxLength={200} onChange={(event) => setEditDescription(event.target.value)} />
+            <ColorInput label="그룹 색상 수정" value={editColor} onChange={setEditColor} usedColors={usedColors} />
+          </div>
+          <Input
+            label="공유 페이지 문구 수정"
+            value={editShareDescription}
+            maxLength={200}
+            placeholder="공유 링크 상단에만 표시할 문구"
+            onChange={(event) => setEditShareDescription(event.target.value)}
+          />
+          {kind === 'rollups' && (
+            <MemberSelector sources={sources} selectedIds={editMemberIds} onChange={setEditMemberIds} />
+          )}
+          <div className="flex gap-2">
+            <Button type="submit" loading={updating} disabled={!editName.trim()}>수정 저장</Button>
+            <Button type="button" variant="secondary" onClick={() => setIsEditing(false)}>취소</Button>
+          </div>
+        </form>
+      </Card>
+    )
+  }
+
   return (
-    <Card className="flex flex-col gap-3">
+    <Card data-testid="group-card" className="flex flex-col gap-3">
       <div>
         <Badge color={group.color}>{group.name}</Badge>
         <p className="mt-2 text-sm text-gray-500">{group.description || '설명이 없습니다.'}</p>
@@ -473,7 +509,7 @@ function GroupCard({
         </div>
       )}
       <div className="mt-auto flex justify-end gap-1">
-        <Button variant="ghost" size="sm" aria-label={`${group.name} 수정`} onClick={() => onEdit(kind, group)}>수정</Button>
+        <Button variant="ghost" size="sm" aria-label={`${group.name} 수정`} onClick={startEdit}>수정</Button>
         <Button
           variant="ghost"
           size="sm"
