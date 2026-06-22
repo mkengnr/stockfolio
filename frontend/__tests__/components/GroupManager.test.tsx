@@ -233,6 +233,25 @@ describe('GroupManager', () => {
     )
     expect(screen.getByRole('link', { name: '월급 공유 링크 열기' })).toHaveAttribute('target', '_blank')
   })
+
+  it('shows an error inside the card on inline-edit save failure', async () => {
+    mockedGroupsApi.update.mockRejectedValue(new Error('저장 실패'))
+    render(<GroupManager />)
+
+    // Find the label card and click 수정
+    const labelCard = screen.getByText('배당').closest('[data-testid="group-card"]') as HTMLElement
+    fireEvent.click(within(labelCard).getByRole('button', { name: '배당 수정' }))
+
+    // Submit the edit form
+    await act(async () => {
+      fireEvent.click(within(labelCard).getByRole('button', { name: '수정 저장' }))
+    })
+
+    // Error message appears INSIDE the card
+    expect(within(labelCard).getByText('저장 실패')).toBeInTheDocument()
+    // Edit form stays open (name input still present)
+    expect(within(labelCard).getByLabelText('그룹 이름 수정')).toBeInTheDocument()
+  })
 })
 
 describe('ColorInput presets', () => {

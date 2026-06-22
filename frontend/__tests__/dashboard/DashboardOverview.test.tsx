@@ -356,6 +356,31 @@ describe('DashboardOverview', () => {
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:all')
   })
 
+  it('shows error and retry button when label dashboard fetch fails', async () => {
+    ;(portfolioApi.labelDashboard as jest.Mock).mockRejectedValue(new Error('network'))
+    render(
+      <DashboardOverview
+        dashboard={dashboard}
+        labels={[{ id: '9', name: '배당주', color: '#f59e0b' }]}
+        displayCurrency="KRW"
+        onDisplayCurrencyChange={jest.fn()}
+        onRefresh={jest.fn()}
+        isRefreshing={false}
+        lastUpdated={new Date('2026-06-05T09:00:00Z')}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /그룹 필터/ }))
+    fireEvent.click(screen.getByRole('option', { name: /배당주/ }))
+
+    await waitFor(() =>
+      expect(screen.getByText('라벨 데이터를 불러오지 못했습니다.')).toBeInTheDocument(),
+    )
+    expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
+    // Should NOT show normal total-portfolio value under label heading in error state
+    // (The total_current_value ₩900,000 must not appear as the label summary)
+    expect(screen.queryByText('배당주 수익현황')).toBeInTheDocument() // heading still visible
+  })
+
   it('fetches the label dashboard on demand when a label is selected', async () => {
     ;(portfolioApi.labelDashboard as jest.Mock).mockResolvedValue({
       ...dashboard,

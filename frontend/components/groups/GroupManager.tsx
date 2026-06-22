@@ -28,10 +28,9 @@ export function GroupManager() {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [shareDescription, setShareDescription] = useState('')
-  const [color, setColor] = useState(DEFAULT_COLOR)
+  const [userPickedColor, setUserPickedColor] = useState<string | null>(null)
   const [memberIds, setMemberIds] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
-  const [updating, setUpdating] = useState(false)
   const [pendingAction, setPendingAction] = useState('')
   const [error, setError] = useState('')
 
@@ -41,10 +40,7 @@ export function GroupManager() {
   const usedColors = [...sources, ...rollups, ...labels].map((group) => group.color)
   const recommendedColor = recommendGroupColor(usedColors)
 
-  // Keep the create-form color in sync with the recommended color when it
-  // hasn't been manually changed away from the default.
-  // (useEffect removed to keep hook count stable; we compute on render instead)
-  const createColor = color === DEFAULT_COLOR ? recommendedColor : color
+  const createColor = userPickedColor ?? recommendedColor
 
   const sections: Array<{ kind: GroupKind; groups: Group[]; loading: boolean; error: unknown; onRetry: () => Promise<unknown> }> = [
     { kind: 'sources', groups: sources, loading: sourcesState.isLoading, error: sourcesState.error, onRetry: sourcesState.mutate },
@@ -76,7 +72,7 @@ export function GroupManager() {
       setName('')
       setDescription('')
       setShareDescription('')
-      setColor(recommendGroupColor(usedColors))
+      setUserPickedColor(null)
       setMemberIds([])
       await refresh(kind)
     } catch (err) {
@@ -90,9 +86,7 @@ export function GroupManager() {
     groupKind: GroupKind,
     group: Group,
     payload: { name: string; description: string; share_description: string | null; color: string; member_ids: string[] },
-  ): Promise<boolean> {
-    setUpdating(true)
-    setError('')
+  ): Promise<string | null> {
     try {
       await groupsApi.update(groupKind, group.id, {
         name: payload.name,
@@ -102,12 +96,9 @@ export function GroupManager() {
         ...(groupKind === 'rollups' && { source_group_ids: payload.member_ids }),
       })
       await refresh(groupKind)
-      return true
+      return null
     } catch (err) {
-      setError(err instanceof Error ? err.message : '그룹을 수정하지 못했습니다.')
-      return false
-    } finally {
-      setUpdating(false)
+      return err instanceof Error ? err.message : '그룹을 수정하지 못했습니다.'
     }
   }
 
@@ -182,7 +173,7 @@ export function GroupManager() {
           <div className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
             <Input label="그룹 이름" value={name} maxLength={50} onChange={(event) => setName(event.target.value)} />
             <Input label="설명" value={description} maxLength={200} onChange={(event) => setDescription(event.target.value)} />
-            <ColorInput label="그룹 색상" value={createColor} onChange={setColor} usedColors={usedColors} />
+            <ColorInput label="그룹 색상" value={createColor} onChange={setUserPickedColor} usedColors={usedColors} />
           </div>
           <Input
             label="공유 페이지 문구"
@@ -208,7 +199,6 @@ export function GroupManager() {
           sources={sources}
           usedColors={usedColors}
           pendingAction={pendingAction}
-          updating={updating}
           onSave={handleSave}
           onDelete={handleDelete}
           onEnableShare={handleEnableShare}
@@ -308,7 +298,6 @@ function GroupSection({
   sources,
   usedColors,
   pendingAction,
-  updating,
   onSave,
   onDelete,
   onEnableShare,
@@ -322,8 +311,7 @@ function GroupSection({
   sources: SourceGroup[]
   usedColors: string[]
   pendingAction: string
-  updating: boolean
-  onSave: (groupKind: GroupKind, group: Group, payload: { name: string; description: string; share_description: string | null; color: string; member_ids: string[] }) => Promise<boolean>
+  onSave: (groupKind: GroupKind, group: Group, payload: { name: string; description: string; share_description: string | null; color: string; member_ids: string[] }) => Promise<string | null>
   onDelete: (kind: GroupKind, group: Group) => void
   onEnableShare: (kind: GroupKind, group: Group, requiresAuth: boolean) => void
   onDisableShare: (kind: GroupKind, group: Group) => void
@@ -355,7 +343,6 @@ function GroupSection({
               sources={sources}
               usedColors={usedColors}
               pendingAction={pendingAction}
-              updating={updating}
               onSave={onSave}
               onDelete={onDelete}
               onEnableShare={onEnableShare}
@@ -374,7 +361,6 @@ function GroupCard({
   sources,
   usedColors,
   pendingAction,
-  updating,
   onSave,
   onDelete,
   onEnableShare,
@@ -385,8 +371,7 @@ function GroupCard({
   sources: SourceGroup[]
   usedColors: string[]
   pendingAction: string
-  updating: boolean
-  onSave: (groupKind: GroupKind, group: Group, payload: { name: string; description: string; share_description: string | null; color: string; member_ids: string[] }) => Promise<boolean>
+  onSave: (groupKind: GroupKind, group: Group, payload: { name: string; description: string; share_description: string | null; color: string; member_ids: string[] }) => Promise<string | null>
   onDelete: (kind: GroupKind, group: Group) => void
   onEnableShare: (kind: GroupKind, group: Group, requiresAuth: boolean) => void
   onDisableShare: (kind: GroupKind, group: Group) => void
@@ -398,6 +383,8 @@ function GroupCard({
   const [editColor, setEditColor] = useState(DEFAULT_COLOR)
   const [editMemberIds, setEditMemberIds] = useState<string[]>([])
   const [requiresAuth, setRequiresAuth] = useState(group.share_requires_auth)
+  const [saveError, setSaveError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const sharePending = pendingAction === `share:${kind}:${group.id}`
   const deletePending = pendingAction === `delete:${kind}:${group.id}`
@@ -411,20 +398,28 @@ function GroupCard({
     setEditShareDescription(group.share_description ?? '')
     setEditColor(group.color)
     setEditMemberIds(kind === 'rollups' ? (group as RollupGroup).source_group_ids : [])
+    setSaveError('')
     setIsEditing(true)
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!editName.trim()) return
-    const ok = await onSave(kind, group, {
+    setSaving(true)
+    const err = await onSave(kind, group, {
       name: editName.trim(),
       description: editDescription.trim(),
       share_description: editShareDescription.trim() || null,
       color: editColor,
       member_ids: editMemberIds,
     })
-    if (ok) setIsEditing(false)
+    setSaving(false)
+    if (err) {
+      setSaveError(err)
+    } else {
+      setSaveError('')
+      setIsEditing(false)
+    }
   }
 
   if (isEditing) {
@@ -446,9 +441,10 @@ function GroupCard({
           {kind === 'rollups' && (
             <MemberSelector sources={sources} selectedIds={editMemberIds} onChange={setEditMemberIds} />
           )}
+          {saveError && <p className="text-sm text-red-500">{saveError}</p>}
           <div className="flex gap-2">
-            <Button type="submit" loading={updating} disabled={!editName.trim()}>수정 저장</Button>
-            <Button type="button" variant="secondary" onClick={() => setIsEditing(false)}>취소</Button>
+            <Button type="submit" loading={saving} disabled={!editName.trim()}>수정 저장</Button>
+            <Button type="button" variant="secondary" onClick={() => { setSaveError(''); setIsEditing(false) }}>취소</Button>
           </div>
         </form>
       </Card>

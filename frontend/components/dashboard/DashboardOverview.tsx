@@ -54,7 +54,7 @@ export function DashboardOverview({
   const selectedLabelId = selectedGroupKey.startsWith('label:')
     ? selectedGroupKey.slice('label:'.length)
     : null
-  const { data: labelDashboard, isLoading: labelLoading } = useSWR(
+  const { data: labelDashboard, isLoading: labelLoading, error: labelError, mutate: labelMutate } = useSWR(
     selectedLabelId ? ['label-dashboard', selectedLabelId, displayCurrency] : null,
     () => portfolioApi.labelDashboard(selectedLabelId as string, displayCurrency),
   )
@@ -158,7 +158,14 @@ export function DashboardOverview({
         {labelLoading && (
           <p className="text-sm text-gray-400">라벨 데이터를 불러오는 중…</p>
         )}
-        <PortfolioSummary summary={activeSummary} displayCurrency={displayCurrency} />
+        {labelMode && labelError ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-red-500">라벨 데이터를 불러오지 못했습니다.</p>
+            <Button variant="secondary" onClick={() => void labelMutate()}>다시 시도</Button>
+          </div>
+        ) : (
+          <PortfolioSummary summary={activeSummary} displayCurrency={displayCurrency} />
+        )}
       </section>
 
       <section className="flex flex-col gap-3">
@@ -169,34 +176,38 @@ export function DashboardOverview({
         <GroupPerformanceTable groups={dashboard.groups} displayCurrency={displayCurrency} />
       </section>
 
-      <Card>
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="font-semibold text-gray-900">포트폴리오 변화</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              전체 선택 시 전체 흐름과 그룹별 흐름을 함께 볼 수 있습니다.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <ChartRangeControl value={chartRange} onChange={setChartRange} />
-          </div>
-        </div>
-        <PortfolioChart
-          historyRows={activeHistoryRows}
-          compositionRows={dashboard.history.rows}
-          includeComposition={!selectedGroup && !labelMode}
-          displayCurrency={displayCurrency}
-          visibleRange={chartVisibleRange}
-          referenceDefault="invested"
-        />
-      </Card>
+      {!(labelMode && labelError) && (
+        <>
+          <Card>
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-semibold text-gray-900">포트폴리오 변화</h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  전체 선택 시 전체 흐름과 그룹별 흐름을 함께 볼 수 있습니다.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <ChartRangeControl value={chartRange} onChange={setChartRange} />
+              </div>
+            </div>
+            <PortfolioChart
+              historyRows={activeHistoryRows}
+              compositionRows={dashboard.history.rows}
+              includeComposition={!selectedGroup && !labelMode}
+              displayCurrency={displayCurrency}
+              visibleRange={chartVisibleRange}
+              referenceDefault="invested"
+            />
+          </Card>
 
-      <Card noPad>
-        <div className="border-b border-gray-100 px-6 py-4">
-          <h2 className="font-semibold text-gray-900">보유 종목</h2>
-        </div>
-        <HoldingsTable holdings={activeHoldings} displayCurrency={displayCurrency} />
-      </Card>
+          <Card noPad>
+            <div className="border-b border-gray-100 px-6 py-4">
+              <h2 className="font-semibold text-gray-900">보유 종목</h2>
+            </div>
+            <HoldingsTable holdings={activeHoldings} displayCurrency={displayCurrency} />
+          </Card>
+        </>
+      )}
 
       <div className="flex justify-end">
         <Link href="/transactions" className="text-sm font-medium text-brand-600 hover:underline">
