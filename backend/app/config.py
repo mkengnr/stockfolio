@@ -40,9 +40,29 @@ class Settings(BaseSettings):
     smtp_timeout: float | None = 30.0
     email_console_fallback: bool = True  # dev: print to console
 
-    # Scheduler
+    # Scheduler (KST). KRX finalize after close+buffer; US finalize next KST morning.
+    krx_snapshot_hour: int = 15
+    krx_snapshot_minute: int = 45
+    us_snapshot_hour: int = 6
+    us_snapshot_minute: int = 30
+    snapshot_misfire_grace_seconds: int = 3600
+    # KRX 특별 지연폐장(연 1회 수준): "YYYY-MM-DD=HH:MM" 콤마구분. 예 "2026-11-12=16:30"
+    market_close_overrides_raw: str = ""
+    # Legacy aliases (removed in Task 5 when scheduler.py is rewritten)
     snapshot_cron_hour: int = 15
     snapshot_cron_minute: int = 35  # KST 15:35 (after KRX close)
+
+
+def parse_market_close_overrides(raw: str) -> dict:
+    """Parse "YYYY-MM-DD=HH:MM" comma-separated string into dict[date, time]."""
+    from datetime import date as _date, time as _time
+    out: dict = {}
+    for item in (part.strip() for part in raw.split(",") if part.strip()):
+        day_str, _, hm = item.partition("=")
+        y, m, d = (int(x) for x in day_str.split("-"))
+        hh, mm = (int(x) for x in hm.split(":"))
+        out[_date(y, m, d)] = _time(hh, mm)
+    return out
 
 
 PLACEHOLDER_SECRET_KEY = "change-me-in-production"
