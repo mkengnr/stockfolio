@@ -138,6 +138,19 @@ describe('GroupManager', () => {
     expect(screen.queryByRole('heading', { name: '출처 그룹 수정' })).not.toBeInTheDocument()
   })
 
+  it('stacks inline edit fields so the color presets stay inside a desktop card', () => {
+    render(<GroupManager />)
+
+    const card = screen.getByText('월급').closest('[data-testid="group-card"]') as HTMLElement
+    fireEvent.click(within(card).getByRole('button', { name: '월급 수정' }))
+
+    const nameField = within(card).getByLabelText('그룹 이름 수정').parentElement
+    const fieldLayout = nameField?.parentElement
+
+    expect(fieldLayout).toHaveClass('flex', 'flex-col', 'gap-4')
+    expect(fieldLayout).not.toHaveClass('sm:grid-cols-[1fr_1fr_auto]')
+  })
+
   it('enables and disables sharing for a source group', async () => {
     mockedGroupsApi.enableShare.mockResolvedValue({
       ...source,

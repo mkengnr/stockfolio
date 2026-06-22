@@ -426,7 +426,7 @@ function GroupCard({
     return (
       <Card data-testid="group-card" className="flex flex-col gap-3">
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-          <div className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <div className="flex flex-col gap-4">
             <Input label="그룹 이름 수정" value={editName} maxLength={50} onChange={(event) => setEditName(event.target.value)} />
             <Input label="설명 수정" value={editDescription} maxLength={200} onChange={(event) => setEditDescription(event.target.value)} />
             <ColorInput label="그룹 색상 수정" value={editColor} onChange={setEditColor} usedColors={usedColors} />
