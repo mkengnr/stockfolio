@@ -637,6 +637,29 @@ def _previous_weekday(value: date) -> date:
     return candidate
 
 
+def _holdings_needing_comparison_recovery(
+    active_holdings: list,
+    price_quotes: dict,
+) -> list[tuple]:
+    """Return (holding, price_date) pairs that need comparison snapshot recovery.
+
+    For each holding, use the holding's own quote.price_date rather than a
+    global current_price_as_of, so KRX and US holdings are evaluated against
+    their respective market's latest price date.
+    """
+    needing = []
+    for holding in active_holdings:
+        quote = price_quotes.get(holding.ticker)
+        if quote is None or quote.price_date is None:
+            continue
+        expected = _previous_weekday(quote.price_date)
+        prior = [s.snapshot_date for s in holding.snapshots if s.snapshot_date < quote.price_date]
+        if prior and max(prior) >= expected:
+            continue
+        needing.append((holding, quote.price_date))
+    return needing
+
+
 def _dashboard_comparison_as_of(
     history_rows: list[DashboardHistoryRow],
     current_price_as_of: date | None,
@@ -1521,31 +1544,14 @@ async def build_portfolio_dashboard_response(
     exchange_rate = None
     warnings: list[str] = []
     recovered_snapshot_count = 0
-    if current_price_as_of is not None:
-        expected_calendar_date = _previous_weekday(current_price_as_of)
-        for holding in active_holdings:
-            quote = price_quotes.get(holding.ticker)
-            if quote is None or quote.price_date is None:
-                continue
-            prior_snapshot_dates = [
-                snapshot.snapshot_date
-                for snapshot in holding.snapshots
-                if snapshot.snapshot_date < current_price_as_of
-            ]
-            if prior_snapshot_dates and max(prior_snapshot_dates) >= expected_calendar_date:
-                continue
+    if active_holdings:
+        for holding, holding_price_date in _holdings_needing_comparison_recovery(active_holdings, price_quotes):
             try:
                 recovered_snapshot_count += await backfill_recent_comparison_snapshots(
-                    db,
-                    holding,
-                    current_price_date=current_price_as_of,
+                    db, holding, current_price_date=holding_price_date,
                 )
             except Exception as exc:
-                logger.warning(
-                    "recent comparison snapshot recovery failed for ticker=%s: %r",
-                    holding.ticker,
-                    exc,
-                )
+                logger.warning("recent comparison snapshot recovery failed for ticker=%s: %r", holding.ticker, exc)
                 warnings.append(f"{holding.ticker} 직전 거래일 스냅샷 복구 실패")
         if recovered_snapshot_count:
             try:

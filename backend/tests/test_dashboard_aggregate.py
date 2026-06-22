@@ -870,10 +870,9 @@ async def test_dashboard_recovers_missing_recent_comparison_snapshot_and_reloads
     assert recover.await_count == 2
     assert recover.await_args_list[0].args == (db, stale_holding)
     assert recover.await_args_list[1].args == (db, newer_quote_stale_holding)
-    assert all(
-        call.kwargs == {"current_price_date": date(2026, 6, 9)}
-        for call in recover.await_args_list
-    )
+    # Each holding uses its own quote.price_date for recovery (per-holding, not global).
+    assert recover.await_args_list[0].kwargs == {"current_price_date": date(2026, 6, 9)}
+    assert recover.await_args_list[1].kwargs == {"current_price_date": date(2026, 6, 10)}
     db.commit.assert_awaited_once()
     assert response.comparison_as_of == date(2026, 6, 8)
 
@@ -1069,3 +1068,21 @@ def test_dashboard_endpoint_requires_authentication():
     response = TestClient(app).get("/api/portfolio/dashboard")
 
     assert response.status_code == 401
+
+
+def test_comparison_recovery_uses_per_holding_price_date():
+    from types import SimpleNamespace
+    from app.routers.portfolio import _holdings_needing_comparison_recovery, CurrentPriceQuote
+    krx = SimpleNamespace(ticker="005930", snapshots=[SimpleNamespace(snapshot_date=date(2026, 6, 19))])
+    us = SimpleNamespace(ticker="AAPL", snapshots=[SimpleNamespace(snapshot_date=date(2026, 6, 17))])
+    quotes = {
+        "005930": CurrentPriceQuote(price=Decimal("1"), price_date=date(2026, 6, 22)),
+        "AAPL": CurrentPriceQuote(price=Decimal("1"), price_date=date(2026, 6, 18)),
+    }
+    needing = _holdings_needing_comparison_recovery([krx, us], quotes)
+    # KRX는 6/19 스냅샷 있고 직전영업일(6/19)≥기준 → 복구 불필요. US는 6/17만 있어 6/18 직전(6/17)≥기준 → 불필요.
+    assert needing == []
+    # KRX 스냅샷을 6/17로 낮추면 6/22 기준 직전영업일(6/19) 미달 → 복구 필요(기준일=6/22)
+    krx.snapshots = [SimpleNamespace(snapshot_date=date(2026, 6, 17))]
+    needing2 = _holdings_needing_comparison_recovery([krx, us], quotes)
+    assert (krx, date(2026, 6, 22)) in needing2
