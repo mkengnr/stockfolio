@@ -15,7 +15,7 @@ export const GROUP_COLOR_PRESETS: GroupColorPreset[] = [
   { value: '#ef4444', name: '레드' },
   { value: '#ec4899', name: '핑크' },
   { value: '#8b5cf6', name: '바이올렛' },
-  { value: '#a855f7', name: '퍼플' },
+  { value: '#ca8a04', name: '옐로' },
 ]
 
 // 전체 그룹에서 아직 안 쓰는 첫 프리셋 색을 추천. 전부 사용 중이면 첫 프리셋.

@@ -27,4 +27,8 @@ describe('recommendGroupColor', () => {
     expect(values).toHaveLength(12)
     expect(new Set(values).size).toBe(12)
   })
+
+  it('includes a readable yellow preset', () => {
+    expect(GROUP_COLOR_PRESETS).toContainEqual({ value: '#ca8a04', name: '옐로' })
+  })
 })
