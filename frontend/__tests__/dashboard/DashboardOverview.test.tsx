@@ -399,6 +399,47 @@ describe('DashboardOverview', () => {
     expect(screen.queryByText('배당주 수익현황')).toBeInTheDocument() // heading still visible
   })
 
+  it('renders each dashboard.warnings entry as a distinct paragraph', () => {
+    const dashboardWithWarnings: DashboardResponse = {
+      ...dashboard,
+      warnings: ['일부 종목 지연', '환율 정보 없음'],
+    }
+    render(
+      <DashboardOverview
+        dashboard={dashboardWithWarnings}
+        displayCurrency="KRW"
+        onDisplayCurrencyChange={jest.fn()}
+        onRefresh={jest.fn()}
+        isRefreshing={false}
+        lastUpdated={new Date('2026-06-22T09:00:00Z')}
+      />,
+    )
+
+    expect(screen.getByText('일부 종목 지연')).toBeInTheDocument()
+    expect(screen.getByText('환율 정보 없음')).toBeInTheDocument()
+  })
+
+  it('hides the warnings box when dashboard.warnings is empty', () => {
+    const dashboardNoWarnings: DashboardResponse = {
+      ...dashboard,
+      warnings: [],
+    }
+    render(
+      <DashboardOverview
+        dashboard={dashboardNoWarnings}
+        displayCurrency="KRW"
+        onDisplayCurrencyChange={jest.fn()}
+        onRefresh={jest.fn()}
+        isRefreshing={false}
+        lastUpdated={new Date('2026-06-22T09:00:00Z')}
+      />,
+    )
+
+    expect(screen.queryByText('일부 종목 지연')).not.toBeInTheDocument()
+    // The amber warning box should not be present
+    expect(document.querySelector('.bg-amber-50')).toBeNull()
+  })
+
   it('fetches the label dashboard on demand when a label is selected', async () => {
     ;(portfolioApi.labelDashboard as jest.Mock).mockResolvedValue({
       ...dashboard,
