@@ -146,6 +146,36 @@ async def test_backfill_adds_only_missing_dates():
 
 
 @pytest.mark.asyncio
+async def test_backfill_without_end_stops_before_krx_intraday_today():
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.flush = AsyncMock()
+    existing_result = MagicMock()
+    existing_result.scalars.return_value.all.return_value = []
+    db.execute.return_value = existing_result
+    holding = SimpleNamespace(
+        id="holding-id",
+        ticker="005930",
+        market=Market.KRX,
+        first_buy_date=date(2026, 6, 19),
+        transactions=[_tx(TransactionType.BUY, "1", date(2026, 6, 19))],
+    )
+    now = datetime(2026, 6, 22, 10, 8, tzinfo=KST)
+
+    with patch(
+        "app.services.snapshot_service.stock_fetcher.get_price_history",
+        return_value=[_bar(date(2026, 6, 19), "100")],
+    ) as get_price_history:
+        await backfill_holding_snapshots(db, holding, now=now)
+
+    get_price_history.assert_called_once_with(
+        "005930",
+        date(2026, 6, 19),
+        date(2026, 6, 21),
+    )
+
+
+@pytest.mark.asyncio
 async def test_backfill_recent_comparison_snapshots_ends_before_current_price_date():
     db = MagicMock()
     db.execute = AsyncMock()
@@ -219,6 +249,37 @@ async def test_rebuild_fetches_values_before_invalidating_derived_snapshots():
 
 
 @pytest.mark.asyncio
+async def test_rebuild_without_end_stops_before_krx_intraday_today():
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.flush = AsyncMock()
+    holding = SimpleNamespace(
+        id=uuid.uuid4(),
+        ticker="005930",
+        market=Market.KRX,
+        transactions=[_tx(TransactionType.BUY, "1", date(2026, 6, 19))],
+    )
+    now = datetime(2026, 6, 22, 10, 8, tzinfo=KST)
+
+    with patch(
+        "app.services.snapshot_service.stock_fetcher.get_price_history",
+        return_value=[_bar(date(2026, 6, 19), "100")],
+    ) as get_price_history:
+        await rebuild_holding_snapshots(
+            db,
+            holding,
+            start=date(2026, 6, 19),
+            now=now,
+        )
+
+    get_price_history.assert_called_once_with(
+        "005930",
+        date(2026, 6, 19),
+        date(2026, 6, 21),
+    )
+
+
+@pytest.mark.asyncio
 async def test_rebuild_deletes_from_start_when_edit_moves_date_earlier():
     db = MagicMock()
     db.execute = AsyncMock()
@@ -226,6 +287,7 @@ async def test_rebuild_deletes_from_start_when_edit_moves_date_earlier():
     holding = SimpleNamespace(
         id=uuid.uuid4(),
         ticker="005930",
+        market=Market.KRX,
         transactions=[_tx(TransactionType.BUY, "10", date(2024, 1, 2))],
     )
 
@@ -255,6 +317,7 @@ async def test_rebuild_does_not_delete_snapshots_when_history_fetch_fails():
     holding = SimpleNamespace(
         id=uuid.uuid4(),
         ticker="005930",
+        market=Market.KRX,
         transactions=[_tx(TransactionType.BUY, "10", date(2024, 1, 2))],
     )
 

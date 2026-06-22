@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Iterable
 
@@ -11,11 +11,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.holding import Holding, Market, Transaction, TransactionType
 from app.models.snapshot import DailySnapshot
+from app.config import get_settings, parse_market_close_overrides
 from app.services import stock_fetcher
-from app.services.market_session import is_write_confirmed
+from app.services.market_session import is_write_confirmed, safe_query_end
 from app.services.stock_fetcher import OHLCBar
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_default_end(
+    holding: Holding,
+    now: datetime | None,
+    close_overrides: dict[date, time] | None,
+) -> date:
+    if close_overrides is None:
+        close_overrides = parse_market_close_overrides(
+            get_settings().market_close_overrides_raw
+        )
+    return safe_query_end(
+        holding.market,
+        now or datetime.now(tz=timezone.utc),
+        close_overrides=close_overrides,
+    )
 
 
 @dataclass(frozen=True)
@@ -79,10 +96,17 @@ async def backfill_holding_snapshots(
     *,
     start: date | None = None,
     end: date | None = None,
+    now: datetime | None = None,
+    close_overrides: dict[date, time] | None = None,
 ) -> int:
-    """Store missing trading-day snapshots from the first buy date through today."""
+    """Store missing confirmed trading-day snapshots.
+
+    When no explicit end is supplied, clamp the provider query to the market's
+    last confirmed session so registration during market hours cannot persist
+    an intraday bar as a daily close.
+    """
     start = start or holding.first_buy_date
-    end = end or date.today()
+    end = end or _safe_default_end(holding, now, close_overrides)
     if start > end:
         return 0
 
@@ -135,12 +159,15 @@ async def rebuild_holding_snapshots(
     start: date | None,
     invalidate_start: date | None = None,
     end: date | None = None,
+    now: datetime | None = None,
+    close_overrides: dict[date, time] | None = None,
 ) -> int:
     """Rebuild derived values after a backdated transaction mutation."""
     invalidate_start = invalidate_start or start
-    end = end or date.today()
     values = []
-    if start is not None and start <= end:
+    if start is not None:
+        end = end or _safe_default_end(holding, now, close_overrides)
+    if start is not None and end is not None and start <= end:
         bars = await asyncio.to_thread(stock_fetcher.get_price_history, holding.ticker, start, end)
         values = _build_snapshot_values(holding.transactions, bars)
 

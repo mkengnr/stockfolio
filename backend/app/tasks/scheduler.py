@@ -3,7 +3,7 @@ US finalize at KST 06:30 (tue-sat). Startup catch-up backfills past sessions
 and finalizes any already-closed market."""
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -15,7 +15,11 @@ from app.database import AsyncSessionLocal
 from app.models.holding import Holding, Market
 from app.services.market_session import safe_query_end
 from app.services.price_cache import set_price
-from app.services.snapshot_service import backfill_holding_snapshots, finalize_market_snapshots
+from app.services.snapshot_service import (
+    backfill_holding_snapshots,
+    finalize_market_snapshots,
+    rebuild_holding_snapshots,
+)
 
 settings = get_settings()
 scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
@@ -73,6 +77,22 @@ async def _startup_catchup() -> None:
                 added = await backfill_holding_snapshots(db, holding, end=end)
                 if added:
                     logger.info("Backfilled %s snapshots for holding_id=%s", added, holding.id)
+                reconcile_start = max(
+                    holding.first_buy_date,
+                    end - timedelta(days=settings.snapshot_reconcile_days),
+                )
+                rebuilt = await rebuild_holding_snapshots(
+                    db,
+                    holding,
+                    start=reconcile_start,
+                    end=end,
+                )
+                if rebuilt:
+                    logger.info(
+                        "Reconciled %s recent snapshots for holding_id=%s",
+                        rebuilt,
+                        holding.id,
+                    )
             except Exception:
                 logger.exception("Failed to backfill snapshots for holding_id=%s", holding.id)
         await db.commit()

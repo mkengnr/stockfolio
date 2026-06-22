@@ -202,7 +202,7 @@ def _yf_info(ticker: str) -> dict:
 
 def _yf_latest_price(ticker: str) -> tuple[Decimal, date]:
     t = yf.Ticker(ticker)
-    hist = t.history(period="5d")
+    hist = t.history(period="5d", auto_adjust=False)
     if hist.empty:
         raise ValueError(f"No yfinance price data for {ticker}")
     # The most recent (unsettled) bar can carry a NaN close; use the last bar
@@ -217,7 +217,11 @@ def _yf_latest_price(ticker: str) -> tuple[Decimal, date]:
 
 def _yf_history(ticker: str, start: date, end: date) -> list[OHLCBar]:
     t = yf.Ticker(ticker)
-    df = t.history(start=start.isoformat(), end=(end + timedelta(days=1)).isoformat())
+    df = t.history(
+        start=start.isoformat(),
+        end=(end + timedelta(days=1)).isoformat(),
+        auto_adjust=False,
+    )
     if df.empty:
         return []
     bars = []

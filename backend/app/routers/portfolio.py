@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, with_loader_criteria
 
+from app.config import get_settings, parse_market_close_overrides
 from app.database import get_db
 from app.models.group import BuyLot, Label, RollupGroup, RollupGroupMember, SourceGroup
 from app.models.holding import (
@@ -48,6 +49,7 @@ from app.schemas.portfolio import (
 from app.services import lot_accounting
 from app.services.exchange_rate import ExchangeRate, convert_money, get_usd_krw_rate
 from app.services.lot_accounting import PortfolioScope, ScopeKind
+from app.services.market_session import is_write_confirmed
 from app.services.price_cache import get_price
 from app.services.snapshot_service import backfill_recent_comparison_snapshots
 
@@ -594,40 +596,50 @@ def _dashboard_current_price_as_of(current_price_dates: dict[str, date | None]) 
 def _dashboard_dates_by_market(
     holdings: list[Holding],
     current_price_dates: dict[str, date | None] | None,
-) -> tuple[dict[str, date], dict[str, date]]:
+) -> tuple[dict[str, date], dict[str, date], list[str]]:
     """Per-market current-price date and its previous-trading-day comparison date.
 
     Korea and the US have different trading calendars (e.g. US Juneteenth), so a
     single date hides which market each price is as of. Expose both per market.
     """
     price_dates = current_price_dates or {}
-    current_by_market: dict[str, date] = {}
+    current_dates: dict[str, set[date]] = {}
+    comparison_dates: dict[str, set[date]] = {}
     for holding in holdings:
         ticker_date = price_dates.get(holding.ticker)
         if ticker_date is None:
             continue
         market = _holding_market(holding).value
-        if market not in current_by_market or ticker_date > current_by_market[market]:
-            current_by_market[market] = ticker_date
-
-    comparison_by_market: dict[str, date] = {}
-    for holding in holdings:
-        market = _holding_market(holding).value
-        market_current = current_by_market.get(market)
-        if market_current is None:
-            continue
+        current_dates.setdefault(market, set()).add(ticker_date)
         previous_dates = [
             snapshot.snapshot_date
             for snapshot in holding.snapshots
-            if snapshot.snapshot_date < market_current
+            if snapshot.snapshot_date < ticker_date
         ]
-        if not previous_dates:
-            continue
-        candidate = max(previous_dates)
-        if market not in comparison_by_market or candidate > comparison_by_market[market]:
-            comparison_by_market[market] = candidate
+        if previous_dates:
+            comparison_dates.setdefault(market, set()).add(max(previous_dates))
 
-    return current_by_market, comparison_by_market
+    current_by_market = {
+        market: max(dates) for market, dates in current_dates.items()
+    }
+    comparison_by_market = {
+        market: max(dates) for market, dates in comparison_dates.items()
+    }
+    warnings: list[str] = []
+    for market, dates in current_dates.items():
+        if len(dates) > 1:
+            warnings.append(
+                f"{market} 일부 종목의 현재가 기준일이 다릅니다: "
+                f"{min(dates).isoformat()} ~ {max(dates).isoformat()}"
+            )
+    for market, dates in comparison_dates.items():
+        if len(dates) > 1:
+            warnings.append(
+                f"{market} 일부 종목의 비교 기준일이 다릅니다: "
+                f"{min(dates).isoformat()} ~ {max(dates).isoformat()}"
+            )
+
+    return current_by_market, comparison_by_market, warnings
 
 
 def _previous_weekday(value: date) -> date:
@@ -635,6 +647,31 @@ def _previous_weekday(value: date) -> date:
     while candidate.weekday() >= 5:
         candidate -= timedelta(days=1)
     return candidate
+
+
+def _intraday_market_warnings(
+    holdings: list[Holding],
+    price_quotes: dict[str, CurrentPriceQuote],
+    now: datetime,
+    *,
+    close_overrides: dict | None = None,
+) -> list[str]:
+    intraday_markets: set[str] = set()
+    for holding in holdings:
+        quote = price_quotes.get(holding.ticker)
+        if quote is None or quote.price is None or quote.price_date is None:
+            continue
+        if not is_write_confirmed(
+            holding.market,
+            quote.price_date,
+            now,
+            close_overrides=close_overrides,
+        ):
+            intraday_markets.add(holding.market.value)
+    return [
+        f"{market} 장중 현재가입니다. 차트는 직전 확정 종가까지 표시됩니다."
+        for market in sorted(intraday_markets)
+    ]
 
 
 def _holdings_needing_comparison_recovery(
@@ -1247,9 +1284,10 @@ def build_dashboard_response(
         output_warnings.append("USD/KRW exchange rate unavailable; USD values are omitted")
 
     current_price_as_of = _dashboard_current_price_as_of(current_price_dates or {})
-    price_dates_by_market, comparison_dates_by_market = _dashboard_dates_by_market(
+    price_dates_by_market, comparison_dates_by_market, date_warnings = _dashboard_dates_by_market(
         active_holdings, current_price_dates
     )
+    output_warnings.extend(date_warnings)
     groups, group_warnings = _build_dashboard_groups(
         active_holdings,
         source_groups,
@@ -1439,6 +1477,17 @@ async def build_shared_portfolio_dashboard(
     price_dates = {ticker: quote.price_date for ticker, quote in price_quotes.items()}
     exchange_rate = None
     warnings: list[str] = []
+    settings = get_settings()
+    warnings.extend(
+        _intraday_market_warnings(
+            active_holdings,
+            price_quotes,
+            datetime.now(timezone.utc),
+            close_overrides=parse_market_close_overrides(
+                settings.market_close_overrides_raw
+            ),
+        )
+    )
     if display_currency == "KRW" and any(holding.currency == Currency.USD for holding in holdings):
         try:
             exchange_rate = await asyncio.to_thread(get_usd_krw_rate)
@@ -1543,6 +1592,17 @@ async def build_portfolio_dashboard_response(
     current_price_as_of = _dashboard_current_price_as_of(price_dates)
     exchange_rate = None
     warnings: list[str] = []
+    settings = get_settings()
+    warnings.extend(
+        _intraday_market_warnings(
+            active_holdings,
+            price_quotes,
+            datetime.now(timezone.utc),
+            close_overrides=parse_market_close_overrides(
+                settings.market_close_overrides_raw
+            ),
+        )
+    )
     recovered_snapshot_count = 0
     if active_holdings:
         for holding, holding_price_date in _holdings_needing_comparison_recovery(active_holdings, price_quotes):

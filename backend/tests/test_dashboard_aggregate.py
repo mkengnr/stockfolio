@@ -2,7 +2,8 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import FastAPI, HTTPException, status
@@ -692,6 +693,94 @@ def test_dashboard_exposes_per_market_price_and_comparison_dates():
 
     assert response.price_dates_by_market == {"KRX": date(2026, 6, 22), "US": date(2026, 6, 18)}
     assert response.comparison_dates_by_market == {"KRX": date(2026, 6, 19), "US": date(2026, 6, 17)}
+
+
+def test_dashboard_warns_when_same_market_holdings_use_different_dates():
+    first_id = uuid.uuid4()
+    first = _holding(
+        "005930",
+        Currency.KRW,
+        _buy(first_id, "005930", Currency.KRW, quantity="1", price="1000", tx_date=date(2026, 1, 1)),
+        snapshots=[_snapshot(date(2026, 6, 19), "1100")],
+    )
+    second_id = uuid.uuid4()
+    second = _holding(
+        "000660",
+        Currency.KRW,
+        _buy(second_id, "000660", Currency.KRW, quantity="1", price="2000", tx_date=date(2026, 1, 1)),
+        snapshots=[_snapshot(date(2026, 6, 18), "1900")],
+    )
+
+    response = build_dashboard_response(
+        holdings=[first, second],
+        source_groups=[],
+        rollup_groups=[],
+        current_prices={"005930": Decimal("1200"), "000660": Decimal("2100")},
+        current_price_dates={"005930": date(2026, 6, 22), "000660": date(2026, 6, 19)},
+        display_currency="KRW",
+        exchange_rate=None,
+    )
+
+    assert response.price_dates_by_market == {"KRX": date(2026, 6, 22)}
+    assert response.comparison_dates_by_market == {"KRX": date(2026, 6, 19)}
+    assert "KRX 일부 종목의 현재가 기준일이 다릅니다: 2026-06-19 ~ 2026-06-22" in response.warnings
+    assert "KRX 일부 종목의 비교 기준일이 다릅니다: 2026-06-18 ~ 2026-06-19" in response.warnings
+
+
+def test_intraday_market_warning_explains_live_value_vs_confirmed_chart():
+    holding_id = uuid.uuid4()
+    holding = _holding(
+        "005930",
+        Currency.KRW,
+        _buy(holding_id, "005930", Currency.KRW, quantity="1", price="1000", tx_date=date(2026, 1, 1)),
+    )
+    now = datetime(2026, 6, 22, 10, 8, tzinfo=ZoneInfo("Asia/Seoul"))
+
+    warnings = portfolio_router._intraday_market_warnings(
+        [holding],
+        {"005930": portfolio_router.CurrentPriceQuote(Decimal("1200"), date(2026, 6, 22))},
+        now,
+    )
+
+    assert warnings == [
+        "KRX 장중 현재가입니다. 차트는 직전 확정 종가까지 표시됩니다."
+    ]
+
+
+@pytest.mark.asyncio
+async def test_authenticated_dashboard_includes_intraday_market_warning(monkeypatch):
+    user_id = uuid.uuid4()
+    holding_id = uuid.uuid4()
+    holding = _holding(
+        "005930",
+        Currency.KRW,
+        _buy(holding_id, "005930", Currency.KRW),
+        snapshots=[_snapshot(date(2026, 6, 19), "100")],
+    )
+    quote = portfolio_router.CurrentPriceQuote(
+        price=Decimal("120"),
+        price_date=date(2026, 6, 22),
+    )
+
+    async def _load_scoped_holdings(_db, _user_id, *, include_inactive=False):
+        return [holding]
+
+    async def _load_dashboard_groups(_db, _user_id):
+        return [], []
+
+    async def _fetch_current_price_quotes(_tickers):
+        return {"005930": quote}
+
+    intraday_warnings = MagicMock(return_value=["intraday warning"])
+    monkeypatch.setattr(portfolio_router, "_load_scoped_holdings", _load_scoped_holdings)
+    monkeypatch.setattr(portfolio_router, "_load_dashboard_groups", _load_dashboard_groups)
+    monkeypatch.setattr(portfolio_router, "_fetch_current_price_quotes", _fetch_current_price_quotes)
+    monkeypatch.setattr(portfolio_router, "_intraday_market_warnings", intraday_warnings)
+
+    response = await build_portfolio_dashboard_response(_QueuedSession(), user_id)
+
+    assert "intraday warning" in response.warnings
+    intraday_warnings.assert_called_once()
 
 
 def test_krw_history_without_rate_nulls_usd_only_values():

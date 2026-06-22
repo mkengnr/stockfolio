@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     us_snapshot_hour: int = 6
     us_snapshot_minute: int = 30
     snapshot_misfire_grace_seconds: int = 3600
+    snapshot_reconcile_days: int = 14
     # KRX 특별 지연폐장(연 1회 수준): "YYYY-MM-DD=HH:MM" 콤마구분. 예 "2026-11-12=16:30"
     market_close_overrides_raw: str = ""
 

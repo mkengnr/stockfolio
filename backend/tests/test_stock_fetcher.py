@@ -142,6 +142,7 @@ class TestGetCurrentPriceUS:
         assert result.name == "Apple Inc."
         assert result.currency == Currency.USD
         assert result.price == Decimal("185.5")
+        mock_ticker.history.assert_called_once_with(period="5d", auto_adjust=False)
 
     @patch("app.services.stock_fetcher.yf.Ticker")
     def test_falls_back_to_short_name(self, mock_ticker_cls):
@@ -220,6 +221,21 @@ class TestGetPriceHistory:
     def test_empty_df_returns_empty_list(self, mock_ohlcv):
         bars = get_price_history("005930", date(2024, 1, 10), date(2024, 1, 11))
         assert bars == []
+
+    @patch("app.services.stock_fetcher.yf.Ticker")
+    def test_us_history_uses_unadjusted_close(self, mock_ticker_cls):
+        mock_ticker = MagicMock()
+        mock_ticker.history.return_value = _make_yf_history(185.5)
+        mock_ticker_cls.return_value = mock_ticker
+
+        bars = get_price_history("AAPL", date(2024, 1, 15), date(2024, 1, 15))
+
+        assert bars[0].close == Decimal("185.5")
+        mock_ticker.history.assert_called_once_with(
+            start="2024-01-15",
+            end="2024-01-16",
+            auto_adjust=False,
+        )
 
 
 # ---------------------------------------------------------------------------
