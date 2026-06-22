@@ -65,6 +65,12 @@ async def get_price(ticker: str) -> PriceResult:
     return result
 
 
+async def set_price(ticker: str, result: PriceResult) -> None:
+    """Overwrite the cached current price (e.g. from a confirmed close job)."""
+    r = get_redis()
+    await r.setex(_cache_key(ticker), settings.price_cache_ttl, _serialize(result))
+
+
 async def invalidate(ticker: str) -> None:
     r = get_redis()
     await r.delete(_cache_key(ticker))
