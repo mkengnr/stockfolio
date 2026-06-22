@@ -586,63 +586,6 @@ def _dashboard_summary_has_values(summary: DashboardSummary) -> bool:
     )
 
 
-def _dashboard_summary_with_value_change(
-    summary: DashboardSummary,
-    history_rows: list[DashboardHistoryRow],
-    *,
-    group_kind: str,
-    group_id: uuid.UUID | None,
-    current_price_as_of: date | None = None,
-) -> DashboardSummary:
-    reference_date = current_price_as_of or date.today()
-    previous_values = [
-        row.total_value
-        for row in history_rows
-        if row.group_kind == group_kind
-        and row.group_id == group_id
-        and row.snapshot_date < reference_date
-        and row.total_value is not None
-    ]
-    previous_value = previous_values[-1] if previous_values else None
-    current_value_change = (
-        summary.total_current_value - previous_value
-        if summary.total_current_value is not None and previous_value is not None
-        else None
-    )
-    current_value_change_pct = (
-        current_value_change / previous_value * 100
-        if current_value_change is not None and previous_value is not None and previous_value != 0
-        else None
-    )
-    return summary.model_copy(
-        update={
-            "total_current_value_change": current_value_change,
-            "total_current_value_change_pct": current_value_change_pct,
-        }
-    )
-
-
-def _dashboard_groups_with_value_change(
-    groups: list[DashboardGroupSummary],
-    history_rows: list[DashboardHistoryRow],
-    current_price_as_of: date | None,
-) -> list[DashboardGroupSummary]:
-    return [
-        group.model_copy(
-            update={
-                "summary": _dashboard_summary_with_value_change(
-                    group.summary,
-                    history_rows,
-                    group_kind=group.kind,
-                    group_id=group.id,
-                    current_price_as_of=current_price_as_of,
-                )
-            }
-        )
-        for group in groups
-    ]
-
-
 def _dashboard_current_price_as_of(current_price_dates: dict[str, date | None]) -> date | None:
     valid_dates = [price_date for price_date in current_price_dates.values() if price_date is not None]
     return min(valid_dates) if valid_dates else None
@@ -670,6 +613,36 @@ def _dashboard_comparison_as_of(
         and row.total_value is not None
     ]
     return previous_dates[-1] if previous_dates else None
+
+
+def _summary_with_holdings_value_change(
+    summary: DashboardSummary,
+    holding_rows: list["DashboardHoldingRow"],
+) -> DashboardSummary:
+    """Set 전일대비 as the sum of each holding's own-day change.
+
+    Summing per-holding changes (each compared to its own market's previous
+    trading day) keeps mixed-market portfolios consistent: the summary always
+    equals the holdings table, instead of diffing against a single snapshot date.
+    """
+    changes = [
+        row.current_value_change
+        for row in holding_rows
+        if row.current_value_change is not None
+    ]
+    change = sum(changes) if changes else None
+    pct: Decimal | None = None
+    current_value = summary.total_current_value
+    if change is not None and current_value is not None:
+        previous_value = current_value - change
+        if previous_value != 0:
+            pct = change / previous_value * 100
+    return summary.model_copy(
+        update={
+            "total_current_value_change": change,
+            "total_current_value_change_pct": pct,
+        }
+    )
 
 
 def _source_group_scope(source_group: SourceGroup) -> PortfolioScope:
@@ -713,6 +686,7 @@ def _build_dashboard_groups(
     exchange_rate: ExchangeRate | None,
     *,
     current_price_as_of: date | None = None,
+    current_price_dates: dict[str, date | None] | None = None,
     panel_source_groups: list[SourceGroup] | None = None,
     include_unclassified: bool = True,
 ) -> tuple[list[DashboardGroupSummary], list[str]]:
@@ -748,6 +722,7 @@ def _build_dashboard_groups(
                         exchange_rate,
                         scope=scope,
                         current_price_as_of=current_price_as_of,
+                        current_price_dates=current_price_dates,
                     ),
                 )
             )
@@ -781,6 +756,7 @@ def _build_dashboard_groups(
                         exchange_rate,
                         scope=scope,
                         current_price_as_of=current_price_as_of,
+                        current_price_dates=current_price_dates,
                     ),
                 )
             )
@@ -811,6 +787,7 @@ def _build_dashboard_groups(
                         exchange_rate,
                         scope=scope,
                         current_price_as_of=current_price_as_of,
+                        current_price_dates=current_price_dates,
                     ),
                 )
             )
@@ -1096,7 +1073,9 @@ def _build_dashboard_holdings(
     *,
     scope: PortfolioScope = PortfolioScope("all"),
     current_price_as_of: date | None = None,
+    current_price_dates: dict[str, date | None] | None = None,
 ) -> list[DashboardHoldingRow]:
+    price_dates = current_price_dates or {}
     _, scoped_holdings = _build_scoped_dashboard_payload(
         holdings,
         scope,
@@ -1144,7 +1123,10 @@ def _build_dashboard_holdings(
                     current_value=current_value,
                     display_currency=display_currency,
                     exchange_rate=exchange_rate,
-                    current_price_as_of=current_price_as_of,
+                    # Each holding compares against ITS OWN latest trading day, so
+                    # mixed-market portfolios (e.g. KRX vs a US-holiday day) stay
+                    # accurate instead of all using the global oldest date.
+                    current_price_as_of=price_dates.get(holding.ticker) or current_price_as_of,
                 ),
                 unrealized_profit_loss=_convert_display_money(
                     holding.unrealized_profit_loss,
@@ -1211,6 +1193,7 @@ def build_dashboard_response(
         display_currency,
         exchange_rate,
         current_price_as_of=current_price_as_of,
+        current_price_dates=current_price_dates,
         panel_source_groups=panel_source_groups,
         include_unclassified=panel_source_groups is None,
     )
@@ -1227,14 +1210,24 @@ def build_dashboard_response(
         include_unrepresented=panel_source_groups is None,
     )
     comparison_as_of = _dashboard_comparison_as_of(history.rows, current_price_as_of)
-    summary = _dashboard_summary_with_value_change(
-        summary_base,
-        history.rows,
-        group_kind="total",
-        group_id=None,
+    output_holdings = _build_dashboard_holdings(
+        active_holdings,
+        source_groups,
+        current_prices,
+        display_currency,
+        exchange_rate,
+        scope=scope,
         current_price_as_of=current_price_as_of,
+        current_price_dates=current_price_dates,
     )
-    groups = _dashboard_groups_with_value_change(groups, history.rows, current_price_as_of)
+    # 전일대비는 종목별(각 시장 직전 거래일) 변화의 합으로 산출 — 요약·그룹·종목표가 일관.
+    summary = _summary_with_holdings_value_change(summary_base, output_holdings)
+    groups = [
+        group.model_copy(
+            update={"summary": _summary_with_holdings_value_change(group.summary, group.holdings)}
+        )
+        for group in groups
+    ]
 
     return DashboardResponse(
         display_currency=display_currency,
@@ -1254,15 +1247,7 @@ def build_dashboard_response(
         summary=summary,
         groups=groups,
         history=history,
-        holdings=_build_dashboard_holdings(
-            active_holdings,
-            source_groups,
-            current_prices,
-            display_currency,
-            exchange_rate,
-            scope=scope,
-            current_price_as_of=current_price_as_of,
-        ),
+        holdings=output_holdings,
         warnings=sorted(set(output_warnings)),
     )
 

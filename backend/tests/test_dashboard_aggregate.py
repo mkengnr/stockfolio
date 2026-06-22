@@ -626,6 +626,44 @@ def test_dashboard_daily_change_uses_current_price_date_as_reference_day(monkeyp
     assert response.holdings[0].current_value_change == Decimal("400")
 
 
+def test_dashboard_daily_change_is_per_holding_own_trading_day_and_sums_to_summary():
+    # Mixed trading days: one ticker's latest price is 6/22, another's is 6/18
+    # (e.g. KRX vs a market closed 6/19). Each holding's 전일대비 must compare to
+    # ITS OWN previous trading day, and the summary must equal the sum of holdings.
+    a_id = uuid.uuid4()
+    holding_a = _holding(
+        "005930",
+        Currency.KRW,
+        _buy(a_id, "005930", Currency.KRW, quantity="1", price="1000", tx_date=date(2026, 1, 1)),
+        snapshots=[_snapshot(date(2026, 6, 17), "1000"), _snapshot(date(2026, 6, 19), "1100")],
+    )
+    b_id = uuid.uuid4()
+    holding_b = _holding(
+        "000660",
+        Currency.KRW,
+        _buy(b_id, "000660", Currency.KRW, quantity="1", price="2000", tx_date=date(2026, 1, 1)),
+        snapshots=[_snapshot(date(2026, 6, 17), "2000")],
+    )
+
+    response = build_dashboard_response(
+        holdings=[holding_a, holding_b],
+        source_groups=[],
+        rollup_groups=[],
+        current_prices={"005930": Decimal("1200"), "000660": Decimal("2100")},
+        current_price_dates={"005930": date(2026, 6, 22), "000660": date(2026, 6, 18)},
+        display_currency="KRW",
+        exchange_rate=None,
+    )
+
+    rows = {row.ticker: row for row in response.holdings}
+    # A compares 6/22 price vs its own previous trading day 6/19 (1100): +100
+    assert rows["005930"].current_value_change == Decimal("100")
+    # B compares 6/18 price vs 6/17 (2000): +100
+    assert rows["000660"].current_value_change == Decimal("100")
+    # Summary 전일대비 equals the sum of per-holding changes
+    assert response.summary.total_current_value_change == Decimal("200")
+
+
 def test_krw_history_without_rate_nulls_usd_only_values():
     holding_id = uuid.uuid4()
     holding = _holding(
