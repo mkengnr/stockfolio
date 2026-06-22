@@ -48,9 +48,6 @@ class Settings(BaseSettings):
     snapshot_misfire_grace_seconds: int = 3600
     # KRX 특별 지연폐장(연 1회 수준): "YYYY-MM-DD=HH:MM" 콤마구분. 예 "2026-11-12=16:30"
     market_close_overrides_raw: str = ""
-    # Legacy aliases (removed in Task 5 when scheduler.py is rewritten)
-    snapshot_cron_hour: int = 15
-    snapshot_cron_minute: int = 35  # KST 15:35 (after KRX close)
 
 
 def parse_market_close_overrides(raw: str) -> dict:
