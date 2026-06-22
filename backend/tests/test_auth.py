@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.database import get_db
@@ -204,3 +204,52 @@ def test_verify_otp_returns_429_before_database_lookup_when_throttled(monkeypatc
     assert response.json() == {"detail": "Too many verification attempts. Try again later."}
     limiter.assert_awaited_once_with("user@example.com", "testclient")
     db.execute.assert_not_awaited()
+
+
+class _UserResult:
+    def __init__(self, user):
+        self._user = user
+
+    def scalar_one_or_none(self):
+        return self._user
+
+
+def _otp_app(monkeypatch, *, user, send):
+    app = FastAPI()
+    app.include_router(auth.router)
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=_UserResult(user))
+
+    async def _db():
+        yield db
+
+    app.dependency_overrides[get_db] = _db
+    monkeypatch.setattr(auth, "_allow_otp_request", AsyncMock(return_value=True), raising=False)
+    monkeypatch.setattr(auth.auth_service, "create_otp", AsyncMock(return_value="123456"))
+    monkeypatch.setattr(auth, "_send_otp", send)
+    return app
+
+
+def test_request_otp_surfaces_send_failure_for_registered_email(monkeypatch):
+    user = MagicMock(email="user@example.com")
+    send = AsyncMock(side_effect=HTTPException(status_code=502, detail="Failed to send OTP email"))
+    app = _otp_app(monkeypatch, user=user, send=send)
+
+    response = TestClient(app).post(
+        "/api/auth/request-otp", json={"email": "user@example.com"}
+    )
+
+    assert response.status_code == 502
+    send.assert_awaited_once()
+
+
+def test_request_otp_stays_silent_for_unregistered_email(monkeypatch):
+    send = AsyncMock()
+    app = _otp_app(monkeypatch, user=None, send=send)
+
+    response = TestClient(app).post(
+        "/api/auth/request-otp", json={"email": "nobody@example.com"}
+    )
+
+    assert response.status_code == 200
+    send.assert_not_awaited()

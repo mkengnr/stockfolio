@@ -57,6 +57,21 @@ describe('AuthForm — email step', () => {
       expect(screen.getAllByRole('textbox').length).toBeGreaterThanOrEqual(1)
     })
   })
+
+  it('shows a send-failure error and stays on the email step when delivery fails (502)', async () => {
+    mockedAuthApi.requestOtp.mockRejectedValue(Object.assign(new Error('Failed to send OTP email'), { status: 502 }))
+    render(<AuthForm />)
+
+    await userEvent.type(screen.getByLabelText('이메일'), 'user@example.com')
+    await userEvent.click(screen.getByRole('button', { name: '인증 코드 받기' }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/메일 발송에 실패/)).toBeInTheDocument()
+    })
+    // Still on the email step (did not advance to OTP entry)
+    expect(screen.getByLabelText('이메일')).toBeInTheDocument()
+    expect(screen.queryByText('6자리 인증 코드 입력')).not.toBeInTheDocument()
+  })
 })
 
 describe('AuthForm — OTP step', () => {

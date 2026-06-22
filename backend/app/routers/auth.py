@@ -130,12 +130,10 @@ async def request_otp(body: OtpRequestIn, request: Request, db: AsyncSession = D
         return OtpRequestOut()
 
     code = await auth_service.create_otp(db, user)
-    try:
-        await _send_otp(user.email, code)
-    except HTTPException:
-        # Keep the public response identical for registered and unknown emails.
-        # Delivery failures stay visible through server logs.
-        pass
+    # Unknown emails returned early above (anti-enumeration). For a registered
+    # email we surface a real delivery failure (502) so the user — and us — know
+    # the code was never sent, instead of silently showing "코드를 발송했습니다".
+    await _send_otp(user.email, code)
     return OtpRequestOut()
 
 

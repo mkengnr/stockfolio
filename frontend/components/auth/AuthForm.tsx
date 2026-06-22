@@ -46,7 +46,13 @@ export function AuthForm({ returnTo }: { returnTo?: string }) {
       setSent(true)
       setStep('otp')
     } catch (err: unknown) {
-      // Always show success message to avoid email enumeration
+      const status = (err as { status?: number }).status
+      if (status === 502) {
+        // The email could not be sent — surface it instead of pretending success.
+        setError('인증 코드 메일 발송에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+        return
+      }
+      // Other failures (incl. unknown emails): keep anti-enumeration behavior.
       setSent(true)
       setStep('otp')
     } finally {
