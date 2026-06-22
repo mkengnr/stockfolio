@@ -85,6 +85,8 @@ class DashboardResponse(BaseModel):
     last_refreshed_at: datetime
     current_price_as_of: date | None
     comparison_as_of: date | None
+    price_dates_by_market: dict[str, date] = Field(default_factory=dict)
+    comparison_dates_by_market: dict[str, date] = Field(default_factory=dict)
     summary: DashboardSummary
     groups: list[DashboardGroupSummary]
     history: DashboardHistorySeries

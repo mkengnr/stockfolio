@@ -54,6 +54,8 @@ const dashboard: DashboardResponse = {
   last_refreshed_at: '2026-06-06T00:45:59Z',
   current_price_as_of: '2026-06-05',
   comparison_as_of: '2026-06-04',
+  price_dates_by_market: { KRX: '2026-06-05', US: '2026-06-04' },
+  comparison_dates_by_market: { KRX: '2026-06-04', US: '2026-06-03' },
   summary: {
     total_invested_principal: '1000000',
     total_cost_basis: '800000',
@@ -222,6 +224,22 @@ describe('DisplayCurrencyToggle', () => {
 })
 
 describe('DashboardOverview', () => {
+  it('shows per-market current and comparison dates in the header', () => {
+    render(
+      <DashboardOverview
+        dashboard={dashboard}
+        displayCurrency="KRW"
+        onDisplayCurrencyChange={jest.fn()}
+        onRefresh={jest.fn()}
+        isRefreshing={false}
+        lastUpdated={new Date('2026-06-06T00:45:59Z')}
+      />,
+    )
+
+    expect(screen.getByText('현재가 기준: 한국 2026-06-05 · 미국 2026-06-04')).toBeInTheDocument()
+    expect(screen.getByText('비교 기준(직전 거래일): 한국 2026-06-04 · 미국 2026-06-03')).toBeInTheDocument()
+  })
+
   it('renders total performance, group performance, transaction link, and warnings', () => {
     render(
       <DashboardOverview

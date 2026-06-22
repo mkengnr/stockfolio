@@ -182,6 +182,8 @@ export interface DashboardResponse {
   last_refreshed_at: string
   current_price_as_of: string | null
   comparison_as_of: string | null
+  price_dates_by_market: Record<string, string>
+  comparison_dates_by_market: Record<string, string>
   summary: DashboardSummary
   groups: DashboardGroupSummary[]
   history: { rows: DashboardHistoryRow[] }

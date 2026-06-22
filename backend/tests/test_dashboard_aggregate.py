@@ -664,6 +664,36 @@ def test_dashboard_daily_change_is_per_holding_own_trading_day_and_sums_to_summa
     assert response.summary.total_current_value_change == Decimal("200")
 
 
+def test_dashboard_exposes_per_market_price_and_comparison_dates():
+    krx_id = uuid.uuid4()
+    krx = _holding(
+        "005930",
+        Currency.KRW,
+        _buy(krx_id, "005930", Currency.KRW, quantity="1", price="1000", tx_date=date(2026, 1, 1)),
+        snapshots=[_snapshot(date(2026, 6, 17), "1000"), _snapshot(date(2026, 6, 19), "1100")],
+    )
+    us_id = uuid.uuid4()
+    us = _holding(
+        "AAPL",
+        Currency.USD,
+        _buy(us_id, "AAPL", Currency.USD, quantity="1", price="100", tx_date=date(2026, 1, 1)),
+        snapshots=[_snapshot(date(2026, 6, 16), "105"), _snapshot(date(2026, 6, 17), "110")],
+    )
+
+    response = build_dashboard_response(
+        holdings=[krx, us],
+        source_groups=[],
+        rollup_groups=[],
+        current_prices={"005930": Decimal("1200"), "AAPL": Decimal("120")},
+        current_price_dates={"005930": date(2026, 6, 22), "AAPL": date(2026, 6, 18)},
+        display_currency="KRW",
+        exchange_rate=RATE,
+    )
+
+    assert response.price_dates_by_market == {"KRX": date(2026, 6, 22), "US": date(2026, 6, 18)}
+    assert response.comparison_dates_by_market == {"KRX": date(2026, 6, 19), "US": date(2026, 6, 17)}
+
+
 def test_krw_history_without_rate_nulls_usd_only_values():
     holding_id = uuid.uuid4()
     holding = _holding(

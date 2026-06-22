@@ -591,6 +591,45 @@ def _dashboard_current_price_as_of(current_price_dates: dict[str, date | None]) 
     return min(valid_dates) if valid_dates else None
 
 
+def _dashboard_dates_by_market(
+    holdings: list[Holding],
+    current_price_dates: dict[str, date | None] | None,
+) -> tuple[dict[str, date], dict[str, date]]:
+    """Per-market current-price date and its previous-trading-day comparison date.
+
+    Korea and the US have different trading calendars (e.g. US Juneteenth), so a
+    single date hides which market each price is as of. Expose both per market.
+    """
+    price_dates = current_price_dates or {}
+    current_by_market: dict[str, date] = {}
+    for holding in holdings:
+        ticker_date = price_dates.get(holding.ticker)
+        if ticker_date is None:
+            continue
+        market = _holding_market(holding).value
+        if market not in current_by_market or ticker_date > current_by_market[market]:
+            current_by_market[market] = ticker_date
+
+    comparison_by_market: dict[str, date] = {}
+    for holding in holdings:
+        market = _holding_market(holding).value
+        market_current = current_by_market.get(market)
+        if market_current is None:
+            continue
+        previous_dates = [
+            snapshot.snapshot_date
+            for snapshot in holding.snapshots
+            if snapshot.snapshot_date < market_current
+        ]
+        if not previous_dates:
+            continue
+        candidate = max(previous_dates)
+        if market not in comparison_by_market or candidate > comparison_by_market[market]:
+            comparison_by_market[market] = candidate
+
+    return current_by_market, comparison_by_market
+
+
 def _previous_weekday(value: date) -> date:
     candidate = value - timedelta(days=1)
     while candidate.weekday() >= 5:
@@ -1185,6 +1224,9 @@ def build_dashboard_response(
         output_warnings.append("USD/KRW exchange rate unavailable; USD values are omitted")
 
     current_price_as_of = _dashboard_current_price_as_of(current_price_dates or {})
+    price_dates_by_market, comparison_dates_by_market = _dashboard_dates_by_market(
+        active_holdings, current_price_dates
+    )
     groups, group_warnings = _build_dashboard_groups(
         active_holdings,
         source_groups,
@@ -1244,6 +1286,8 @@ def build_dashboard_response(
         last_refreshed_at=datetime.now(timezone.utc),
         current_price_as_of=current_price_as_of,
         comparison_as_of=comparison_as_of,
+        price_dates_by_market=price_dates_by_market,
+        comparison_dates_by_market=comparison_dates_by_market,
         summary=summary,
         groups=groups,
         history=history,

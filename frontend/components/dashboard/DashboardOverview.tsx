@@ -118,8 +118,8 @@ export function DashboardOverview({
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
             <span>마지막 조회: {formatDashboardDateTime(dashboard.last_refreshed_at)}</span>
             <span>화면 갱신: {formatLastUpdated(lastUpdated)}</span>
-            <span>현재가 기준: {formatDashboardDate(dashboard.current_price_as_of)}</span>
-            <span>비교 기준(직전 거래일): {formatDashboardDate(dashboard.comparison_as_of)}</span>
+            <span>현재가 기준: {formatMarketDates(dashboard.price_dates_by_market) || formatDashboardDate(dashboard.current_price_as_of)}</span>
+            <span>비교 기준(직전 거래일): {formatMarketDates(dashboard.comparison_dates_by_market) || formatDashboardDate(dashboard.comparison_as_of)}</span>
           </div>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-start">
@@ -248,4 +248,22 @@ function formatDashboardDateTime(value: string | null) {
 function formatDashboardDate(value: string | null) {
   if (!value) return '—'
   return value
+}
+
+const MARKET_LABELS: Record<string, string> = { KRX: '한국', US: '미국' }
+const MARKET_ORDER = ['KRX', 'US']
+
+// "한국 2026-06-22 · 미국 2026-06-18" — empty string when there is nothing to show
+// so callers can fall back to the single-date display.
+function formatMarketDates(byMarket: Record<string, string> | undefined): string {
+  const entries = Object.entries(byMarket ?? {})
+  if (entries.length === 0) return ''
+  const rank = (market: string) => {
+    const index = MARKET_ORDER.indexOf(market)
+    return index === -1 ? MARKET_ORDER.length : index
+  }
+  return entries
+    .sort((a, b) => rank(a[0]) - rank(b[0]))
+    .map(([market, value]) => `${MARKET_LABELS[market] ?? market} ${value}`)
+    .join(' · ')
 }
