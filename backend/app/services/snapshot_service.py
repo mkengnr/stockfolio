@@ -1,16 +1,21 @@
 import asyncio
+import logging
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Iterable
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.holding import Holding, Transaction, TransactionType
+from app.models.holding import Holding, Market, Transaction, TransactionType
 from app.models.snapshot import DailySnapshot
 from app.services import stock_fetcher
+from app.services.market_session import is_write_confirmed
 from app.services.stock_fetcher import OHLCBar
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -165,3 +170,80 @@ async def rebuild_holding_snapshots(
     if values:
         await db.flush()
     return len(values)
+
+
+def _quantity_on_date(holding, on: date) -> Decimal:
+    """Return ledger quantity held as of `on` (inclusive)."""
+    quantity = Decimal(0)
+    for transaction in sorted(holding.transactions, key=_transaction_sort_key):
+        if transaction.transaction_date > on:
+            break
+        if transaction.type == TransactionType.BUY:
+            quantity += transaction.quantity
+        elif transaction.type == TransactionType.SELL:
+            quantity -= transaction.quantity
+    return quantity
+
+
+async def _upsert_snapshot(
+    db,
+    holding_id,
+    snapshot_date: date,
+    close_price: Decimal,
+    total_value: Decimal,
+) -> None:
+    """Idempotent upsert: ON CONFLICT (holding_id, snapshot_date) DO UPDATE."""
+    stmt = pg_insert(DailySnapshot).values(
+        holding_id=holding_id,
+        snapshot_date=snapshot_date,
+        close_price=close_price,
+        total_value=total_value,
+    ).on_conflict_do_update(
+        index_elements=["holding_id", "snapshot_date"],
+        set_={
+            "close_price": close_price,
+            "total_value": total_value,
+            "updated_at": func.now(),
+        },
+    )
+    await db.execute(stmt)
+
+
+async def finalize_market_snapshots(
+    db,
+    holdings,
+    now: datetime,
+    *,
+    get_price=stock_fetcher.get_current_price,
+    close_overrides: dict[date, time] | None = None,
+) -> dict[str, list]:
+    """Confirm today's close for already-closed sessions; idempotent upsert at price_date.
+
+    Returns confirmed (holding, PriceResult) pairs in results['confirmed'] so the caller
+    can mirror them to Redis after commit.
+    """
+    results: dict[str, list] = {
+        "written": [],
+        "skipped_intraday": [],
+        "failed": [],
+        "confirmed": [],
+    }
+    for holding in holdings:
+        try:
+            pr = await asyncio.to_thread(get_price, holding.ticker)
+        except Exception as exc:
+            logger.warning("finalize price fetch failed ticker=%s: %r", holding.ticker, exc)
+            results["failed"].append(holding.ticker)
+            continue
+        if pr.price is None or not pr.price.is_finite() or pr.price <= 0:
+            logger.warning("finalize got unusable price ticker=%s", holding.ticker)
+            results["failed"].append(holding.ticker)
+            continue
+        if not is_write_confirmed(pr.market, pr.price_date, now, close_overrides=close_overrides):
+            results["skipped_intraday"].append(holding.ticker)
+            continue
+        quantity = _quantity_on_date(holding, pr.price_date)
+        await _upsert_snapshot(db, holding.id, pr.price_date, pr.price, quantity * pr.price)
+        results["written"].append((holding.ticker, pr.price_date))
+        results["confirmed"].append((holding, pr))
+    return results

@@ -1,12 +1,15 @@
-from datetime import date, datetime
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+from zoneinfo import ZoneInfo
 import uuid
 
 import pytest
 
-from app.models.holding import TransactionType
+from app.models.holding import Currency, Market, TransactionType
+from app.services import snapshot_service
+from app.services.stock_fetcher import PriceResult
 from app.services.snapshot_service import (
     _build_snapshot_values,
     backfill_holding_snapshots,
@@ -293,3 +296,100 @@ async def test_rebuild_only_invalidates_when_no_buy_transactions_remain():
     db.execute.assert_awaited_once()
     db.add.assert_not_called()
     db.flush.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Task 3: finalize_market_snapshots tests
+# ---------------------------------------------------------------------------
+
+KST = ZoneInfo("Asia/Seoul")
+
+
+def _holding_ns(ticker, *txs, first_buy=date(2026, 1, 2)):
+    from types import SimpleNamespace
+    return SimpleNamespace(id=uuid.uuid4(), ticker=ticker, market=Market.KRX,
+                           first_buy_date=first_buy, transactions=list(txs))
+
+
+def _pr(ticker, price, price_date, market=Market.KRX):
+    return PriceResult(ticker=ticker, market=market, name=ticker,
+                       currency=Currency.KRW if market == Market.KRX else Currency.USD,
+                       price=Decimal(price), price_date=price_date)
+
+
+async def _captured_db():
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+    return db
+
+
+@pytest.mark.asyncio
+async def test_finalize_skips_intraday_and_writes_confirmed(monkeypatch):
+    holding = _holding_ns("005930", _tx(TransactionType.BUY, "2", date(2026, 1, 2)))
+    now = datetime(2026, 6, 22, 10, 8, tzinfo=KST)  # 장중
+    captured = []
+
+    async def fake_upsert(db, holding_id, snapshot_date, close_price, total_value):
+        captured.append((snapshot_date, close_price, total_value))
+
+    monkeypatch.setattr(snapshot_service, "_upsert_snapshot", fake_upsert)
+    db = await _captured_db()
+    results = await snapshot_service.finalize_market_snapshots(
+        db, [holding], now,
+        get_price=lambda t: _pr(t, "2885000", date(2026, 6, 22)),
+    )
+    # 장중 → skip, upsert 없음
+    assert captured == []
+    assert results["skipped_intraday"] == ["005930"]
+
+
+@pytest.mark.asyncio
+async def test_finalize_writes_at_price_date_with_ledger_quantity(monkeypatch):
+    holding = _holding_ns("005930", _tx(TransactionType.BUY, "2", date(2026, 1, 2)))
+    now = datetime(2026, 6, 22, 15, 45, tzinfo=KST)  # 마감 후
+    captured = []
+
+    async def fake_upsert(db, holding_id, snapshot_date, close_price, total_value):
+        captured.append((snapshot_date, close_price, total_value))
+
+    monkeypatch.setattr(snapshot_service, "_upsert_snapshot", fake_upsert)
+    db = await _captured_db()
+    await snapshot_service.finalize_market_snapshots(
+        db, [holding], now,
+        get_price=lambda t: _pr(t, "2900000", date(2026, 6, 22)),
+    )
+    assert captured == [(date(2026, 6, 22), Decimal("2900000"), Decimal("5800000"))]
+
+
+@pytest.mark.asyncio
+async def test_finalize_isolates_ticker_failure(monkeypatch):
+    h1 = _holding_ns("005930", _tx(TransactionType.BUY, "1", date(2026, 1, 2)))
+    h2 = _holding_ns("000660", _tx(TransactionType.BUY, "1", date(2026, 1, 2)))
+    now = datetime(2026, 6, 22, 15, 45, tzinfo=KST)
+    written = []
+
+    async def fake_upsert(db, holding_id, snapshot_date, close_price, total_value):
+        written.append(close_price)
+
+    def flaky(ticker):
+        if ticker == "005930":
+            raise RuntimeError("boom")
+        return _pr(ticker, "100", date(2026, 6, 22))
+
+    monkeypatch.setattr(snapshot_service, "_upsert_snapshot", fake_upsert)
+    db = await _captured_db()
+    results = await snapshot_service.finalize_market_snapshots(db, [h1, h2], now, get_price=flaky)
+    assert written == [Decimal("100")]
+    assert results["failed"] == ["005930"]
+
+
+def test_quantity_on_date_uses_ledger():
+    holding = _holding_ns(
+        "005930",
+        _tx(TransactionType.BUY, "10", date(2026, 1, 2)),
+        _tx(TransactionType.SELL, "4", date(2026, 1, 5)),
+    )
+    assert snapshot_service._quantity_on_date(holding, date(2026, 1, 4)) == Decimal("10")
+    assert snapshot_service._quantity_on_date(holding, date(2026, 1, 5)) == Decimal("6")
