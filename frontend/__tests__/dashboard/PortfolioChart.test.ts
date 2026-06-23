@@ -271,6 +271,7 @@ describe('buildIntegratedDashboardChartData', () => {
       { time: '2026-06-02', value: 700000 },
     ])
     expect(data.dailyProfitChange).toEqual([
+      { time: '2026-06-01' },
       { time: '2026-06-02', value: 15000, color: '#dc2626' },
     ])
     expect(data.gainLossBand).toEqual([
@@ -306,6 +307,29 @@ describe('buildIntegratedDashboardChartData', () => {
     ])
   })
 
+  it('uses the exact negative live daily profit for the final row', () => {
+    const selectedRows = [
+      ...rows.filter((row) => row.group_kind === 'total'),
+      {
+        ...rows.find((row) => row.group_kind === 'total' && row.snapshot_date === '2026-06-02')!,
+        snapshot_date: '2026-06-03',
+        total_value: '805000',
+        total_profit_loss: '180000',
+      },
+    ]
+
+    const data = buildIntegratedDashboardChartData(rows, selectedRows, {
+      includeComposition: false,
+      liveDailyProfit: -25000,
+    })
+
+    expect(data.dailyProfitChange).toEqual([
+      { time: '2026-06-01' },
+      { time: '2026-06-02', value: 15000, color: '#dc2626' },
+      { time: '2026-06-03', value: -25000, color: '#2563eb' },
+    ])
+  })
+
   it('detects whether 투자원금 is available for the auto default', () => {
     const withPrincipal = rows.filter((row) => row.group_kind === 'total')
     expect(hasInvestedPrincipal(withPrincipal)).toBe(true)
@@ -324,6 +348,7 @@ describe('buildIntegratedDashboardChartData', () => {
 
     expect(data.composition).toEqual([])
     expect(data.dailyProfitChange).toEqual([
+      { time: '2026-06-01' },
       { time: '2026-06-02', value: 15000, color: '#dc2626' },
     ])
     expect(formatDashboardMoney(1234567.89)).toBe('1,234,568')

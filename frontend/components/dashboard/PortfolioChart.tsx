@@ -14,6 +14,7 @@ type LegacyMeasure = 'value' | 'cost' | 'profit'
 type DashboardChartMetric = 'value' | 'principal' | 'profit'
 type ChartPoint = { time: string; value: number }
 type ColoredChartPoint = ChartPoint & { color: string }
+type ChartWhitespacePoint = { time: string }
 type CurrencyChartSeries = Record<LegacyMeasure, ChartPoint[]>
 type ChartVisibleRange = { from: string; to: string } | null
 
@@ -37,7 +38,7 @@ type GainLossBandPoint = { time: string; value: number; principal: number }
 export interface IntegratedDashboardChartData {
   value: ChartPoint[]
   principal: ChartPoint[]
-  dailyProfitChange: ColoredChartPoint[]
+  dailyProfitChange: Array<ColoredChartPoint | ChartWhitespacePoint>
   gainLossBand: GainLossBandPoint[]
   composition: DashboardBuiltChartSeries[]
 }
@@ -183,7 +184,11 @@ export const referenceFieldLabel: Record<ChartReferenceField, string> = {
 export function buildIntegratedDashboardChartData(
   allRows: DashboardHistoryRow[],
   selectedRows: DashboardHistoryRow[],
-  options: { includeComposition: boolean; referenceField?: ChartReferenceField },
+  options: {
+    includeComposition: boolean
+    referenceField?: ChartReferenceField
+    liveDailyProfit?: number | null
+  },
 ): IntegratedDashboardChartData {
   const referenceField = options.referenceField ?? 'cost'
   const principalRowField = referenceRowField[referenceField]
@@ -197,21 +202,28 @@ export function buildIntegratedDashboardChartData(
       ? []
       : [{ time: row.snapshot_date, value: rowValue, principal: rowPrincipal }]
   })
-  const dailyProfitChange: ColoredChartPoint[] = []
+  const dailyProfitChange: Array<ColoredChartPoint | ChartWhitespacePoint> = []
   let previousProfit: number | null = null
 
-  for (const row of orderedSelectedRows) {
+  orderedSelectedRows.forEach((row, index) => {
     const currentProfit = parseNullableNumber(row.total_profit_loss)
-    if (currentProfit !== null && previousProfit !== null) {
-      const change = currentProfit - previousProfit
+    const confirmedChange = currentProfit !== null && previousProfit !== null
+      ? currentProfit - previousProfit
+      : null
+    const change = index === orderedSelectedRows.length - 1 && typeof options.liveDailyProfit === 'number'
+      ? options.liveDailyProfit
+      : confirmedChange
+    if (change === null) {
+      dailyProfitChange.push({ time: row.snapshot_date })
+    } else {
       dailyProfitChange.push({
         time: row.snapshot_date,
         value: change,
         color: change >= 0 ? '#dc2626' : '#2563eb',
       })
     }
-    if (currentProfit !== null) previousProfit = currentProfit
-  }
+    previousProfit = currentProfit
+  })
 
   return {
     value,
@@ -339,6 +351,8 @@ function DashboardPortfolioChart({
     let mainChart: ReturnType<typeof import('lightweight-charts')['createChart']> | null = null
     let profitChart: ReturnType<typeof import('lightweight-charts')['createChart']> | null = null
     let handleResize: (() => void) | null = null
+    let mainVisibleTimeRangeHandler: import('lightweight-charts').TimeRangeChangeEventHandler<import('lightweight-charts').Time> | null = null
+    let profitVisibleTimeRangeHandler: import('lightweight-charts').TimeRangeChangeEventHandler<import('lightweight-charts').Time> | null = null
 
     import('lightweight-charts').then(({ createChart, ColorType, LineStyle }) => {
       if (cancelled || !mainContainerRef.current || !profitContainerRef.current) return
@@ -378,7 +392,7 @@ function DashboardPortfolioChart({
         },
         rightPriceScale: { visible: false },
         timeScale: {
-          visible: false,
+          visible: true,
           borderColor: '#e5e7eb',
           fixLeftEdge: true,
           fixRightEdge: false,
@@ -458,8 +472,7 @@ function DashboardPortfolioChart({
       })
       profitSeries.setData(chartData.dailyProfitChange.map((point) => ({
         time: point.time as import('lightweight-charts').Time,
-        value: point.value,
-        color: point.color,
+        ...('value' in point ? { value: point.value, color: point.color } : {}),
       })))
 
       applyChartVisibleRange(mainChart)
@@ -467,15 +480,20 @@ function DashboardPortfolioChart({
       let syncingTimeScale = false
       const syncRange = (
         target: ReturnType<typeof import('lightweight-charts')['createChart']>,
-        range: import('lightweight-charts').LogicalRange | null,
+        range: import('lightweight-charts').Range<import('lightweight-charts').Time> | null,
       ) => {
         if (!range || syncingTimeScale) return
         syncingTimeScale = true
-        target.timeScale().setVisibleLogicalRange(range)
-        syncingTimeScale = false
+        try {
+          target.timeScale().setVisibleRange(range)
+        } finally {
+          syncingTimeScale = false
+        }
       }
-      mainChart.timeScale().subscribeVisibleLogicalRangeChange((range) => syncRange(profitChart!, range))
-      profitChart.timeScale().subscribeVisibleLogicalRangeChange((range) => syncRange(mainChart!, range))
+      mainVisibleTimeRangeHandler = (range) => syncRange(profitChart!, range)
+      profitVisibleTimeRangeHandler = (range) => syncRange(mainChart!, range)
+      mainChart.timeScale().subscribeVisibleTimeRangeChange(mainVisibleTimeRangeHandler)
+      profitChart.timeScale().subscribeVisibleTimeRangeChange(profitVisibleTimeRangeHandler)
 
       handleResize = () => {
         if (mainContainerRef.current && mainChart) {
@@ -493,6 +511,12 @@ function DashboardPortfolioChart({
     return () => {
       cancelled = true
       if (handleResize) window.removeEventListener('resize', handleResize)
+      if (mainChart && mainVisibleTimeRangeHandler) {
+        mainChart.timeScale().unsubscribeVisibleTimeRangeChange(mainVisibleTimeRangeHandler)
+      }
+      if (profitChart && profitVisibleTimeRangeHandler) {
+        profitChart.timeScale().unsubscribeVisibleTimeRangeChange(profitVisibleTimeRangeHandler)
+      }
       mainChart?.remove()
       profitChart?.remove()
     }
