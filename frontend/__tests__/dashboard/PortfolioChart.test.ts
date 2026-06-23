@@ -164,7 +164,7 @@ describe('mergeDashboardLivePoint', () => {
     const result = mergeDashboardLivePoint(totalRows, livePoint)
 
     expect(result.rows).toBe(totalRows)
-    expect(result.liveDailyProfit).toBeNull()
+    expect(result.liveDailyProfit).toBeUndefined()
   })
 
   it.each([
@@ -180,7 +180,42 @@ describe('mergeDashboardLivePoint', () => {
     })
 
     expect(result.rows).toBe(totalRows)
-    expect(result.liveDailyProfit).toBeNull()
+    expect(result.liveDailyProfit).toBeUndefined()
+  })
+
+  it('preserves the final confirmed delta when an invalid merge result is composed into chart data', () => {
+    const merged = mergeDashboardLivePoint(totalRows, null)
+
+    const data = buildIntegratedDashboardChartData(rows, merged.rows, {
+      includeComposition: false,
+      liveDailyProfit: merged.liveDailyProfit,
+    })
+
+    expect(data.dailyProfitChange).toEqual([
+      { time: '2026-06-01' },
+      { time: '2026-06-02', value: 15000, color: '#dc2626' },
+    ])
+  })
+
+  it('uses final whitespace when a valid live merge has no daily profit', () => {
+    const merged = mergeDashboardLivePoint(totalRows, {
+      snapshotDate: '2026-06-03',
+      groupKind: 'total',
+      groupId: null,
+      groupName: '전체',
+      summary: { ...liveSummary, total_current_value_change: null },
+    })
+
+    const data = buildIntegratedDashboardChartData(rows, merged.rows, {
+      includeComposition: false,
+      liveDailyProfit: merged.liveDailyProfit,
+    })
+
+    expect(data.dailyProfitChange).toEqual([
+      { time: '2026-06-01' },
+      { time: '2026-06-02', value: 15000, color: '#dc2626' },
+      { time: '2026-06-03' },
+    ])
   })
 
   it('retains the selected group identity when the live point has no history', () => {
@@ -327,6 +362,62 @@ describe('buildIntegratedDashboardChartData', () => {
       { time: '2026-06-01' },
       { time: '2026-06-02', value: 15000, color: '#dc2626' },
       { time: '2026-06-03', value: -25000, color: '#2563eb' },
+    ])
+  })
+
+  it('uses whitespace for the final live row when live daily profit is explicitly null', () => {
+    const selectedRows = [
+      ...rows.filter((row) => row.group_kind === 'total'),
+      {
+        ...rows.find((row) => row.group_kind === 'total' && row.snapshot_date === '2026-06-02')!,
+        snapshot_date: '2026-06-03',
+        total_value: '805000',
+        total_profit_loss: '180000',
+      },
+    ]
+
+    const data = buildIntegratedDashboardChartData(rows, selectedRows, {
+      includeComposition: false,
+      liveDailyProfit: null,
+    })
+
+    expect(data.dailyProfitChange).toEqual([
+      { time: '2026-06-01' },
+      { time: '2026-06-02', value: 15000, color: '#dc2626' },
+      { time: '2026-06-03' },
+    ])
+  })
+
+  it('keeps missing profit dates aligned and resumes changes from the next confirmed profit', () => {
+    const selectedRows = [
+      ...rows.filter((row) => row.group_kind === 'total'),
+      {
+        ...rows.find((row) => row.group_kind === 'total' && row.snapshot_date === '2026-06-02')!,
+        snapshot_date: '2026-06-03',
+        total_profit_loss: null,
+      },
+      {
+        ...rows.find((row) => row.group_kind === 'total' && row.snapshot_date === '2026-06-02')!,
+        snapshot_date: '2026-06-04',
+        total_profit_loss: '180000',
+      },
+      {
+        ...rows.find((row) => row.group_kind === 'total' && row.snapshot_date === '2026-06-02')!,
+        snapshot_date: '2026-06-05',
+        total_profit_loss: '175000',
+      },
+    ]
+
+    const data = buildIntegratedDashboardChartData(rows, selectedRows, {
+      includeComposition: false,
+    })
+
+    expect(data.dailyProfitChange).toEqual([
+      { time: '2026-06-01' },
+      { time: '2026-06-02', value: 15000, color: '#dc2626' },
+      { time: '2026-06-03' },
+      { time: '2026-06-04' },
+      { time: '2026-06-05', value: -5000, color: '#2563eb' },
     ])
   })
 

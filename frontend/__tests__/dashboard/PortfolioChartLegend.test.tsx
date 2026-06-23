@@ -154,6 +154,21 @@ describe('DashboardPortfolioChart legend', () => {
     const handlers = timeScaleApis.map(
       (api) => api.subscribeVisibleTimeRangeChange.mock.calls[0][0],
     )
+    const range = { from: '2026-06-01', to: '2026-06-02' }
+    handlers[0](range)
+    expect(timeScaleApis[1].setVisibleRange).toHaveBeenCalledWith(range)
+
+    handlers[1](range)
+    expect(timeScaleApis[0].setVisibleRange).not.toHaveBeenCalled()
+
+    const nextRange = { from: '2026-06-02', to: '2026-06-03' }
+    handlers[1](nextRange)
+    expect(timeScaleApis[0].setVisibleRange).toHaveBeenCalledTimes(1)
+    expect(timeScaleApis[0].setVisibleRange).toHaveBeenCalledWith(nextRange)
+
+    handlers[0](nextRange)
+    expect(timeScaleApis[1].setVisibleRange).toHaveBeenCalledTimes(1)
+
     unmount()
 
     expect(timeScaleApis[0].unsubscribeVisibleTimeRangeChange).toHaveBeenCalledWith(handlers[0])

@@ -106,11 +106,11 @@ export function mergeDashboardLivePoint(
   rows: DashboardHistoryRow[],
   livePoint: DashboardLivePoint | null | undefined,
 ) {
-  if (!livePoint) return { rows, liveDailyProfit: null }
+  if (!livePoint) return { rows, liveDailyProfit: undefined }
 
   const { snapshotDate, summary } = livePoint
   if (!snapshotDate || summary.total_current_value == null) {
-    return { rows, liveDailyProfit: null }
+    return { rows, liveDailyProfit: undefined }
   }
 
   const liveRow: DashboardHistoryRow = {
@@ -210,7 +210,7 @@ export function buildIntegratedDashboardChartData(
     const confirmedChange = currentProfit !== null && previousProfit !== null
       ? currentProfit - previousProfit
       : null
-    const change = index === orderedSelectedRows.length - 1 && typeof options.liveDailyProfit === 'number'
+    const change = index === orderedSelectedRows.length - 1 && options.liveDailyProfit !== undefined
       ? options.liveDailyProfit
       : confirmedChange
     if (change === null) {
@@ -477,21 +477,32 @@ function DashboardPortfolioChart({
 
       applyChartVisibleRange(mainChart)
       applyChartVisibleRange(profitChart)
-      let syncingTimeScale = false
+      const ignoredMainTimeRanges = new Set<string>()
+      const ignoredProfitTimeRanges = new Set<string>()
       const syncRange = (
         target: ReturnType<typeof import('lightweight-charts')['createChart']>,
+        sourceIgnoredRanges: Set<string>,
+        targetIgnoredRanges: Set<string>,
         range: import('lightweight-charts').Range<import('lightweight-charts').Time> | null,
       ) => {
-        if (!range || syncingTimeScale) return
-        syncingTimeScale = true
-        try {
-          target.timeScale().setVisibleRange(range)
-        } finally {
-          syncingTimeScale = false
-        }
+        if (!range) return
+        const rangeKey = JSON.stringify(range)
+        if (sourceIgnoredRanges.delete(rangeKey)) return
+        targetIgnoredRanges.add(rangeKey)
+        target.timeScale().setVisibleRange(range)
       }
-      mainVisibleTimeRangeHandler = (range) => syncRange(profitChart!, range)
-      profitVisibleTimeRangeHandler = (range) => syncRange(mainChart!, range)
+      mainVisibleTimeRangeHandler = (range) => syncRange(
+        profitChart!,
+        ignoredMainTimeRanges,
+        ignoredProfitTimeRanges,
+        range,
+      )
+      profitVisibleTimeRangeHandler = (range) => syncRange(
+        mainChart!,
+        ignoredProfitTimeRanges,
+        ignoredMainTimeRanges,
+        range,
+      )
       mainChart.timeScale().subscribeVisibleTimeRangeChange(mainVisibleTimeRangeHandler)
       profitChart.timeScale().subscribeVisibleTimeRangeChange(profitVisibleTimeRangeHandler)
 
