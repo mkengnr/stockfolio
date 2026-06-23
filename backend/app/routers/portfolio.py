@@ -1346,13 +1346,16 @@ def build_dashboard_response(
         now=resolved_now,
     )
     price_dates = current_price_dates or {}
+    represented_tickers = _scoped_price_tickers(active_holdings, scope)
     daily_change_active_by_market: dict[str, bool] = {}
-    for row in output_holdings:
-        market = row.market.value
-        provider_date = price_dates.get(row.ticker)
+    for holding in active_holdings:
+        if holding.ticker not in represented_tickers:
+            continue
+        market = holding.market.value
+        provider_date = price_dates.get(holding.ticker)
         is_active = (
             provider_date is not None
-            and provider_date == market_local_date(row.market, resolved_now)
+            and provider_date == market_local_date(holding.market, resolved_now)
         )
         daily_change_active_by_market[market] = (
             daily_change_active_by_market.get(market, False) or is_active

@@ -710,6 +710,38 @@ def test_dashboard_daily_change_is_gated_by_each_market_local_date():
     assert response.daily_change_active_by_market == {"KRX": False, "US": True}
 
 
+def test_dashboard_market_activity_keeps_krx_when_display_currency_is_usd():
+    now = datetime(2026, 6, 22, 23, 0, tzinfo=timezone.utc)
+    krx_id = uuid.uuid4()
+    us_id = uuid.uuid4()
+    holdings = [
+        _holding(
+            "005930",
+            Currency.KRW,
+            _buy(krx_id, "005930", Currency.KRW, quantity="1", price="1000"),
+        ),
+        _holding(
+            "AAPL",
+            Currency.USD,
+            _buy(us_id, "AAPL", Currency.USD, quantity="1", price="100"),
+        ),
+    ]
+
+    response = build_dashboard_response(
+        holdings=holdings,
+        source_groups=[],
+        rollup_groups=[],
+        current_prices={"005930": Decimal("1200"), "AAPL": Decimal("120")},
+        current_price_dates={"005930": date(2026, 6, 22), "AAPL": date(2026, 6, 22)},
+        display_currency="USD",
+        exchange_rate=None,
+        now=now,
+    )
+
+    assert [row.ticker for row in response.holdings] == ["AAPL"]
+    assert response.daily_change_active_by_market == {"KRX": False, "US": True}
+
+
 def test_dashboard_daily_change_handles_missing_future_and_stale_price_dates():
     now = datetime(2026, 6, 22, 23, 0, tzinfo=timezone.utc)
     holdings = []
