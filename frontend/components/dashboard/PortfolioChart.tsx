@@ -1,7 +1,14 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Currency, DashboardHistoryGroupKind, DashboardHistoryRow, DisplayCurrency, ScopedPortfolioHistory } from '@/lib/types'
+import type {
+  Currency,
+  DashboardHistoryGroupKind,
+  DashboardHistoryRow,
+  DashboardSummary,
+  DisplayCurrency,
+  ScopedPortfolioHistory,
+} from '@/lib/types'
 
 type LegacyMeasure = 'value' | 'cost' | 'profit'
 type DashboardChartMetric = 'value' | 'principal' | 'profit'
@@ -15,6 +22,14 @@ export interface DashboardBuiltChartSeries {
   name: string
   kind: DashboardHistoryGroupKind
   points: ChartPoint[]
+}
+
+export interface DashboardLivePoint {
+  snapshotDate: string | null
+  groupKind: DashboardHistoryGroupKind
+  groupId: string | null
+  groupName: string
+  summary: DashboardSummary
 }
 
 type GainLossBandPoint = { time: string; value: number; principal: number }
@@ -84,6 +99,33 @@ export function buildChartSeries(series: ScopedPortfolioHistory['series']): Reco
         })),
     ])),
   ])) as Record<Currency, CurrencyChartSeries>
+}
+
+export function mergeDashboardLivePoint(rows: DashboardHistoryRow[], livePoint: DashboardLivePoint) {
+  const { snapshotDate, summary } = livePoint
+  if (!snapshotDate || summary.total_current_value == null) {
+    return { rows, liveDailyProfit: null }
+  }
+
+  const liveRow: DashboardHistoryRow = {
+    group_kind: livePoint.groupKind,
+    group_id: livePoint.groupId,
+    group_name: livePoint.groupName,
+    snapshot_date: snapshotDate,
+    total_value: summary.total_current_value,
+    total_invested_principal: summary.total_invested_principal,
+    total_cost_basis: summary.total_cost_basis,
+    total_profit_loss: summary.total_profit_loss,
+  }
+  const mergedRows = rows
+    .filter((row) => row.snapshot_date !== snapshotDate)
+    .concat(liveRow)
+    .sort((left, right) => left.snapshot_date.localeCompare(right.snapshot_date))
+
+  return {
+    rows: mergedRows,
+    liveDailyProfit: parseNullableNumber(summary.total_current_value_change),
+  }
 }
 
 export function buildDashboardChartSeries(

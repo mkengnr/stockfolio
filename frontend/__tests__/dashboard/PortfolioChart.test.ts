@@ -4,8 +4,9 @@ import {
   formatDashboardMoney,
   getDashboardChartLayout,
   hasInvestedPrincipal,
+  mergeDashboardLivePoint,
 } from '@/components/dashboard/PortfolioChart'
-import type { DashboardHistoryRow } from '@/lib/types'
+import type { DashboardHistoryRow, DashboardSummary } from '@/lib/types'
 
 const rows: DashboardHistoryRow[] = [
   {
@@ -79,6 +80,99 @@ const rows: DashboardHistoryRow[] = [
     total_profit_loss: '15000',
   },
 ]
+
+const liveSummary: DashboardSummary = {
+  total_invested_principal: '600000',
+  total_cost_basis: '700000',
+  total_current_value: '805000',
+  total_current_value_change: '-25000',
+  total_current_value_change_pct: '-3.01',
+  total_unrealized_profit_loss: '90000',
+  total_unrealized_profit_loss_pct: '12.86',
+  total_profit_loss: '180000',
+  total_profit_loss_pct: '30',
+}
+
+describe('mergeDashboardLivePoint', () => {
+  const totalRows = rows.filter((row) => row.group_kind === 'total')
+
+  it('appends a live total point in date order and exposes its daily profit', () => {
+    const originalRows = totalRows.map((row) => ({ ...row }))
+
+    const result = mergeDashboardLivePoint(totalRows, {
+      snapshotDate: '2026-06-03',
+      groupKind: 'total',
+      groupId: null,
+      groupName: '전체',
+      summary: liveSummary,
+    })
+
+    expect(result.rows).toEqual([
+      ...originalRows,
+      {
+        group_kind: 'total',
+        group_id: null,
+        group_name: '전체',
+        snapshot_date: '2026-06-03',
+        total_value: '805000',
+        total_invested_principal: '600000',
+        total_cost_basis: '700000',
+        total_profit_loss: '180000',
+      },
+    ])
+    expect(result.liveDailyProfit).toBe(-25000)
+    expect(totalRows).toEqual(originalRows)
+  })
+
+  it('replaces a same-date history point without creating a duplicate', () => {
+    const result = mergeDashboardLivePoint(totalRows, {
+      snapshotDate: '2026-06-02',
+      groupKind: 'total',
+      groupId: null,
+      groupName: '전체',
+      summary: liveSummary,
+    })
+
+    expect(result.rows).toHaveLength(2)
+    expect(result.rows.filter((row) => row.snapshot_date === '2026-06-02')).toEqual([
+      expect.objectContaining({ total_value: '805000', total_profit_loss: '180000' }),
+    ])
+  })
+
+  it.each([
+    ['a missing live date', null, liveSummary],
+    ['a missing live value', '2026-06-03', { ...liveSummary, total_current_value: null }],
+  ])('returns the original rows for %s', (_label, snapshotDate, summary) => {
+    const result = mergeDashboardLivePoint(totalRows, {
+      snapshotDate,
+      groupKind: 'total',
+      groupId: null,
+      groupName: '전체',
+      summary,
+    })
+
+    expect(result.rows).toBe(totalRows)
+    expect(result.liveDailyProfit).toBeNull()
+  })
+
+  it('retains the selected group identity when the live point has no history', () => {
+    const result = mergeDashboardLivePoint([], {
+      snapshotDate: '2026-06-03',
+      groupKind: 'combined',
+      groupId: 'combined-7',
+      groupName: '장기 투자',
+      summary: liveSummary,
+    })
+
+    expect(result.rows).toEqual([
+      expect.objectContaining({
+        group_kind: 'combined',
+        group_id: 'combined-7',
+        group_name: '장기 투자',
+      }),
+    ])
+  })
+})
 
 describe('buildDashboardChartSeries', () => {
   it('builds stable value series with total first', () => {
