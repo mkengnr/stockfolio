@@ -49,7 +49,7 @@ from app.schemas.portfolio import (
 from app.services import lot_accounting
 from app.services.exchange_rate import ExchangeRate, convert_money, get_usd_krw_rate
 from app.services.lot_accounting import PortfolioScope, ScopeKind
-from app.services.market_session import is_write_confirmed
+from app.services.market_session import is_write_confirmed, market_local_date
 from app.services.price_cache import get_price
 from app.services.snapshot_service import backfill_recent_comparison_snapshots
 
@@ -596,6 +596,7 @@ def _dashboard_current_price_as_of(current_price_dates: dict[str, date | None]) 
 def _dashboard_dates_by_market(
     holdings: list[Holding],
     current_price_dates: dict[str, date | None] | None,
+    now: datetime,
 ) -> tuple[dict[str, date], dict[str, date], list[str]]:
     """Per-market current-price date and its previous-trading-day comparison date.
 
@@ -637,6 +638,16 @@ def _dashboard_dates_by_market(
             warnings.append(
                 f"{market} 일부 종목의 비교 기준일이 다릅니다: "
                 f"{min(dates).isoformat()} ~ {max(dates).isoformat()}"
+            )
+    for holding in holdings:
+        ticker_date = price_dates.get(holding.ticker)
+        if (
+            ticker_date is not None
+            and ticker_date > market_local_date(holding.market, now)
+        ):
+            warnings.append(
+                f"{holding.ticker} 현재가 기준일이 시장 날짜보다 미래입니다: "
+                f"{ticker_date.isoformat()}"
             )
 
     return current_by_market, comparison_by_market, warnings
@@ -784,8 +795,8 @@ def _build_dashboard_groups(
     display_currency: DisplayCurrency,
     exchange_rate: ExchangeRate | None,
     *,
-    current_price_as_of: date | None = None,
     current_price_dates: dict[str, date | None] | None = None,
+    now: datetime,
     panel_source_groups: list[SourceGroup] | None = None,
     include_unclassified: bool = True,
 ) -> tuple[list[DashboardGroupSummary], list[str]]:
@@ -820,8 +831,8 @@ def _build_dashboard_groups(
                         display_currency,
                         exchange_rate,
                         scope=scope,
-                        current_price_as_of=current_price_as_of,
                         current_price_dates=current_price_dates,
+                        now=now,
                     ),
                 )
             )
@@ -854,8 +865,8 @@ def _build_dashboard_groups(
                         display_currency,
                         exchange_rate,
                         scope=scope,
-                        current_price_as_of=current_price_as_of,
                         current_price_dates=current_price_dates,
+                        now=now,
                     ),
                 )
             )
@@ -885,8 +896,8 @@ def _build_dashboard_groups(
                         display_currency,
                         exchange_rate,
                         scope=scope,
-                        current_price_as_of=current_price_as_of,
                         current_price_dates=current_price_dates,
+                        now=now,
                     ),
                 )
             )
@@ -1144,13 +1155,19 @@ def _dashboard_holding_value_change(
     current_value: Decimal | None,
     display_currency: DisplayCurrency,
     exchange_rate: ExchangeRate | None,
-    current_price_as_of: date | None,
+    current_price_date: date | None,
+    now: datetime,
 ) -> Decimal | None:
-    if current_value is None:
+    if current_value is None or current_price_date is None:
+        return None
+    market_today = market_local_date(holding.market, now)
+    if current_price_date < market_today:
+        return Decimal(0)
+    if current_price_date > market_today:
         return None
     previous_close_price = _holding_previous_close_price(
         holding,
-        current_price_as_of or date.today(),
+        current_price_date,
     )
     if previous_close_price is None:
         return None
@@ -1171,8 +1188,8 @@ def _build_dashboard_holdings(
     exchange_rate: ExchangeRate | None,
     *,
     scope: PortfolioScope = PortfolioScope("all"),
-    current_price_as_of: date | None = None,
     current_price_dates: dict[str, date | None] | None = None,
+    now: datetime,
 ) -> list[DashboardHoldingRow]:
     price_dates = current_price_dates or {}
     _, scoped_holdings = _build_scoped_dashboard_payload(
@@ -1222,10 +1239,8 @@ def _build_dashboard_holdings(
                     current_value=current_value,
                     display_currency=display_currency,
                     exchange_rate=exchange_rate,
-                    # Each holding compares against ITS OWN latest trading day, so
-                    # mixed-market portfolios (e.g. KRX vs a US-holiday day) stay
-                    # accurate instead of all using the global oldest date.
-                    current_price_as_of=price_dates.get(holding.ticker) or current_price_as_of,
+                    current_price_date=price_dates.get(holding.ticker),
+                    now=now,
                 ),
                 unrealized_profit_loss=_convert_display_money(
                     holding.unrealized_profit_loss,
@@ -1263,6 +1278,7 @@ def build_dashboard_response(
     warnings: list[str] | None = None,
     scope: PortfolioScope = PortfolioScope("all"),
     panel_source_groups: list[SourceGroup] | None = None,
+    now: datetime | None = None,
 ) -> DashboardResponse:
     """Assemble the dashboard payload for both the owner and shared views.
 
@@ -1270,6 +1286,12 @@ def build_dashboard_response(
     views pass the share scope plus an explicit panel list so the same summary,
     history, and warning behavior applies to both.
     """
+    resolved_now = now or datetime.now(timezone.utc)
+    if resolved_now.tzinfo is None:
+        resolved_now = resolved_now.replace(tzinfo=timezone.utc)
+    else:
+        resolved_now = resolved_now.astimezone(timezone.utc)
+
     active_holdings = [holding for holding in holdings if holding.is_active]
     summary_base, summary_warnings = _scope_display_summary(
         active_holdings,
@@ -1285,7 +1307,7 @@ def build_dashboard_response(
 
     current_price_as_of = _dashboard_current_price_as_of(current_price_dates or {})
     price_dates_by_market, comparison_dates_by_market, date_warnings = _dashboard_dates_by_market(
-        active_holdings, current_price_dates
+        active_holdings, current_price_dates, resolved_now
     )
     output_warnings.extend(date_warnings)
     groups, group_warnings = _build_dashboard_groups(
@@ -1295,8 +1317,8 @@ def build_dashboard_response(
         current_prices,
         display_currency,
         exchange_rate,
-        current_price_as_of=current_price_as_of,
         current_price_dates=current_price_dates,
+        now=resolved_now,
         panel_source_groups=panel_source_groups,
         include_unclassified=panel_source_groups is None,
     )
@@ -1320,9 +1342,21 @@ def build_dashboard_response(
         display_currency,
         exchange_rate,
         scope=scope,
-        current_price_as_of=current_price_as_of,
         current_price_dates=current_price_dates,
+        now=resolved_now,
     )
+    price_dates = current_price_dates or {}
+    daily_change_active_by_market: dict[str, bool] = {}
+    for row in output_holdings:
+        market = row.market.value
+        provider_date = price_dates.get(row.ticker)
+        is_active = (
+            provider_date is not None
+            and provider_date == market_local_date(row.market, resolved_now)
+        )
+        daily_change_active_by_market[market] = (
+            daily_change_active_by_market.get(market, False) or is_active
+        )
     # 전일대비는 종목별(각 시장 직전 거래일) 변화의 합으로 산출 — 요약·그룹·종목표가 일관.
     summary = _summary_with_holdings_value_change(summary_base, output_holdings)
     groups = [
@@ -1344,11 +1378,12 @@ def build_dashboard_response(
             if exchange_rate is not None
             else None
         ),
-        last_refreshed_at=datetime.now(timezone.utc),
+        last_refreshed_at=resolved_now,
         current_price_as_of=current_price_as_of,
         comparison_as_of=comparison_as_of,
         price_dates_by_market=price_dates_by_market,
         comparison_dates_by_market=comparison_dates_by_market,
+        daily_change_active_by_market=daily_change_active_by_market,
         summary=summary,
         groups=groups,
         history=history,

@@ -528,8 +528,10 @@ def test_dashboard_summary_separates_unrealized_and_total_profit_and_daily_chang
         source_groups=[],
         rollup_groups=[],
         current_prices={"005930": Decimal("1500")},
+        current_price_dates={"005930": date(2026, 6, 5)},
         display_currency="KRW",
         exchange_rate=None,
+        now=datetime(2026, 6, 5, 3, 0, tzinfo=timezone.utc),
     )
 
     assert response.summary.total_invested_principal == Decimal("700")
@@ -543,55 +545,7 @@ def test_dashboard_summary_separates_unrealized_and_total_profit_and_daily_chang
     assert response.summary.total_current_value_change == Decimal("400")
 
 
-def test_dashboard_daily_change_uses_previous_trading_day_not_today_snapshot(monkeypatch):
-    class FixedDate(date):
-        @classmethod
-        def today(cls):
-            return cls(2026, 6, 5)
-
-    monkeypatch.setattr(portfolio_router, "date", FixedDate)
-
-    holding_id = uuid.uuid4()
-    holding = _holding(
-        "005930",
-        Currency.KRW,
-        _buy(
-            holding_id,
-            "005930",
-            Currency.KRW,
-            quantity="1",
-            price="1000",
-            tx_date=date(2026, 1, 1),
-        ),
-        snapshots=[
-            _snapshot(date(2026, 6, 4), "1100"),
-            _snapshot(date(2026, 6, 5), "1500"),
-        ],
-    )
-
-    response = build_dashboard_response(
-        holdings=[holding],
-        source_groups=[],
-        rollup_groups=[],
-        current_prices={"005930": Decimal("1500")},
-        display_currency="KRW",
-        exchange_rate=None,
-    )
-
-    assert response.summary.total_current_value == Decimal("1500")
-    assert response.summary.total_current_value_change == Decimal("400")
-    # 전일대비율 = 400 / 전일 평가금액(1100) × 100
-    assert round(response.summary.total_current_value_change_pct, 2) == Decimal("36.36")
-
-
-def test_dashboard_daily_change_uses_current_price_date_as_reference_day(monkeypatch):
-    class FixedDate(date):
-        @classmethod
-        def today(cls):
-            return cls(2026, 6, 6)
-
-    monkeypatch.setattr(portfolio_router, "date", FixedDate)
-
+def test_dashboard_daily_change_uses_previous_trading_day_not_today_snapshot():
     holding_id = uuid.uuid4()
     holding = _holding(
         "005930",
@@ -618,6 +572,43 @@ def test_dashboard_daily_change_uses_current_price_date_as_reference_day(monkeyp
         current_price_dates={"005930": date(2026, 6, 5)},
         display_currency="KRW",
         exchange_rate=None,
+        now=datetime(2026, 6, 5, 3, 0, tzinfo=timezone.utc),
+    )
+
+    assert response.summary.total_current_value == Decimal("1500")
+    assert response.summary.total_current_value_change == Decimal("400")
+    # 전일대비율 = 400 / 전일 평가금액(1100) × 100
+    assert round(response.summary.total_current_value_change_pct, 2) == Decimal("36.36")
+
+
+def test_dashboard_daily_change_uses_current_price_date_as_reference_day():
+    holding_id = uuid.uuid4()
+    holding = _holding(
+        "005930",
+        Currency.KRW,
+        _buy(
+            holding_id,
+            "005930",
+            Currency.KRW,
+            quantity="1",
+            price="1000",
+            tx_date=date(2026, 1, 1),
+        ),
+        snapshots=[
+            _snapshot(date(2026, 6, 4), "1100"),
+            _snapshot(date(2026, 6, 5), "1500"),
+        ],
+    )
+
+    response = build_dashboard_response(
+        holdings=[holding],
+        source_groups=[],
+        rollup_groups=[],
+        current_prices={"005930": Decimal("1500")},
+        current_price_dates={"005930": date(2026, 6, 5)},
+        display_currency="KRW",
+        exchange_rate=None,
+        now=datetime(2026, 6, 5, 3, 0, tzinfo=timezone.utc),
     )
 
     assert response.current_price_as_of == date(2026, 6, 5)
@@ -628,9 +619,8 @@ def test_dashboard_daily_change_uses_current_price_date_as_reference_day(monkeyp
 
 
 def test_dashboard_daily_change_is_per_holding_own_trading_day_and_sums_to_summary():
-    # Mixed trading days: one ticker's latest price is 6/22, another's is 6/18
-    # (e.g. KRX vs a market closed 6/19). Each holding's 전일대비 must compare to
-    # ITS OWN previous trading day, and the summary must equal the sum of holdings.
+    # Each holding's 전일대비 must compare to its own most recent prior snapshot,
+    # and the summary must equal the sum of holdings.
     a_id = uuid.uuid4()
     holding_a = _holding(
         "005930",
@@ -651,18 +641,114 @@ def test_dashboard_daily_change_is_per_holding_own_trading_day_and_sums_to_summa
         source_groups=[],
         rollup_groups=[],
         current_prices={"005930": Decimal("1200"), "000660": Decimal("2100")},
-        current_price_dates={"005930": date(2026, 6, 22), "000660": date(2026, 6, 18)},
+        current_price_dates={"005930": date(2026, 6, 22), "000660": date(2026, 6, 22)},
         display_currency="KRW",
         exchange_rate=None,
+        now=datetime(2026, 6, 22, 3, 0, tzinfo=timezone.utc),
     )
 
     rows = {row.ticker: row for row in response.holdings}
     # A compares 6/22 price vs its own previous trading day 6/19 (1100): +100
     assert rows["005930"].current_value_change == Decimal("100")
-    # B compares 6/18 price vs 6/17 (2000): +100
+    # B compares 6/22 price vs its latest prior snapshot 6/17 (2000): +100
     assert rows["000660"].current_value_change == Decimal("100")
     # Summary 전일대비 equals the sum of per-holding changes
     assert response.summary.total_current_value_change == Decimal("200")
+
+
+def test_dashboard_daily_change_is_gated_by_each_market_local_date():
+    now = datetime(2026, 6, 22, 23, 0, tzinfo=timezone.utc)
+    user_id = uuid.uuid4()
+    source = _source(user_id, name="혼합 계좌")
+    krx_id = uuid.uuid4()
+    us_id = uuid.uuid4()
+    holdings = [
+        _holding(
+            "005930",
+            Currency.KRW,
+            _buy(
+                krx_id,
+                "005930",
+                Currency.KRW,
+                source_group_id=source.id,
+                quantity="1",
+                price="1000",
+            ),
+            snapshots=[_snapshot(date(2026, 6, 20), "1100")],
+        ),
+        _holding(
+            "AAPL",
+            Currency.USD,
+            _buy(
+                us_id,
+                "AAPL",
+                Currency.USD,
+                source_group_id=source.id,
+                quantity="1",
+                price="100",
+            ),
+            snapshots=[_snapshot(date(2026, 6, 21), "110")],
+        ),
+    ]
+
+    response = build_dashboard_response(
+        holdings=holdings,
+        source_groups=[source],
+        rollup_groups=[],
+        current_prices={"005930": Decimal("1200"), "AAPL": Decimal("120")},
+        current_price_dates={"005930": date(2026, 6, 22), "AAPL": date(2026, 6, 22)},
+        display_currency="KRW",
+        exchange_rate=RATE,
+        now=now,
+    )
+
+    rows = {row.ticker: row for row in response.holdings}
+    assert rows["005930"].current_value_change == Decimal("0")
+    assert rows["AAPL"].current_value_change == Decimal("13000")
+    assert response.summary.total_current_value_change == Decimal("13000")
+    assert response.groups[0].summary.total_current_value_change == Decimal("13000")
+    assert response.daily_change_active_by_market == {"KRX": False, "US": True}
+
+
+def test_dashboard_daily_change_handles_missing_future_and_stale_price_dates():
+    now = datetime(2026, 6, 22, 23, 0, tzinfo=timezone.utc)
+    holdings = []
+    for ticker in ("MSFT", "AAPL", "TSLA"):
+        holding_id = uuid.uuid4()
+        holdings.append(
+            _holding(
+                ticker,
+                Currency.USD,
+                _buy(holding_id, ticker, Currency.USD, quantity="1", price="100"),
+                snapshots=[_snapshot(date(2026, 6, 20), "110")],
+            )
+        )
+
+    response = build_dashboard_response(
+        holdings=holdings,
+        source_groups=[],
+        rollup_groups=[],
+        current_prices={
+            "MSFT": Decimal("120"),
+            "AAPL": Decimal("120"),
+            "TSLA": Decimal("120"),
+        },
+        current_price_dates={
+            "MSFT": None,
+            "AAPL": date(2026, 6, 23),
+            "TSLA": date(2026, 6, 21),
+        },
+        display_currency="USD",
+        exchange_rate=None,
+        now=now,
+    )
+
+    rows = {row.ticker: row for row in response.holdings}
+    assert rows["MSFT"].current_value_change is None
+    assert rows["AAPL"].current_value_change is None
+    assert rows["TSLA"].current_value_change == Decimal("0")
+    assert response.daily_change_active_by_market == {"US": False}
+    assert "AAPL 현재가 기준일이 시장 날짜보다 미래입니다: 2026-06-23" in response.warnings
 
 
 def test_dashboard_exposes_per_market_price_and_comparison_dates():

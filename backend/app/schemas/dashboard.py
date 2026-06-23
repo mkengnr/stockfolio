@@ -87,6 +87,7 @@ class DashboardResponse(BaseModel):
     comparison_as_of: date | None
     price_dates_by_market: dict[str, date] = Field(default_factory=dict)
     comparison_dates_by_market: dict[str, date] = Field(default_factory=dict)
+    daily_change_active_by_market: dict[str, bool] = Field(default_factory=dict)
     summary: DashboardSummary
     groups: list[DashboardGroupSummary]
     history: DashboardHistorySeries
