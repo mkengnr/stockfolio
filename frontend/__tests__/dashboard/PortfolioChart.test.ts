@@ -1,4 +1,7 @@
+import { createElement } from 'react'
+import { render, screen } from '@testing-library/react'
 import {
+  PortfolioChart,
   buildDashboardChartSeries,
   buildIntegratedDashboardChartData,
   formatDashboardMoney,
@@ -239,10 +242,45 @@ describe('mergeDashboardLivePoint', () => {
 })
 
 describe('mergeDashboardCompositionLivePoints', () => {
-  it('replaces each matching composition identity without removing sibling groups', () => {
-    const result = mergeDashboardCompositionLivePoints(rows, [
+  it('replaces multiple identities with one batch sort and preserves inputs and sibling groups', () => {
+    const inputRows = rows.map((row) => ({ ...row }))
+    const livePoints = [
       {
         snapshotDate: '2026-06-02',
+        groupKind: 'source' as const,
+        groupId: 'source-1',
+        groupName: '모음통장',
+        summary: liveSummary,
+      },
+      {
+        snapshotDate: '2026-06-02',
+        groupKind: 'unclassified' as const,
+        groupId: null,
+        groupName: '미분류',
+        summary: { ...liveSummary, total_current_value: '70000' },
+      },
+    ]
+    const originalLivePoints = livePoints.map((point) => ({ ...point, summary: { ...point.summary } }))
+    const sortSpy = jest.spyOn(Array.prototype, 'sort')
+
+    const result = mergeDashboardCompositionLivePoints(inputRows, livePoints)
+    const sortCallCount = sortSpy.mock.calls.length
+    sortSpy.mockRestore()
+
+    expect(sortCallCount).toBe(1)
+    expect(result.filter((row) => row.snapshot_date === '2026-06-02')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group_kind: 'total', total_value: '780000' }),
+      expect.objectContaining({ group_kind: 'source', group_id: 'source-1', total_value: '805000' }),
+      expect.objectContaining({ group_kind: 'unclassified', group_id: null, total_value: '70000' }),
+    ]))
+    expect(inputRows).toEqual(rows)
+    expect(livePoints).toEqual(originalLivePoints)
+  })
+
+  it('ignores live composition points with missing dates or values', () => {
+    const result = mergeDashboardCompositionLivePoints(rows, [
+      {
+        snapshotDate: null,
         groupKind: 'source',
         groupId: 'source-1',
         groupName: '모음통장',
@@ -253,15 +291,45 @@ describe('mergeDashboardCompositionLivePoints', () => {
         groupKind: 'unclassified',
         groupId: null,
         groupName: '미분류',
-        summary: { ...liveSummary, total_current_value: '70000' },
+        summary: { ...liveSummary, total_current_value: null },
+      },
+      {
+        snapshotDate: 'not-a-date',
+        groupKind: 'source',
+        groupId: 'source-1',
+        groupName: '모음통장',
+        summary: liveSummary,
+      },
+      {
+        snapshotDate: '2026-06-02',
+        groupKind: 'unclassified',
+        groupId: null,
+        groupName: '미분류',
+        summary: { ...liveSummary, total_current_value: 'not-a-number' },
       },
     ])
 
-    expect(result.filter((row) => row.snapshot_date === '2026-06-02')).toEqual(expect.arrayContaining([
-      expect.objectContaining({ group_kind: 'total', total_value: '780000' }),
-      expect.objectContaining({ group_kind: 'source', group_id: 'source-1', total_value: '805000' }),
-      expect.objectContaining({ group_kind: 'unclassified', group_id: null, total_value: '70000' }),
-    ]))
+    expect(result).toBe(rows)
+  })
+
+  it('does not inspect live composition when composition display is disabled', () => {
+    const unusedLiveComposition = new Proxy([], {
+      get(_target, property) {
+        if (property === Symbol.iterator) throw new Error('composition merge should be skipped')
+        return Reflect.get(_target, property)
+      },
+    })
+
+    render(createElement(PortfolioChart, {
+      historyRows: [],
+      compositionRows: [],
+      includeComposition: false,
+      displayCurrency: 'KRW',
+      visibleRange: null,
+      liveComposition: unusedLiveComposition,
+    }))
+
+    expect(screen.getByText('차트 데이터가 없습니다.')).not.toBeNull()
   })
 })
 

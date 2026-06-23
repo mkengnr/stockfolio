@@ -146,10 +146,49 @@ export function mergeDashboardCompositionLivePoints(
   rows: DashboardHistoryRow[],
   livePoints: DashboardLivePoint[],
 ) {
-  return livePoints.reduce(
-    (mergedRows, livePoint) => mergeDashboardLivePoint(mergedRows, livePoint).rows,
-    rows,
-  )
+  const liveRowsByIdentity = new Map<string, DashboardHistoryRow>()
+  for (const livePoint of livePoints) {
+    const { snapshotDate, summary } = livePoint
+    if (!isValidSnapshotDate(snapshotDate) || !isValidNumericValue(summary.total_current_value)) continue
+    liveRowsByIdentity.set(compositionLivePointKey(livePoint.groupKind, livePoint.groupId, snapshotDate), {
+      group_kind: livePoint.groupKind,
+      group_id: livePoint.groupId,
+      group_name: livePoint.groupName,
+      snapshot_date: snapshotDate,
+      total_value: summary.total_current_value,
+      total_invested_principal: summary.total_invested_principal,
+      total_cost_basis: summary.total_cost_basis,
+      total_profit_loss: summary.total_profit_loss,
+    })
+  }
+  if (liveRowsByIdentity.size === 0) return rows
+
+  return rows
+    .filter((row) => !liveRowsByIdentity.has(compositionLivePointKey(
+      row.group_kind,
+      row.group_id,
+      row.snapshot_date,
+    )))
+    .concat(Array.from(liveRowsByIdentity.values()))
+    .sort((left, right) => left.snapshot_date.localeCompare(right.snapshot_date))
+}
+
+function isValidSnapshotDate(value: string | null): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+}
+
+function isValidNumericValue(value: string | null): value is string {
+  return value !== null && value.trim() !== '' && Number.isFinite(Number(value))
+}
+
+function compositionLivePointKey(
+  groupKind: DashboardHistoryGroupKind,
+  groupId: string | null,
+  snapshotDate: string,
+) {
+  return JSON.stringify([groupKind, groupId, snapshotDate])
 }
 
 export function buildDashboardChartSeries(
@@ -360,8 +399,10 @@ function DashboardPortfolioChart({
   const [referenceOverride, setReferenceOverride] = useState<ChartReferenceField | null>(null)
   const selectedMerge = useMemo(() => mergeDashboardLivePoint(rows, livePoint), [livePoint, rows])
   const mergedCompositionRows = useMemo(
-    () => mergeDashboardCompositionLivePoints(compositionRows, liveComposition),
-    [compositionRows, liveComposition],
+    () => includeComposition
+      ? mergeDashboardCompositionLivePoints(compositionRows, liveComposition)
+      : compositionRows,
+    [compositionRows, includeComposition, liveComposition],
   )
   const referenceField = referenceOverride ?? resolveReferenceDefault(referenceDefault, selectedMerge.rows)
   const chartData = useMemo(
