@@ -101,7 +101,12 @@ export function buildChartSeries(series: ScopedPortfolioHistory['series']): Reco
   ])) as Record<Currency, CurrencyChartSeries>
 }
 
-export function mergeDashboardLivePoint(rows: DashboardHistoryRow[], livePoint: DashboardLivePoint) {
+export function mergeDashboardLivePoint(
+  rows: DashboardHistoryRow[],
+  livePoint: DashboardLivePoint | null | undefined,
+) {
+  if (!livePoint) return { rows, liveDailyProfit: null }
+
   const { snapshotDate, summary } = livePoint
   if (!snapshotDate || summary.total_current_value == null) {
     return { rows, liveDailyProfit: null }
@@ -118,7 +123,11 @@ export function mergeDashboardLivePoint(rows: DashboardHistoryRow[], livePoint: 
     total_profit_loss: summary.total_profit_loss,
   }
   const mergedRows = rows
-    .filter((row) => row.snapshot_date !== snapshotDate)
+    .filter((row) => !(
+      row.snapshot_date === snapshotDate
+      && row.group_kind === livePoint.groupKind
+      && row.group_id === livePoint.groupId
+    ))
     .concat(liveRow)
     .sort((left, right) => left.snapshot_date.localeCompare(right.snapshot_date))
 

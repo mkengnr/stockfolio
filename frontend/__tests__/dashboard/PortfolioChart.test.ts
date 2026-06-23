@@ -139,6 +139,34 @@ describe('mergeDashboardLivePoint', () => {
     ])
   })
 
+  it('preserves other groups when replacing a same-date live point', () => {
+    const sourceRow = rows.find(
+      (row) => row.group_kind === 'source' && row.snapshot_date === '2026-06-02',
+    )!
+    const mixedRows = [...totalRows, sourceRow]
+
+    const result = mergeDashboardLivePoint(mixedRows, {
+      snapshotDate: '2026-06-02',
+      groupKind: 'total',
+      groupId: null,
+      groupName: '전체',
+      summary: liveSummary,
+    })
+
+    expect(result.rows).toContain(sourceRow)
+    expect(result.rows.filter((row) => row.snapshot_date === '2026-06-02')).toHaveLength(2)
+  })
+
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+  ])('returns the original rows for a %s live point', (_label, livePoint) => {
+    const result = mergeDashboardLivePoint(totalRows, livePoint)
+
+    expect(result.rows).toBe(totalRows)
+    expect(result.liveDailyProfit).toBeNull()
+  })
+
   it.each([
     ['a missing live date', null, liveSummary],
     ['a missing live value', '2026-06-03', { ...liveSummary, total_current_value: null }],
