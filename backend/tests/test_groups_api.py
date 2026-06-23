@@ -635,13 +635,14 @@ def test_public_share_omits_internal_warnings_and_legacy_fields(client, user, db
     )
     public_warnings = [
         "US 일부 종목의 현재가 기준일이 다릅니다: 2026-06-20 ~ 2026-06-22",
-        "US 장중 현재가입니다. 차트는 직전 확정 종가까지 표시됩니다.",
+        "US 장중 현재가입니다.",
         "USD/KRW exchange rate lookup failed",
     ]
     unrelated_ticker_warnings = [
         "AAPL 현재가 기준일이 시장 날짜보다 미래입니다: 2026-06-23",
         "Current price unavailable for AAPL",
         "AAPL 직전 거래일 스냅샷 복구 실패",
+        "US 장중 현재가입니다. 차트는 직전 확정 종가까지 표시됩니다.",
     ]
 
     async def _resolve_portfolio_scope(*_args):

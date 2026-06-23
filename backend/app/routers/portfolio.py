@@ -693,7 +693,7 @@ def _intraday_market_warnings(
         ):
             intraday_markets.add(holding.market.value)
     return [
-        f"{market} 장중 현재가입니다. 차트는 직전 확정 종가까지 표시됩니다."
+        f"{market} 장중 현재가입니다."
         for market in sorted(intraday_markets)
     ]
 

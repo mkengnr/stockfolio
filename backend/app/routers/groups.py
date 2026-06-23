@@ -59,9 +59,7 @@ _GROUP_MODELS = {
 }
 
 _PUBLIC_DASHBOARD_WARNING_PATTERNS = (
-    re.compile(
-        r"(?:KRX|US) 장중 현재가입니다\. 차트는 직전 확정 종가까지 표시됩니다\."
-    ),
+    re.compile(r"(?:KRX|US) 장중 현재가입니다\."),
     re.compile(
         r"(?:KRX|US) 일부 종목의 (?:현재가|비교) 기준일이 다릅니다: "
         r"\d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}"

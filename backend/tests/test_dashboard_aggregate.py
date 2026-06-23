@@ -902,7 +902,7 @@ def test_intraday_market_warning_explains_live_value_vs_confirmed_chart():
     )
 
     assert warnings == [
-        "KRX 장중 현재가입니다. 차트는 직전 확정 종가까지 표시됩니다."
+        "KRX 장중 현재가입니다."
     ]
 
 
