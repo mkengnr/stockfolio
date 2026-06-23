@@ -184,6 +184,7 @@ export interface DashboardResponse {
   comparison_as_of: string | null
   price_dates_by_market: Record<string, string>
   comparison_dates_by_market: Record<string, string>
+  daily_change_active_by_market: Record<string, boolean>
   summary: DashboardSummary
   groups: DashboardGroupSummary[]
   history: { rows: DashboardHistoryRow[] }
@@ -411,6 +412,10 @@ export interface SharedDashboardHistoryRow {
 
 export interface SharedDashboard {
   display_currency: DisplayCurrency
+  price_dates_by_market?: Record<string, string>
+  comparison_dates_by_market?: Record<string, string>
+  daily_change_active_by_market?: Record<string, boolean>
+  warnings?: string[]
   summary: DashboardSummary
   groups: SharedDashboardGroup[]
   history: { rows: SharedDashboardHistoryRow[] }

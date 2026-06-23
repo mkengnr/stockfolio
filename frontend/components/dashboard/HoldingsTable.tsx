@@ -171,7 +171,7 @@ export function HoldingsTable({ holdings, displayCurrency }: Props) {
             <SortableHeading label="평균매수가" onClick={() => toggleSort('avgPrice')}><SortIcon column="avgPrice" /></SortableHeading>
             <SortableHeading label="원금" onClick={() => toggleSort('costBasis')}><SortIcon column="costBasis" /></SortableHeading>
             <SortableHeading label="현재가" onClick={() => toggleSort('currentPrice')}><SortIcon column="currentPrice" /></SortableHeading>
-            <SortableHeading label="전일대비" onClick={() => toggleSort('currentValueChange')}><SortIcon column="currentValueChange" /></SortableHeading>
+            <SortableHeading label="당일손익" onClick={() => toggleSort('currentValueChange')}><SortIcon column="currentValueChange" /></SortableHeading>
             <SortableHeading label="평가금액" onClick={() => toggleSort('currentValue')}><SortIcon column="currentValue" /></SortableHeading>
             <SortableHeading label="평가손익" onClick={() => toggleSort('profit')}><SortIcon column="profit" /></SortableHeading>
             <SortableHeading label="평가손익률" onClick={() => toggleSort('profitPct')}><SortIcon column="profitPct" /></SortableHeading>

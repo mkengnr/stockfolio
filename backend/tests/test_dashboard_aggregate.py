@@ -783,6 +783,45 @@ def test_dashboard_daily_change_handles_missing_future_and_stale_price_dates():
     assert "AAPL 현재가 기준일이 시장 날짜보다 미래입니다: 2026-06-23" in response.warnings
 
 
+def test_dashboard_date_basis_excludes_future_quote_when_market_is_active():
+    now = datetime(2026, 6, 22, 23, 0, tzinfo=timezone.utc)
+    aapl_id = uuid.uuid4()
+    tsla_id = uuid.uuid4()
+    holdings = [
+        _holding(
+            "AAPL",
+            Currency.USD,
+            _buy(aapl_id, "AAPL", Currency.USD, quantity="1", price="100"),
+            snapshots=[_snapshot(date(2026, 6, 20), "110")],
+        ),
+        _holding(
+            "TSLA",
+            Currency.USD,
+            _buy(tsla_id, "TSLA", Currency.USD, quantity="1", price="200"),
+            snapshots=[_snapshot(date(2026, 6, 22), "210")],
+        ),
+    ]
+
+    response = build_dashboard_response(
+        holdings=holdings,
+        source_groups=[],
+        rollup_groups=[],
+        current_prices={"AAPL": Decimal("120"), "TSLA": Decimal("220")},
+        current_price_dates={
+            "AAPL": date(2026, 6, 22),
+            "TSLA": date(2026, 6, 23),
+        },
+        display_currency="USD",
+        exchange_rate=None,
+        now=now,
+    )
+
+    assert response.daily_change_active_by_market == {"US": True}
+    assert response.price_dates_by_market == {"US": date(2026, 6, 22)}
+    assert response.comparison_dates_by_market == {"US": date(2026, 6, 20)}
+    assert "TSLA 현재가 기준일이 시장 날짜보다 미래입니다: 2026-06-23" in response.warnings
+
+
 def test_dashboard_exposes_per_market_price_and_comparison_dates():
     krx_id = uuid.uuid4()
     krx = _holding(
@@ -807,6 +846,7 @@ def test_dashboard_exposes_per_market_price_and_comparison_dates():
         current_price_dates={"005930": date(2026, 6, 22), "AAPL": date(2026, 6, 18)},
         display_currency="KRW",
         exchange_rate=RATE,
+        now=datetime(2026, 6, 23, 12, 0, tzinfo=timezone.utc),
     )
 
     assert response.price_dates_by_market == {"KRX": date(2026, 6, 22), "US": date(2026, 6, 18)}
@@ -837,6 +877,7 @@ def test_dashboard_warns_when_same_market_holdings_use_different_dates():
         current_price_dates={"005930": date(2026, 6, 22), "000660": date(2026, 6, 19)},
         display_currency="KRW",
         exchange_rate=None,
+        now=datetime(2026, 6, 23, 12, 0, tzinfo=timezone.utc),
     )
 
     assert response.price_dates_by_market == {"KRX": date(2026, 6, 22)}

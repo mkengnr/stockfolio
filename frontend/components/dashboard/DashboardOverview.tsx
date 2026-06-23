@@ -12,6 +12,7 @@ import { HoldingsTable } from './HoldingsTable'
 import { PortfolioChart } from './PortfolioChart'
 import { PortfolioSummary } from './PortfolioSummary'
 import { ChartRangeControl, getChartVisibleDateRange, type ChartRange } from './chartRange'
+import { formatDailyProfitBasis } from './dailyProfitBasis'
 import { portfolioApi } from '@/lib/api'
 import type { DashboardGroupSummary, DashboardResponse, DisplayCurrency, Label } from '@/lib/types'
 
@@ -59,6 +60,18 @@ export function DashboardOverview({
     () => portfolioApi.labelDashboard(selectedLabelId as string, displayCurrency),
   )
   const labelMode = selectedLabelId !== null
+  const activeDashboard = labelMode ? (labelError ? null : labelDashboard ?? null) : dashboard
+  const activeWarnings = activeDashboard?.warnings ?? []
+  const currentPriceBasis = activeDashboard
+    ? formatMarketDates(activeDashboard.price_dates_by_market) || formatDashboardDate(activeDashboard.current_price_as_of)
+    : '—'
+  const dailyProfitBasis = activeDashboard
+    ? formatDailyProfitBasis(
+        activeDashboard.price_dates_by_market,
+        activeDashboard.comparison_dates_by_market,
+        activeDashboard.daily_change_active_by_market,
+      ) || formatDashboardDate(activeDashboard.current_price_as_of)
+    : '—'
 
   // ── Derived values (non-label) ───────────────────────────────────────────────
   const selectedName = labelMode
@@ -77,7 +90,7 @@ export function DashboardOverview({
   const selectedHoldings = selectedGroup?.holdings ?? dashboard.holdings
 
   // ── Active values (switch to label data when in label mode) ─────────────────
-  const activeSummary = labelMode ? (labelDashboard?.summary ?? dashboard.summary) : selectedSummary
+  const activeSummary = labelMode ? (labelDashboard?.summary ?? null) : selectedSummary
   const activeHoldings = labelMode ? (labelDashboard?.holdings ?? []) : selectedHoldings
   const activeHistoryRows = useMemo(
     () =>
@@ -116,10 +129,10 @@ export function DashboardOverview({
             포트폴리오 전체와 그룹별 수익률을 {displayCurrency === 'KRW' ? 'KRW 환산' : 'USD 별도'} 기준으로 확인합니다.
           </p>
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
-            <span>마지막 조회: {formatDashboardDateTime(dashboard.last_refreshed_at)}</span>
+            <span>마지막 조회: {formatDashboardDateTime(activeDashboard?.last_refreshed_at ?? null)}</span>
             <span>화면 갱신: {formatLastUpdated(lastUpdated)}</span>
-            <span>현재가 기준: {formatMarketDates(dashboard.price_dates_by_market) || formatDashboardDate(dashboard.current_price_as_of)}</span>
-            <span>비교 기준(직전 거래일): {formatMarketDates(dashboard.comparison_dates_by_market) || formatDashboardDate(dashboard.comparison_as_of)}</span>
+            <span>현재가 기준: {currentPriceBasis}</span>
+            <span>당일손익 기준: {dailyProfitBasis}</span>
           </div>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-start">
@@ -131,9 +144,9 @@ export function DashboardOverview({
         </div>
       </div>
 
-      {dashboard.warnings.length > 0 && (
-        <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">
-          {dashboard.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+      {activeWarnings.length > 0 && (
+        <div role="status" className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          {activeWarnings.map((warning) => <p key={warning}>{warning}</p>)}
         </div>
       )}
 
@@ -163,9 +176,9 @@ export function DashboardOverview({
             <p className="text-sm text-red-500">라벨 데이터를 불러오지 못했습니다.</p>
             <Button variant="secondary" onClick={() => void labelMutate()}>다시 시도</Button>
           </div>
-        ) : (
+        ) : activeSummary ? (
           <PortfolioSummary summary={activeSummary} displayCurrency={displayCurrency} />
-        )}
+        ) : null}
       </section>
 
       <section className="flex flex-col gap-3">
@@ -253,17 +266,20 @@ function formatDashboardDate(value: string | null) {
 const MARKET_LABELS: Record<string, string> = { KRX: '한국', US: '미국' }
 const MARKET_ORDER = ['KRX', 'US']
 
-// "한국 2026-06-22 · 미국 2026-06-18" — empty string when there is nothing to show
-// so callers can fall back to the single-date display.
-function formatMarketDates(byMarket: Record<string, string> | undefined): string {
-  const entries = Object.entries(byMarket ?? {})
-  if (entries.length === 0) return ''
+function orderedMarketEntries<T>(byMarket: Record<string, T> | undefined): Array<[string, T]> {
   const rank = (market: string) => {
     const index = MARKET_ORDER.indexOf(market)
     return index === -1 ? MARKET_ORDER.length : index
   }
-  return entries
-    .sort((a, b) => rank(a[0]) - rank(b[0]))
+
+  return Object.entries(byMarket ?? {})
+    .sort(([left], [right]) => rank(left) - rank(right) || left.localeCompare(right))
+}
+
+// "한국 2026-06-22 · 미국 2026-06-18" — empty string when there is nothing to show
+// so callers can fall back to the single-date display.
+function formatMarketDates(byMarket: Record<string, string> | undefined): string {
+  return orderedMarketEntries(byMarket)
     .map(([market, value]) => `${MARKET_LABELS[market] ?? market} ${value}`)
     .join(' · ')
 }

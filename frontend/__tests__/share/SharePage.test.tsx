@@ -40,6 +40,10 @@ const sharedGroup: SharedGroup = {
   share_description: '함께 보는 월급 포트폴리오입니다.',
   dashboard: {
     display_currency: 'KRW',
+    price_dates_by_market: { KRX: '2026-06-23', US: '2026-06-22' },
+    comparison_dates_by_market: { KRX: '2026-06-20', US: '2026-06-18' },
+    daily_change_active_by_market: { KRX: false, US: true },
+    warnings: ['AAPL 현재가 기준일이 시장 날짜보다 미래입니다: 2026-06-23'],
     summary: {
       total_invested_principal: '300',
       total_cost_basis: '300',
@@ -166,8 +170,29 @@ describe('SharePage', () => {
     expect(await screen.findByText('월급')).toBeInTheDocument()
     expect(screen.getByText('함께 보는 월급 포트폴리오입니다.')).toBeInTheDocument()
     expect(screen.getByText('Apple')).toBeInTheDocument()
+    expect(screen.getByText('당일손익 기준: 한국 당일 시세 없음 · 미국 2026-06-22 vs 2026-06-18')).toBeInTheDocument()
+    expect(screen.getByText('AAPL 현재가 기준일이 시장 날짜보다 미래입니다: 2026-06-23')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('AAPL 현재가 기준일이 시장 날짜보다 미래입니다: 2026-06-23')
     expect(mockedShareApi.getGroup).toHaveBeenCalledWith('token-1')
     expect(mockedShareApi.getLegacy).not.toHaveBeenCalled()
+  })
+
+  it('tolerates a staggered shared payload without additive metadata', async () => {
+    mockedShareApi.getGroup.mockResolvedValue({
+      ...sharedGroup,
+      dashboard: {
+        ...sharedGroup.dashboard,
+        price_dates_by_market: { KRX: '2026-06-23' },
+        comparison_dates_by_market: undefined,
+        daily_change_active_by_market: undefined,
+        warnings: undefined,
+      },
+    } as unknown as SharedGroup)
+
+    render(<SharePage params={{ token: 'token-old' }} />)
+
+    expect(await screen.findByText('당일손익 기준: 한국 2026-06-23 기준')).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('filters shared dashboard summary, chart, and holdings by a component group', async () => {
@@ -290,7 +315,8 @@ describe('SharePage', () => {
     expect(screen.queryByText('총손익률')).not.toBeInTheDocument()
     expect(screen.getByText('잔여원금')).toBeInTheDocument()
     expect(screen.getAllByText('평가금액').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('전일대비').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('당일손익').length).toBeGreaterThan(0)
+    expect(screen.queryByText('전일대비')).not.toBeInTheDocument()
   })
 
   it('falls back to the legacy endpoint only after a 404', async () => {

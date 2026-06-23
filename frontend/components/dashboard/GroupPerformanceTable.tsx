@@ -33,7 +33,7 @@ export function GroupPerformanceTable({ groups, displayCurrency }: Props) {
             <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">투자원금</th>
             <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">잔여원금</th>
             <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">평가금액</th>
-            <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">전일대비</th>
+            <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">당일손익</th>
             <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">평가손익</th>
             <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">총손익</th>
             <th className="sticky top-0 z-10 bg-gray-50 px-4 py-3 text-right font-medium text-gray-500">총손익률</th>

@@ -7,6 +7,7 @@ import { HoldingsTable } from '@/components/dashboard/HoldingsTable'
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart'
 import { PortfolioSummary } from '@/components/dashboard/PortfolioSummary'
 import { ChartRangeControl, getChartVisibleDateRange, type ChartRange } from '@/components/dashboard/chartRange'
+import { formatDailyProfitBasis } from '@/components/dashboard/dailyProfitBasis'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card, CardTitle } from '@/components/ui/Card'
@@ -73,6 +74,12 @@ function SharedGroupView({
   ) : null
 
   const shareMessage = group.share_description || group.description
+  const dailyProfitBasis = formatDailyProfitBasis(
+    group.dashboard.price_dates_by_market,
+    group.dashboard.comparison_dates_by_market,
+    group.dashboard.daily_change_active_by_market,
+  ) || '—'
+  const warnings = group.dashboard.warnings ?? []
   return (
     <SharedLayout
       name={group.name}
@@ -87,8 +94,14 @@ function SharedGroupView({
           <div>
             <h2 className="font-semibold text-gray-900">{selectedGroup?.name ?? '전체'} 수익현황</h2>
             <p className="mt-1 text-sm text-gray-500">{shareMessage || '공유된 포트폴리오 범위의 수익현황입니다.'}</p>
+            <p className="mt-2 text-xs text-gray-500">당일손익 기준: {dailyProfitBasis}</p>
           </div>
         </div>
+        {warnings.length > 0 && (
+          <div role="status" className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            {warnings.map((warning) => <p key={warning}>{warning}</p>)}
+          </div>
+        )}
         <div aria-live="polite">
           <PortfolioSummary
             summary={selectedSummary}

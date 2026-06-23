@@ -192,6 +192,10 @@ class SharedDashboardHistoryOut(BaseModel):
 
 class SharedDashboardOut(BaseModel):
     display_currency: DisplayCurrency
+    price_dates_by_market: dict[str, date] = Field(default_factory=dict)
+    comparison_dates_by_market: dict[str, date] = Field(default_factory=dict)
+    daily_change_active_by_market: dict[str, bool] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
     summary: DashboardSummary
     groups: list[SharedDashboardGroupOut]
     history: SharedDashboardHistoryOut

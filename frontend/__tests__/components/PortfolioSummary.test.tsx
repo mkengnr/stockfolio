@@ -151,7 +151,7 @@ describe('PortfolioSummary', () => {
     expect(screen.getByText('-₩6,598,515')).toHaveClass('whitespace-nowrap')
   })
 
-  it('shows a daily-change percentage under the 전일대비 card', () => {
+  it('shows a daily-change percentage under the 당일손익 card', () => {
     const summary: DashboardSummary = {
       total_invested_principal: '600000',
       total_cost_basis: '700000',
@@ -166,7 +166,8 @@ describe('PortfolioSummary', () => {
 
     render(<PortfolioSummary summary={summary} displayCurrency="KRW" />)
 
-    expect(screen.getByText('전일대비')).toBeInTheDocument()
+    expect(screen.getByText('당일손익')).toBeInTheDocument()
+    expect(screen.queryByText('전일대비')).not.toBeInTheDocument()
     expect(screen.getByText('+2.04%')).toBeInTheDocument()
   })
 })

@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { mutate } from 'swr'
 import { DashboardOverview } from '@/components/dashboard/DashboardOverview'
 import { DisplayCurrencyToggle } from '@/components/dashboard/DisplayCurrencyToggle'
 import { GroupPerformanceTable } from '@/components/dashboard/GroupPerformanceTable'
@@ -56,6 +57,7 @@ const dashboard: DashboardResponse = {
   comparison_as_of: '2026-06-04',
   price_dates_by_market: { KRX: '2026-06-05', US: '2026-06-04' },
   comparison_dates_by_market: { KRX: '2026-06-04', US: '2026-06-03' },
+  daily_change_active_by_market: { KRX: true, US: true },
   summary: {
     total_invested_principal: '1000000',
     total_cost_basis: '800000',
@@ -192,7 +194,8 @@ describe('GroupPerformanceTable', () => {
     expect(screen.getByText('투자원금')).toBeInTheDocument()
     expect(screen.getByText('잔여원금')).toBeInTheDocument()
     expect(screen.getByText('평가금액')).toBeInTheDocument()
-    expect(screen.getByText('전일대비')).toBeInTheDocument()
+    expect(screen.getByText('당일손익')).toBeInTheDocument()
+    expect(screen.queryByText('전일대비')).not.toBeInTheDocument()
     expect(screen.getByText('평가손익')).toBeInTheDocument()
     expect(screen.getByText('총손익')).toBeInTheDocument()
     expect(screen.getByText('총손익률')).toBeInTheDocument()
@@ -224,10 +227,15 @@ describe('DisplayCurrencyToggle', () => {
 })
 
 describe('DashboardOverview', () => {
-  it('shows per-market current and comparison dates in the header', () => {
+  it('shows per-market current prices and mixed daily-profit bases in market order', () => {
     render(
       <DashboardOverview
-        dashboard={dashboard}
+        dashboard={{
+          ...dashboard,
+          price_dates_by_market: { US: '2026-06-22', KRX: '2026-06-23' },
+          comparison_dates_by_market: { US: '2026-06-18', KRX: '2026-06-20' },
+          daily_change_active_by_market: { US: true, KRX: false },
+        }}
         displayCurrency="KRW"
         onDisplayCurrencyChange={jest.fn()}
         onRefresh={jest.fn()}
@@ -236,8 +244,28 @@ describe('DashboardOverview', () => {
       />,
     )
 
-    expect(screen.getByText('현재가 기준: 한국 2026-06-05 · 미국 2026-06-04')).toBeInTheDocument()
-    expect(screen.getByText('비교 기준(직전 거래일): 한국 2026-06-04 · 미국 2026-06-03')).toBeInTheDocument()
+    expect(screen.getByText('현재가 기준: 한국 2026-06-23 · 미국 2026-06-22')).toBeInTheDocument()
+    expect(screen.getByText('당일손익 기준: 한국 당일 시세 없음 · 미국 2026-06-22 vs 2026-06-18')).toBeInTheDocument()
+  })
+
+  it('falls back to the market code and current-date basis without a comparison date', () => {
+    render(
+      <DashboardOverview
+        dashboard={{
+          ...dashboard,
+          price_dates_by_market: { JP: '2026-06-20', US: '2026-06-22' },
+          comparison_dates_by_market: {},
+          daily_change_active_by_market: { JP: true, US: true },
+        }}
+        displayCurrency="KRW"
+        onDisplayCurrencyChange={jest.fn()}
+        onRefresh={jest.fn()}
+        isRefreshing={false}
+        lastUpdated={new Date('2026-06-22T09:00:00Z')}
+      />,
+    )
+
+    expect(screen.getByText('당일손익 기준: 미국 2026-06-22 기준 · JP 2026-06-20 기준')).toBeInTheDocument()
   })
 
   it('renders total performance, group performance, transaction link, and warnings', () => {
@@ -270,7 +298,7 @@ describe('DashboardOverview', () => {
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:2026-03-01..2026-06-01')
     expect(screen.getByText(/마지막 조회/)).toHaveTextContent('2026-06-06')
     expect(screen.getByText(/현재가 기준/)).toHaveTextContent('2026-06-05')
-    expect(screen.getByText(/비교 기준\(직전 거래일\)/)).toHaveTextContent('2026-06-04')
+    expect(screen.getByText(/당일손익 기준/)).toHaveTextContent('한국 2026-06-05 vs 2026-06-04')
   })
 
   it('uses three months as the default chart range and can show all history', () => {
@@ -374,6 +402,33 @@ describe('DashboardOverview', () => {
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:all')
   })
 
+  it('shows neutral header metadata while a label dashboard is loading', async () => {
+    ;(portfolioApi.labelDashboard as jest.Mock).mockReturnValue(new Promise(() => {}))
+    render(
+      <DashboardOverview
+        dashboard={dashboard}
+        labels={[{ id: '11', name: '배당주', color: '#f59e0b' }]}
+        displayCurrency="KRW"
+        onDisplayCurrencyChange={jest.fn()}
+        onRefresh={jest.fn()}
+        isRefreshing={false}
+        lastUpdated={new Date('2026-06-05T09:00:00Z')}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /그룹 필터/ }))
+    fireEvent.click(screen.getByRole('option', { name: /배당주/ }))
+
+    await screen.findByText('라벨 데이터를 불러오는 중…')
+    expect(screen.getByText('마지막 조회: —')).toBeInTheDocument()
+    expect(screen.getByText('현재가 기준: —')).toBeInTheDocument()
+    expect(screen.getByText('당일손익 기준: —')).toBeInTheDocument()
+    expect(screen.queryByText('현재가 기준: 한국 2026-06-05 · 미국 2026-06-04')).not.toBeInTheDocument()
+    expect(screen.queryByText(/당일손익 기준: 한국/)).not.toBeInTheDocument()
+    expect(screen.queryByText('₩900,000')).not.toBeInTheDocument()
+    expect(screen.queryByText('AAPL 시세를 가져오지 못했습니다.')).not.toBeInTheDocument()
+  })
+
   it('shows error and retry button when label dashboard fetch fails', async () => {
     ;(portfolioApi.labelDashboard as jest.Mock).mockRejectedValue(new Error('network'))
     render(
@@ -394,6 +449,12 @@ describe('DashboardOverview', () => {
       expect(screen.getByText('라벨 데이터를 불러오지 못했습니다.')).toBeInTheDocument(),
     )
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
+    expect(screen.getByText('마지막 조회: —')).toBeInTheDocument()
+    expect(screen.getByText('현재가 기준: —')).toBeInTheDocument()
+    expect(screen.getByText('당일손익 기준: —')).toBeInTheDocument()
+    expect(screen.queryByText('현재가 기준: 한국 2026-06-05 · 미국 2026-06-04')).not.toBeInTheDocument()
+    expect(screen.queryByText(/당일손익 기준: 한국/)).not.toBeInTheDocument()
+    expect(screen.queryByText('AAPL 시세를 가져오지 못했습니다.')).not.toBeInTheDocument()
     // Should NOT show normal total-portfolio value under label heading in error state
     // (The total_current_value ₩900,000 must not appear as the label summary)
     expect(screen.queryByText('배당주 수익현황')).toBeInTheDocument() // heading still visible
@@ -417,6 +478,7 @@ describe('DashboardOverview', () => {
 
     expect(screen.getByText('일부 종목 지연')).toBeInTheDocument()
     expect(screen.getByText('환율 정보 없음')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('일부 종목 지연')
   })
 
   it('hides the warnings box when dashboard.warnings is empty', () => {
@@ -460,5 +522,107 @@ describe('DashboardOverview', () => {
     fireEvent.click(screen.getByRole('button', { name: /그룹 필터/ }))
     fireEvent.click(screen.getByRole('option', { name: /배당주/ }))
     await waitFor(() => expect(portfolioApi.labelDashboard).toHaveBeenCalledWith('9', 'KRW'))
+  })
+
+  it('switches header market bases to the loaded label dashboard', async () => {
+    ;(portfolioApi.labelDashboard as jest.Mock).mockResolvedValue({
+      ...dashboard,
+      last_refreshed_at: '2030-01-02T00:00:00',
+      current_price_as_of: '2026-06-22',
+      comparison_as_of: '2026-06-18',
+      price_dates_by_market: { US: '2026-06-22' },
+      comparison_dates_by_market: { US: '2026-06-18' },
+      daily_change_active_by_market: { US: true },
+      summary: { ...dashboard.summary, total_current_value: '999' },
+      groups: [],
+    })
+    render(
+      <DashboardOverview
+        dashboard={dashboard}
+        labels={[{ id: '10', name: '배당주', color: '#f59e0b' }]}
+        displayCurrency="KRW"
+        onDisplayCurrencyChange={jest.fn()}
+        onRefresh={jest.fn()}
+        isRefreshing={false}
+        lastUpdated={new Date('2026-06-22T09:00:00Z')}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /그룹 필터/ }))
+    fireEvent.click(screen.getByRole('option', { name: /배당주/ }))
+
+    await screen.findByText('₩999')
+    const dailyProfitBasis = await screen.findByText(
+      '당일손익 기준: 미국 2026-06-22 vs 2026-06-18',
+    )
+    expect(dailyProfitBasis).not.toHaveTextContent('한국')
+    expect(screen.getByText('현재가 기준: 미국 2026-06-22')).toBeInTheDocument()
+    expect(screen.getByText('마지막 조회: 2030-01-02 00:00:00')).toBeInTheDocument()
+    expect(screen.queryByText(/마지막 조회: 2026-06-06/)).not.toBeInTheDocument()
+  })
+
+  it('switches the warning banner to the loaded label dashboard', async () => {
+    ;(portfolioApi.labelDashboard as jest.Mock).mockResolvedValue({
+      ...dashboard,
+      warnings: ['US label warning'],
+      groups: [],
+    })
+    render(
+      <DashboardOverview
+        dashboard={{ ...dashboard, warnings: ['KRX total warning'] }}
+        labels={[{ id: '13', name: '배당주', color: '#f59e0b' }]}
+        displayCurrency="KRW"
+        onDisplayCurrencyChange={jest.fn()}
+        onRefresh={jest.fn()}
+        isRefreshing={false}
+        lastUpdated={new Date('2026-06-22T09:00:00Z')}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /그룹 필터/ }))
+    fireEvent.click(screen.getByRole('option', { name: /배당주/ }))
+
+    expect(await screen.findByText('US label warning')).toBeInTheDocument()
+    expect(screen.queryByText('KRX total warning')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('US label warning')
+  })
+
+  it('hides cached label metadata when revalidation fails', async () => {
+    ;(portfolioApi.labelDashboard as jest.Mock)
+      .mockResolvedValueOnce({
+        ...dashboard,
+        last_refreshed_at: '2030-01-02T00:00:00',
+        price_dates_by_market: { US: '2026-06-22' },
+        comparison_dates_by_market: { US: '2026-06-18' },
+        daily_change_active_by_market: { US: true },
+        summary: { ...dashboard.summary, total_current_value: '999' },
+        groups: [],
+      })
+      .mockRejectedValueOnce(new Error('revalidation failed'))
+    render(
+      <DashboardOverview
+        dashboard={dashboard}
+        labels={[{ id: '12', name: '배당주', color: '#f59e0b' }]}
+        displayCurrency="KRW"
+        onDisplayCurrencyChange={jest.fn()}
+        onRefresh={jest.fn()}
+        isRefreshing={false}
+        lastUpdated={new Date('2026-06-22T09:00:00Z')}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /그룹 필터/ }))
+    fireEvent.click(screen.getByRole('option', { name: /배당주/ }))
+    expect(await screen.findByText('당일손익 기준: 미국 2026-06-22 vs 2026-06-18')).toBeInTheDocument()
+
+    await act(async () => {
+      await mutate(['label-dashboard', '12', 'KRW'])
+    })
+
+    expect(await screen.findByText('라벨 데이터를 불러오지 못했습니다.')).toBeInTheDocument()
+    expect(screen.getByText('마지막 조회: —')).toBeInTheDocument()
+    expect(screen.getByText('현재가 기준: —')).toBeInTheDocument()
+    expect(screen.getByText('당일손익 기준: —')).toBeInTheDocument()
+    expect(screen.queryByText('당일손익 기준: 미국 2026-06-22 vs 2026-06-18')).not.toBeInTheDocument()
   })
 })

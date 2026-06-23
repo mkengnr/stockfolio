@@ -1,3 +1,4 @@
+import re
 import uuid
 from typing import Literal
 
@@ -56,6 +57,50 @@ _GROUP_MODELS = {
     "rollups": RollupGroup,
     "labels": Label,
 }
+
+_PUBLIC_DASHBOARD_WARNING_PATTERNS = (
+    re.compile(
+        r"(?:KRX|US) 장중 현재가입니다\. 차트는 직전 확정 종가까지 표시됩니다\."
+    ),
+    re.compile(
+        r"(?:KRX|US) 일부 종목의 (?:현재가|비교) 기준일이 다릅니다: "
+        r"\d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}"
+    ),
+)
+_PUBLIC_TICKER_WARNING_PATTERNS = (
+    re.compile(
+        r"(?P<ticker>[A-Za-z0-9.^=_-]+) 현재가 기준일이 시장 날짜보다 미래입니다: "
+        r"\d{4}-\d{2}-\d{2}"
+    ),
+    re.compile(r"Current price unavailable for (?P<ticker>[A-Za-z0-9.^=_-]+)"),
+)
+_PUBLIC_DASHBOARD_WARNING_LITERALS = {
+    "USD/KRW exchange rate unavailable; USD values are omitted",
+    "USD/KRW exchange rate lookup failed",
+}
+
+
+def _public_dashboard_warnings(
+    warnings: list[str],
+    public_tickers: set[str],
+) -> list[str]:
+    public_warnings: list[str] = []
+    seen: set[str] = set()
+    for warning in warnings:
+        is_public = (
+            warning in _PUBLIC_DASHBOARD_WARNING_LITERALS
+            or any(pattern.fullmatch(warning) for pattern in _PUBLIC_DASHBOARD_WARNING_PATTERNS)
+        )
+        if not is_public:
+            for pattern in _PUBLIC_TICKER_WARNING_PATTERNS:
+                match = pattern.fullmatch(warning)
+                if match is not None and match.group("ticker") in public_tickers:
+                    is_public = True
+                    break
+        if is_public and warning not in seen:
+            public_warnings.append(warning)
+            seen.add(warning)
+    return public_warnings
 
 
 def _not_found() -> HTTPException:
@@ -161,6 +206,13 @@ def _public_shared_dashboard(dashboard: DashboardResponse) -> SharedDashboardOut
         )
     return SharedDashboardOut(
         display_currency=dashboard.display_currency,
+        price_dates_by_market=dashboard.price_dates_by_market,
+        comparison_dates_by_market=dashboard.comparison_dates_by_market,
+        daily_change_active_by_market=dashboard.daily_change_active_by_market,
+        warnings=_public_dashboard_warnings(
+            dashboard.warnings,
+            {holding.ticker for holding in dashboard.holdings},
+        ),
         summary=dashboard.summary,
         groups=groups,
         history=SharedDashboardHistoryOut(rows=history_rows),

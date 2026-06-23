@@ -59,7 +59,7 @@ function DashboardSummaryCards({
       <SummaryCard title="잔여원금" value={displayCurrencyValue(summary.total_cost_basis, displayCurrency)} />
       <SummaryCard title="평가금액" value={displayCurrencyValue(summary.total_current_value, displayCurrency)} />
       <SummaryCard
-        title="전일대비"
+        title="당일손익"
         value={displayCurrencyValue(summary.total_current_value_change, displayCurrency)}
         sub={summary.total_current_value_change_pct == null ? undefined : formatPercent(summary.total_current_value_change_pct)}
         subColor={profitColor(summary.total_current_value_change)}

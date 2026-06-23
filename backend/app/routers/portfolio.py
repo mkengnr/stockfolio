@@ -601,30 +601,43 @@ def _dashboard_dates_by_market(
     """Per-market current-price date and its previous-trading-day comparison date.
 
     Korea and the US have different trading calendars (e.g. US Juneteenth), so a
-    single date hides which market each price is as of. Expose both per market.
+    single date hides which market each price is as of. For an active market,
+    expose only the market-local-today basis; otherwise retain the latest provider
+    date as useful current-price metadata.
     """
     price_dates = current_price_dates or {}
     current_dates: dict[str, set[date]] = {}
     comparison_dates: dict[str, set[date]] = {}
+    active_current_dates: dict[str, set[date]] = {}
+    active_comparison_dates: dict[str, set[date]] = {}
     for holding in holdings:
         ticker_date = price_dates.get(holding.ticker)
         if ticker_date is None:
             continue
         market = _holding_market(holding).value
         current_dates.setdefault(market, set()).add(ticker_date)
+        is_active_date = ticker_date == market_local_date(holding.market, now)
+        if is_active_date:
+            active_current_dates.setdefault(market, set()).add(ticker_date)
         previous_dates = [
             snapshot.snapshot_date
             for snapshot in holding.snapshots
             if snapshot.snapshot_date < ticker_date
         ]
         if previous_dates:
-            comparison_dates.setdefault(market, set()).add(max(previous_dates))
+            comparison_date = max(previous_dates)
+            comparison_dates.setdefault(market, set()).add(comparison_date)
+            if is_active_date:
+                active_comparison_dates.setdefault(market, set()).add(comparison_date)
 
     current_by_market = {
-        market: max(dates) for market, dates in current_dates.items()
+        market: max(active_current_dates.get(market, dates))
+        for market, dates in current_dates.items()
     }
     comparison_by_market = {
-        market: max(dates) for market, dates in comparison_dates.items()
+        market: max(active_comparison_dates.get(market, dates))
+        for market, dates in comparison_dates.items()
+        if market not in active_current_dates or market in active_comparison_dates
     }
     warnings: list[str] = []
     for market, dates in current_dates.items():

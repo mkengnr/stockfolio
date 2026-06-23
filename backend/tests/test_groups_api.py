@@ -442,6 +442,9 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
         "last_refreshed_at": NOW.isoformat(),
         "current_price_as_of": "2026-06-02",
         "comparison_as_of": "2026-06-01",
+        "price_dates_by_market": {"KRX": "2026-06-23", "US": "2026-06-22"},
+        "comparison_dates_by_market": {"KRX": "2026-06-20", "US": "2026-06-18"},
+        "daily_change_active_by_market": {"KRX": False, "US": True},
         "summary": {
             "total_invested_principal": "70000",
             "total_cost_basis": "70000",
@@ -489,10 +492,10 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
         "holdings": [
             {
                 "holding_id": str(uuid.uuid4()),
-                "ticker": "005930",
-                "name": "삼성전자",
-                "market": "KRX",
-                "currency": "KRW",
+                "ticker": "AAPL",
+                "name": "Apple",
+                "market": "US",
+                "currency": "USD",
                 "quantity": "1",
                 "remaining_cost_basis": "70000",
                 "current_price": "75000",
@@ -509,7 +512,11 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
                 ],
             }
         ],
-        "warnings": [],
+        "warnings": [
+            "AAPL 현재가 기준일이 시장 날짜보다 미래입니다: 2026-06-23",
+            "Current price unavailable for AAPL",
+            "USD/KRW exchange rate lookup failed",
+        ],
     })
 
     async def _build_shared_portfolio_dashboard(actual_db, user_id, actual_scope):
@@ -535,6 +542,14 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
         "share_description": None,
         "dashboard": {
             "display_currency": "KRW",
+            "price_dates_by_market": {"KRX": "2026-06-23", "US": "2026-06-22"},
+            "comparison_dates_by_market": {"KRX": "2026-06-20", "US": "2026-06-18"},
+            "daily_change_active_by_market": {"KRX": False, "US": True},
+            "warnings": [
+                "AAPL 현재가 기준일이 시장 날짜보다 미래입니다: 2026-06-23",
+                "Current price unavailable for AAPL",
+                "USD/KRW exchange rate lookup failed",
+            ],
             "summary": {
                 "total_invested_principal": "70000",
                 "total_cost_basis": "70000",
@@ -582,10 +597,10 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
             },
             "holdings": [
                 {
-                    "ticker": "005930",
-                    "name": "삼성전자",
-                    "market": "KRX",
-                    "currency": "KRW",
+                    "ticker": "AAPL",
+                    "name": "Apple",
+                    "market": "US",
+                    "currency": "USD",
                     "quantity": "1",
                     "remaining_cost_basis": "70000",
                     "current_price": "75000",
@@ -615,7 +630,19 @@ def test_public_share_omits_internal_warnings_and_legacy_fields(client, user, db
     source.share_requires_auth = False
     db.queue(_Result(one=source))
     transaction_id = uuid.uuid4()
-    warning = f"Sell transaction {transaction_id} requires review: lot allocations are missing"
+    internal_warning = (
+        f"Sell transaction {transaction_id} requires review: lot allocations are missing"
+    )
+    public_warnings = [
+        "US 일부 종목의 현재가 기준일이 다릅니다: 2026-06-20 ~ 2026-06-22",
+        "US 장중 현재가입니다. 차트는 직전 확정 종가까지 표시됩니다.",
+        "USD/KRW exchange rate lookup failed",
+    ]
+    unrelated_ticker_warnings = [
+        "AAPL 현재가 기준일이 시장 날짜보다 미래입니다: 2026-06-23",
+        "Current price unavailable for AAPL",
+        "AAPL 직전 거래일 스냅샷 복구 실패",
+    ]
 
     async def _resolve_portfolio_scope(*_args):
         return object()
@@ -639,7 +666,12 @@ def test_public_share_omits_internal_warnings_and_legacy_fields(client, user, db
         "groups": [],
         "history": {"rows": []},
         "holdings": [],
-        "warnings": [warning],
+        "warnings": [
+            internal_warning,
+            *unrelated_ticker_warnings,
+            *public_warnings,
+            public_warnings[0],
+        ],
     })
 
     async def _build_shared_portfolio_dashboard(*_args):
@@ -656,8 +688,11 @@ def test_public_share_omits_internal_warnings_and_legacy_fields(client, user, db
     assert response.status_code == 200
     payload = response.json()
     assert set(payload) == {"kind", "name", "color", "description", "share_description", "dashboard"}
+    assert payload["dashboard"]["warnings"] == public_warnings
+    assert internal_warning not in response.text
     assert str(transaction_id) not in response.text
-    assert "warnings" not in payload["dashboard"]
+    assert "exchange_rate" not in payload["dashboard"]
+    assert "last_refreshed_at" not in payload["dashboard"]
 
 
 

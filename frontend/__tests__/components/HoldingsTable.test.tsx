@@ -162,7 +162,8 @@ describe('HoldingsTable', () => {
 
     render(<HoldingsTable holdings={dashboardRows} displayCurrency="KRW" />)
 
-    expect(screen.getByText('전일대비')).toBeInTheDocument()
+    expect(screen.getByText('당일손익')).toBeInTheDocument()
+    expect(screen.queryByText('전일대비')).not.toBeInTheDocument()
     expect(screen.getByText('+₩10,000')).toBeInTheDocument()
     expect(screen.getByText('합계')).toBeInTheDocument()
     expect(screen.getByText('+₩5,000')).toBeInTheDocument()
@@ -290,7 +291,7 @@ describe('HoldingsTable', () => {
     fireEvent.click(screen.getByRole('button', { name: /현재가/ }))
     expect(visibleRowNames()).toEqual(['카카오', '삼성전자'])
 
-    fireEvent.click(screen.getByRole('button', { name: /전일대비/ }))
+    fireEvent.click(screen.getByRole('button', { name: /당일손익/ }))
     expect(visibleRowNames()).toEqual(['삼성전자', '카카오'])
   })
 })
