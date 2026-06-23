@@ -16,16 +16,37 @@ jest.mock('@/components/dashboard/PortfolioChart', () => ({
     historyRows,
     includeComposition,
     visibleRange,
+    livePoint,
+    liveComposition,
+    showGainLossBand,
   }: {
     historyRows: Array<{ group_name: string; snapshot_date: string }>
     includeComposition: boolean
     visibleRange: { from: string; to: string } | null
+    livePoint?: {
+      snapshotDate: string | null
+      groupKind: string
+      groupId: string | null
+      groupName: string
+      summary: { total_current_value: string | null; total_current_value_change: string | null }
+    } | null
+    liveComposition?: Array<{
+      snapshotDate: string | null
+      groupKind: string
+      groupId: string | null
+      groupName: string
+      summary: { total_current_value: string | null }
+    }>
+    showGainLossBand?: boolean
   }) => (
     <div data-testid="portfolio-chart">
       selected:{historyRows.map((row) => row.group_name).join(',')}|
       composition:{includeComposition ? 'on' : 'off'}|
       dates:{historyRows.map((row) => row.snapshot_date).join(',')}|
-      visible:{visibleRange ? `${visibleRange.from}..${visibleRange.to}` : 'all'}
+      visible:{visibleRange ? `${visibleRange.from}..${visibleRange.to}` : 'all'}|
+      live:{livePoint ? `${livePoint.snapshotDate}:${livePoint.summary.total_current_value}:${livePoint.summary.total_current_value_change}:${livePoint.groupKind}:${livePoint.groupId ?? 'null'}:${livePoint.groupName}` : 'null'}|
+      live-composition:{(liveComposition ?? []).map((point) => `${point.snapshotDate}:${point.summary.total_current_value}:${point.groupKind}:${point.groupId ?? 'null'}:${point.groupName}`).join(',')}|
+      band:{showGainLossBand ? 'on' : 'off'}
     </div>
   ),
 }))
@@ -204,7 +225,10 @@ describe('SharePage', () => {
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:전체')
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('composition:on')
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('dates:2026-02-01,2026-06-01')
-    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:2026-03-01..2026-06-01')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:2026-03-23..2026-06-23')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('live:2026-06-23:390:20:total:null:전체')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('live-composition:2026-06-23:240:source:group-1:급여')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('band:on')
 
     fireEvent.click(screen.getByRole('button', { name: /그룹 필터/ }))
     fireEvent.click(screen.getByRole('option', { name: /급여/ }))
@@ -212,6 +236,19 @@ describe('SharePage', () => {
     expect(screen.getByText('2')).toBeInTheDocument()
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:급여')
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('composition:off')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('live:2026-06-23:240:10:source:group-1:급여')
+  })
+
+  it('keeps history-only chart data when shared price dates are missing', async () => {
+    mockedShareApi.getGroup.mockResolvedValue({
+      ...sharedGroup,
+      dashboard: { ...sharedGroup.dashboard, price_dates_by_market: undefined },
+    })
+
+    render(<SharePage params={{ token: 'token-no-dates' }} />)
+
+    expect(await screen.findByTestId('portfolio-chart')).toHaveTextContent('live:null')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:2026-03-01..2026-06-01')
   })
 
   it('announces summary changes politely for screen readers', async () => {

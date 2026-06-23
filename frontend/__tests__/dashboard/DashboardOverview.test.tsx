@@ -29,17 +29,38 @@ jest.mock('@/components/dashboard/PortfolioChart', () => ({
     compositionRows,
     includeComposition,
     visibleRange,
+    livePoint,
+    liveComposition,
+    showGainLossBand,
   }: {
     historyRows: Array<{ group_name: string; snapshot_date: string }>
     compositionRows: Array<{ group_name: string; snapshot_date: string }>
     includeComposition: boolean
     visibleRange: { from: string; to: string } | null
+    livePoint?: {
+      snapshotDate: string | null
+      groupKind: string
+      groupId: string | null
+      groupName: string
+      summary: { total_current_value: string | null; total_current_value_change: string | null }
+    } | null
+    liveComposition?: Array<{
+      snapshotDate: string | null
+      groupKind: string
+      groupId: string | null
+      groupName: string
+      summary: { total_current_value: string | null; total_current_value_change: string | null }
+    }>
+    showGainLossBand?: boolean
   }) => (
     <div data-testid="portfolio-chart">
       selected:{historyRows.map((row) => row.group_name).join(',')}|
       composition:{includeComposition ? compositionRows.map((row) => row.group_name).join(',') : 'off'}|
       dates:{historyRows.map((row) => row.snapshot_date).join(',')}|
-      visible:{visibleRange ? `${visibleRange.from}..${visibleRange.to}` : 'all'}
+      visible:{visibleRange ? `${visibleRange.from}..${visibleRange.to}` : 'all'}|
+      live:{livePoint ? `${livePoint.snapshotDate}:${livePoint.summary.total_current_value}:${livePoint.summary.total_current_value_change}:${livePoint.groupKind}:${livePoint.groupId ?? 'null'}:${livePoint.groupName}` : 'null'}|
+      live-composition:{(liveComposition ?? []).map((point) => `${point.snapshotDate}:${point.summary.total_current_value}:${point.groupKind}:${point.groupId ?? 'null'}:${point.groupName}`).join(',')}|
+      band:{showGainLossBand ? 'on' : 'off'}
     </div>
   ),
 }))
@@ -295,7 +316,10 @@ describe('DashboardOverview', () => {
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:전체')
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('composition:전체,모음통장,전체,모음통장,장기투자')
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('2026-02-01')
-    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:2026-03-01..2026-06-01')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:2026-03-05..2026-06-05')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('live:2026-06-05:900000:50000:total:null:전체')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('live-composition:2026-06-05:580000:source:source-1:모음통장')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('band:on')
     expect(screen.getByText(/마지막 조회/)).toHaveTextContent('2026-06-06')
     expect(screen.getByText(/현재가 기준/)).toHaveTextContent('2026-06-05')
     expect(screen.getByText(/당일손익 기준/)).toHaveTextContent('한국 2026-06-05 vs 2026-06-04')
@@ -315,7 +339,7 @@ describe('DashboardOverview', () => {
 
     expect(screen.getByRole('button', { name: '3개월' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('2026-02-01')
-    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:2026-03-01..2026-06-01')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:2026-03-05..2026-06-05')
 
     fireEvent.click(screen.getByRole('button', { name: '전체' }))
 
@@ -381,6 +405,7 @@ describe('DashboardOverview', () => {
     expect(screen.getAllByText('₩145,000').length).toBeGreaterThan(0)
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('selected:모음통장')
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('composition:off')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('live:2026-06-05:580000:30000:source:source-1:모음통장')
   })
 
   it('keeps all chart rows while passing the selected range as the visible window', () => {
@@ -396,7 +421,7 @@ describe('DashboardOverview', () => {
     )
 
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('2026-02-01')
-    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:2026-03-01..2026-06-01')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:2026-03-05..2026-06-05')
     fireEvent.click(screen.getByRole('button', { name: '전체' }))
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('2026-02-01')
     expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:all')
@@ -559,6 +584,8 @@ describe('DashboardOverview', () => {
     expect(screen.getByText('현재가 기준: 미국 2026-06-22')).toBeInTheDocument()
     expect(screen.getByText('마지막 조회: 2030-01-02 00:00:00')).toBeInTheDocument()
     expect(screen.queryByText(/마지막 조회: 2026-06-06/)).not.toBeInTheDocument()
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('live:2026-06-22:999:50000:total:null:배당주')
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent('visible:2026-03-22..2026-06-22')
   })
 
   it('switches the warning banner to the loaded label dashboard', async () => {

@@ -4,6 +4,7 @@ import {
   formatDashboardMoney,
   getDashboardChartLayout,
   hasInvestedPrincipal,
+  mergeDashboardCompositionLivePoints,
   mergeDashboardLivePoint,
 } from '@/components/dashboard/PortfolioChart'
 import type { DashboardHistoryRow, DashboardSummary } from '@/lib/types'
@@ -234,6 +235,33 @@ describe('mergeDashboardLivePoint', () => {
         group_name: '장기 투자',
       }),
     ])
+  })
+})
+
+describe('mergeDashboardCompositionLivePoints', () => {
+  it('replaces each matching composition identity without removing sibling groups', () => {
+    const result = mergeDashboardCompositionLivePoints(rows, [
+      {
+        snapshotDate: '2026-06-02',
+        groupKind: 'source',
+        groupId: 'source-1',
+        groupName: '모음통장',
+        summary: liveSummary,
+      },
+      {
+        snapshotDate: '2026-06-02',
+        groupKind: 'unclassified',
+        groupId: null,
+        groupName: '미분류',
+        summary: { ...liveSummary, total_current_value: '70000' },
+      },
+    ])
+
+    expect(result.filter((row) => row.snapshot_date === '2026-06-02')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ group_kind: 'total', total_value: '780000' }),
+      expect.objectContaining({ group_kind: 'source', group_id: 'source-1', total_value: '805000' }),
+      expect.objectContaining({ group_kind: 'unclassified', group_id: null, total_value: '70000' }),
+    ]))
   })
 })
 

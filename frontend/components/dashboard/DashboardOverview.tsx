@@ -9,7 +9,7 @@ import { DisplayCurrencyToggle } from './DisplayCurrencyToggle'
 import { GroupFilterMenu } from './GroupFilterMenu'
 import { GroupPerformanceTable } from './GroupPerformanceTable'
 import { HoldingsTable } from './HoldingsTable'
-import { PortfolioChart } from './PortfolioChart'
+import { PortfolioChart, type DashboardLivePoint } from './PortfolioChart'
 import { PortfolioSummary } from './PortfolioSummary'
 import { ChartRangeControl, getChartVisibleDateRange, type ChartRange } from './chartRange'
 import { formatDailyProfitBasis } from './dailyProfitBasis'
@@ -100,9 +100,42 @@ export function DashboardOverview({
     [labelMode, labelDashboard, selectedHistoryRows],
   )
 
+  const livePoint = useMemo<DashboardLivePoint | null>(() => {
+    if (!activeDashboard || !activeSummary) return null
+    if (labelMode) {
+      return {
+        snapshotDate: activeDashboard.current_price_as_of,
+        groupKind: 'total',
+        groupId: null,
+        groupName: selectedName,
+        summary: activeSummary,
+      }
+    }
+    return {
+      snapshotDate: activeDashboard.current_price_as_of,
+      groupKind: selectedGroup?.kind ?? 'total',
+      groupId: selectedGroup?.id ?? null,
+      groupName: selectedGroup?.name ?? '전체',
+      summary: activeSummary,
+    }
+  }, [activeDashboard, activeSummary, labelMode, selectedGroup, selectedName])
+  const liveComposition = useMemo<DashboardLivePoint[]>(() => {
+    if (!activeDashboard) return []
+    return activeDashboard.groups.map((group) => ({
+      snapshotDate: activeDashboard.current_price_as_of,
+      groupKind: group.kind,
+      groupId: group.id,
+      groupName: group.name,
+      summary: group.summary,
+    }))
+  }, [activeDashboard])
+
   const chartVisibleRange = useMemo(
-    () => getChartVisibleDateRange(activeHistoryRows, chartRange),
-    [activeHistoryRows, chartRange],
+    () => getChartVisibleDateRange([
+      ...activeHistoryRows,
+      ...(livePoint?.snapshotDate ? [{ snapshot_date: livePoint.snapshotDate }] : []),
+    ], chartRange),
+    [activeHistoryRows, chartRange, livePoint?.snapshotDate],
   )
 
   // ── Group filter options (with sections; labels in their own section) ─────────
@@ -209,6 +242,9 @@ export function DashboardOverview({
               includeComposition={!selectedGroup && !labelMode}
               displayCurrency={displayCurrency}
               visibleRange={chartVisibleRange}
+              livePoint={livePoint}
+              liveComposition={liveComposition}
+              showGainLossBand
               referenceDefault="invested"
             />
           </Card>

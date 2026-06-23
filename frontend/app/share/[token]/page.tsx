@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { GroupFilterMenu } from '@/components/dashboard/GroupFilterMenu'
 import { HoldingsTable } from '@/components/dashboard/HoldingsTable'
-import { PortfolioChart } from '@/components/dashboard/PortfolioChart'
+import { PortfolioChart, type DashboardLivePoint } from '@/components/dashboard/PortfolioChart'
 import { PortfolioSummary } from '@/components/dashboard/PortfolioSummary'
 import { ChartRangeControl, getChartVisibleDateRange, type ChartRange } from '@/components/dashboard/chartRange'
 import { formatDailyProfitBasis } from '@/components/dashboard/dailyProfitBasis'
@@ -53,9 +53,32 @@ function SharedGroupView({
   const selectedHistoryRows = historyRows.filter((row) => (
     selectedGroup ? row.group_id === selectedGroup.key : row.group_kind === 'total'
   ))
+  const liveDate = useMemo(
+    () => latestSharedPriceDate(group.dashboard.price_dates_by_market),
+    [group.dashboard.price_dates_by_market],
+  )
+  const livePoint = useMemo<DashboardLivePoint | null>(() => liveDate ? {
+    snapshotDate: liveDate,
+    groupKind: selectedGroup?.kind ?? 'total',
+    groupId: selectedGroup?.key ?? null,
+    groupName: selectedGroup?.name ?? '전체',
+    summary: selectedSummary,
+  } : null, [liveDate, selectedGroup, selectedSummary])
+  const liveComposition = useMemo<DashboardLivePoint[]>(() => liveDate
+    ? group.dashboard.groups.map((item) => ({
+        snapshotDate: liveDate,
+        groupKind: item.kind,
+        groupId: item.key,
+        groupName: item.name,
+        summary: item.summary,
+      }))
+    : [], [group.dashboard.groups, liveDate])
   const chartVisibleRange = useMemo(
-    () => getChartVisibleDateRange(selectedHistoryRows, chartRange),
-    [selectedHistoryRows, chartRange],
+    () => getChartVisibleDateRange([
+      ...selectedHistoryRows,
+      ...(liveDate ? [{ snapshot_date: liveDate }] : []),
+    ], chartRange),
+    [selectedHistoryRows, chartRange, liveDate],
   )
   const groupFilterOptions = useMemo(
     () => [
@@ -124,6 +147,8 @@ function SharedGroupView({
           includeComposition={!selectedGroup}
           displayCurrency={group.dashboard.display_currency}
           visibleRange={chartVisibleRange}
+          livePoint={livePoint}
+          liveComposition={liveComposition}
           showGainLossBand
         />
       </Card>
@@ -135,6 +160,11 @@ function SharedGroupView({
       </Card>
     </SharedLayout>
   )
+}
+
+function latestSharedPriceDate(byMarket: Record<string, string> | undefined) {
+  const dates = Object.values(byMarket ?? {}).filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
+  return dates.length > 0 ? dates.reduce((latest, value) => value > latest ? value : latest) : null
 }
 
 function LegacySharedTagView({

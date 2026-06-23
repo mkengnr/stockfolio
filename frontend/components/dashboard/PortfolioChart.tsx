@@ -49,6 +49,8 @@ type LegacyProps = {
   compositionRows?: never
   includeComposition?: never
   displayCurrency?: never
+  livePoint?: never
+  liveComposition?: never
 }
 
 type DashboardProps = {
@@ -57,6 +59,8 @@ type DashboardProps = {
   includeComposition: boolean
   displayCurrency: DisplayCurrency
   visibleRange: ChartVisibleRange
+  livePoint?: DashboardLivePoint | null
+  liveComposition?: DashboardLivePoint[]
   showGainLossBand?: boolean
   referenceDefault?: ChartReferenceField | 'auto'
   series?: never
@@ -136,6 +140,16 @@ export function mergeDashboardLivePoint(
     rows: mergedRows,
     liveDailyProfit: parseNullableNumber(summary.total_current_value_change),
   }
+}
+
+export function mergeDashboardCompositionLivePoints(
+  rows: DashboardHistoryRow[],
+  livePoints: DashboardLivePoint[],
+) {
+  return livePoints.reduce(
+    (mergedRows, livePoint) => mergeDashboardLivePoint(mergedRows, livePoint).rows,
+    rows,
+  )
 }
 
 export function buildDashboardChartSeries(
@@ -310,6 +324,8 @@ export function PortfolioChart(props: Props) {
         includeComposition={props.includeComposition}
         displayCurrency={props.displayCurrency}
         visibleRange={props.visibleRange}
+        livePoint={props.livePoint}
+        liveComposition={props.liveComposition ?? []}
         showGainLossBand={props.showGainLossBand ?? false}
         referenceDefault={props.referenceDefault ?? 'auto'}
       />
@@ -324,6 +340,8 @@ function DashboardPortfolioChart({
   includeComposition,
   displayCurrency,
   visibleRange,
+  livePoint,
+  liveComposition,
   showGainLossBand,
   referenceDefault,
 }: {
@@ -332,16 +350,27 @@ function DashboardPortfolioChart({
   includeComposition: boolean
   displayCurrency: DisplayCurrency
   visibleRange: ChartVisibleRange
+  livePoint: DashboardLivePoint | null | undefined
+  liveComposition: DashboardLivePoint[]
   showGainLossBand: boolean
   referenceDefault: ChartReferenceField | 'auto'
 }) {
   const mainContainerRef = useRef<HTMLDivElement>(null)
   const profitContainerRef = useRef<HTMLDivElement>(null)
   const [referenceOverride, setReferenceOverride] = useState<ChartReferenceField | null>(null)
-  const referenceField = referenceOverride ?? resolveReferenceDefault(referenceDefault, rows)
+  const selectedMerge = useMemo(() => mergeDashboardLivePoint(rows, livePoint), [livePoint, rows])
+  const mergedCompositionRows = useMemo(
+    () => mergeDashboardCompositionLivePoints(compositionRows, liveComposition),
+    [compositionRows, liveComposition],
+  )
+  const referenceField = referenceOverride ?? resolveReferenceDefault(referenceDefault, selectedMerge.rows)
   const chartData = useMemo(
-    () => buildIntegratedDashboardChartData(compositionRows, rows, { includeComposition, referenceField }),
-    [compositionRows, includeComposition, rows, referenceField],
+    () => buildIntegratedDashboardChartData(mergedCompositionRows, selectedMerge.rows, {
+      includeComposition,
+      referenceField,
+      liveDailyProfit: selectedMerge.liveDailyProfit,
+    }),
+    [includeComposition, mergedCompositionRows, referenceField, selectedMerge],
   )
   const hasData = chartData.value.length > 0 || chartData.principal.length > 0
 
