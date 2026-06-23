@@ -13,6 +13,11 @@ _MARKET_TZ: dict[Market, ZoneInfo] = {Market.KRX: KST, Market.US: ET}
 _DEFAULT_CLOSE: dict[Market, time] = {Market.KRX: time(15, 45), Market.US: time(16, 0)}
 
 
+def market_local_date(market: Market, now: datetime) -> date:
+    """Return the calendar date currently in effect for a market."""
+    return now.astimezone(_MARKET_TZ[market]).date()
+
+
 def _close_time(market: Market, on: date, close_overrides: dict[date, time] | None) -> time:
     if market == Market.KRX and close_overrides and on in close_overrides:
         return close_overrides[on]
@@ -28,7 +33,7 @@ def is_write_confirmed(
 ) -> bool:
     """True if `price_date` is a completed session for `market` as of `now`."""
     local = now.astimezone(_MARKET_TZ[market])
-    market_today = local.date()
+    market_today = market_local_date(market, now)
     if price_date < market_today:
         return True
     if price_date == market_today:
@@ -44,7 +49,7 @@ def safe_query_end(
 ) -> date:
     """Calendar upper bound for backfill: today only if its session is confirmed."""
     local = now.astimezone(_MARKET_TZ[market])
-    market_today = local.date()
+    market_today = market_local_date(market, now)
     if local.time() >= _close_time(market, market_today, close_overrides):
         return market_today
     return market_today - timedelta(days=1)

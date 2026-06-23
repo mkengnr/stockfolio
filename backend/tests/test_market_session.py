@@ -2,7 +2,7 @@ from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 
 from app.models.holding import Market
-from app.services.market_session import is_write_confirmed, safe_query_end
+from app.services.market_session import is_write_confirmed, market_local_date, safe_query_end
 
 KST = ZoneInfo("Asia/Seoul")
 ET = ZoneInfo("America/New_York")
@@ -10,6 +10,13 @@ ET = ZoneInfo("America/New_York")
 
 def _kst(y, m, d, hh, mm):
     return datetime(y, m, d, hh, mm, tzinfo=KST)
+
+
+def test_market_local_date_depends_on_market_timezone():
+    now = datetime(2026, 6, 22, 23, 0, tzinfo=timezone.utc)
+
+    assert market_local_date(Market.KRX, now) == date(2026, 6, 23)
+    assert market_local_date(Market.US, now) == date(2026, 6, 22)
 
 
 def test_krx_intraday_before_1545_not_confirmed():
