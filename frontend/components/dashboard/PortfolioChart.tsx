@@ -117,18 +117,23 @@ export function mergeDashboardLivePoint(
     return { rows, liveDailyProfit: undefined, liveDailyProfitDate: undefined }
   }
 
-  // A confirmed snapshot is only written after the market closes, so a live point whose date is at
-  // or before the latest confirmed snapshot of the same identity is just restating an already-closed
-  // day (e.g. the latest price date is still yesterday's close because today's market hasn't opened).
-  // Its 당일손익 reflects the not-yet-started session, not that closed day, so keep the confirmed
-  // close-to-close value instead of overwriting it.
+  // An older live date is stale and must not rewrite newer confirmed history. A same-date live point
+  // may still contain an updated current value from another market, so merge its value but keep the
+  // confirmed close-to-close daily-profit bar. Only a genuinely newer live date owns a live daily
+  // profit override.
   const latestConfirmedDate = rows.reduce<string | null>((latest, row) => {
     if (row.group_kind !== livePoint.groupKind || row.group_id !== livePoint.groupId) return latest
     return latest === null || row.snapshot_date > latest ? row.snapshot_date : latest
   }, null)
-  if (latestConfirmedDate !== null && snapshotDate <= latestConfirmedDate) {
+  if (latestConfirmedDate !== null && snapshotDate < latestConfirmedDate) {
     return { rows, liveDailyProfit: undefined, liveDailyProfitDate: undefined }
   }
+  const ownsLiveDailyProfit = latestConfirmedDate === null || snapshotDate > latestConfirmedDate
+  const sameDateConfirmedRow = rows.find((row) => (
+    row.snapshot_date === snapshotDate
+    && row.group_kind === livePoint.groupKind
+    && row.group_id === livePoint.groupId
+  ))
 
   const liveRow: DashboardHistoryRow = {
     group_kind: livePoint.groupKind,
@@ -138,7 +143,7 @@ export function mergeDashboardLivePoint(
     total_value: summary.total_current_value,
     total_invested_principal: summary.total_invested_principal,
     total_cost_basis: summary.total_cost_basis,
-    total_profit_loss: summary.total_profit_loss,
+    total_profit_loss: sameDateConfirmedRow?.total_profit_loss ?? summary.total_profit_loss,
   }
   const mergedRows = rows
     .filter((row) => !(
@@ -151,8 +156,10 @@ export function mergeDashboardLivePoint(
 
   return {
     rows: mergedRows,
-    liveDailyProfit: parseNullableNumber(summary.total_current_value_change),
-    liveDailyProfitDate: snapshotDate,
+    liveDailyProfit: ownsLiveDailyProfit
+      ? parseNullableNumber(summary.total_current_value_change)
+      : undefined,
+    liveDailyProfitDate: ownsLiveDailyProfit ? snapshotDate : undefined,
   }
 }
 

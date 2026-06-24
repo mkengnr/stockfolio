@@ -142,7 +142,7 @@ describe('mergeDashboardLivePoint', () => {
     expect(result.liveDailyProfitDate).toBeUndefined()
   })
 
-  it('leaves sibling groups intact when a stale same-date live point is ignored', () => {
+  it('replaces a same-date selected value while leaving sibling groups intact', () => {
     const sourceRow = rows.find(
       (row) => row.group_kind === 'source' && row.snapshot_date === '2026-06-02',
     )!
@@ -156,11 +156,19 @@ describe('mergeDashboardLivePoint', () => {
       summary: liveSummary,
     })
 
-    expect(result.rows).toBe(mixedRows)
-    expect(result.rows.filter((row) => row.snapshot_date === '2026-06-02')).toEqual([
-      expect.objectContaining({ group_kind: 'total', total_value: '780000' }),
-      sourceRow,
-    ])
+    expect(result.rows).not.toBe(mixedRows)
+    expect(result.rows.filter((row) => row.snapshot_date === '2026-06-02')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          group_kind: 'total',
+          total_value: '805000',
+          total_profit_loss: '165000',
+        }),
+        sourceRow,
+      ]),
+    )
+    expect(result.liveDailyProfit).toBeUndefined()
+    expect(result.liveDailyProfitDate).toBeUndefined()
   })
 
   it.each([
@@ -238,7 +246,10 @@ describe('mergeDashboardLivePoint', () => {
       summary: { ...liveSummary, total_current_value_change: '0' },
     })
 
-    expect(merged.rows).toBe(totalRows)
+    expect(merged.rows).not.toBe(totalRows)
+    expect(merged.rows.filter((row) => row.snapshot_date === '2026-06-02')).toEqual([
+      expect.objectContaining({ total_value: '805000', total_profit_loss: '165000' }),
+    ])
     expect(merged.liveDailyProfit).toBeUndefined()
     expect(merged.liveDailyProfitDate).toBeUndefined()
 
