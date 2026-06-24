@@ -148,6 +148,8 @@ describe('DashboardPortfolioChart legend', () => {
     expect(createChart.mock.calls[0][1].timeScale.rightOffset).toBe(
       createChart.mock.calls[1][1].timeScale.rightOffset,
     )
+    expect(createChart.mock.calls[0][1].leftPriceScale.minimumWidth).toBe(96)
+    expect(createChart.mock.calls[1][1].leftPriceScale.minimumWidth).toBe(96)
     expect(timeScaleApis.every((api) => api.subscribeVisibleLogicalRangeChange.mock.calls.length === 0)).toBe(true)
     expect(timeScaleApis.every((api) => api.setVisibleLogicalRange.mock.calls.length === 0)).toBe(true)
 

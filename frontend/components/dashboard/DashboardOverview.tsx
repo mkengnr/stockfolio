@@ -99,12 +99,15 @@ export function DashboardOverview({
         : selectedHistoryRows,
     [labelMode, labelDashboard, selectedHistoryRows],
   )
+  const liveDate = activeDashboard
+    ? latestDashboardPriceDate(activeDashboard.price_dates_by_market) ?? activeDashboard.current_price_as_of
+    : null
 
   const livePoint = useMemo<DashboardLivePoint | null>(() => {
-    if (!activeDashboard || !activeSummary) return null
+    if (!activeDashboard || !activeSummary || !liveDate) return null
     if (labelMode) {
       return {
-        snapshotDate: activeDashboard.current_price_as_of,
+        snapshotDate: liveDate,
         groupKind: 'total',
         groupId: null,
         groupName: selectedName,
@@ -112,23 +115,23 @@ export function DashboardOverview({
       }
     }
     return {
-      snapshotDate: activeDashboard.current_price_as_of,
+      snapshotDate: liveDate,
       groupKind: selectedGroup?.kind ?? 'total',
       groupId: selectedGroup?.id ?? null,
       groupName: selectedGroup?.name ?? '전체',
       summary: activeSummary,
     }
-  }, [activeDashboard, activeSummary, labelMode, selectedGroup, selectedName])
+  }, [activeDashboard, activeSummary, labelMode, liveDate, selectedGroup, selectedName])
   const liveComposition = useMemo<DashboardLivePoint[]>(() => {
     if (!activeDashboard) return []
     return activeDashboard.groups.map((group) => ({
-      snapshotDate: activeDashboard.current_price_as_of,
+      snapshotDate: liveDate,
       groupKind: group.kind,
       groupId: group.id,
       groupName: group.name,
       summary: group.summary,
     }))
-  }, [activeDashboard])
+  }, [activeDashboard, liveDate])
 
   const chartVisibleRange = useMemo(
     () => getChartVisibleDateRange([
@@ -265,6 +268,11 @@ export function DashboardOverview({
       </div>
     </div>
   )
+}
+
+function latestDashboardPriceDate(byMarket: Record<string, string> | undefined) {
+  const dates = Object.values(byMarket ?? {}).filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
+  return dates.length > 0 ? dates.reduce((latest, value) => value > latest ? value : latest) : null
 }
 
 function groupKey(group: DashboardGroupSummary) {

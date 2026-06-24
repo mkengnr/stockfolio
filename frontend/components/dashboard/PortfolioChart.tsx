@@ -110,11 +110,24 @@ export function mergeDashboardLivePoint(
   rows: DashboardHistoryRow[],
   livePoint: DashboardLivePoint | null | undefined,
 ) {
-  if (!livePoint) return { rows, liveDailyProfit: undefined }
+  if (!livePoint) return { rows, liveDailyProfit: undefined, liveDailyProfitDate: undefined }
 
   const { snapshotDate, summary } = livePoint
   if (!snapshotDate || summary.total_current_value == null) {
-    return { rows, liveDailyProfit: undefined }
+    return { rows, liveDailyProfit: undefined, liveDailyProfitDate: undefined }
+  }
+
+  // A confirmed snapshot is only written after the market closes, so a live point whose date is at
+  // or before the latest confirmed snapshot of the same identity is just restating an already-closed
+  // day (e.g. the latest price date is still yesterday's close because today's market hasn't opened).
+  // Its 당일손익 reflects the not-yet-started session, not that closed day, so keep the confirmed
+  // close-to-close value instead of overwriting it.
+  const latestConfirmedDate = rows.reduce<string | null>((latest, row) => {
+    if (row.group_kind !== livePoint.groupKind || row.group_id !== livePoint.groupId) return latest
+    return latest === null || row.snapshot_date > latest ? row.snapshot_date : latest
+  }, null)
+  if (latestConfirmedDate !== null && snapshotDate <= latestConfirmedDate) {
+    return { rows, liveDailyProfit: undefined, liveDailyProfitDate: undefined }
   }
 
   const liveRow: DashboardHistoryRow = {
@@ -139,6 +152,7 @@ export function mergeDashboardLivePoint(
   return {
     rows: mergedRows,
     liveDailyProfit: parseNullableNumber(summary.total_current_value_change),
+    liveDailyProfitDate: snapshotDate,
   }
 }
 
@@ -241,6 +255,7 @@ export function buildIntegratedDashboardChartData(
     includeComposition: boolean
     referenceField?: ChartReferenceField
     liveDailyProfit?: number | null
+    liveDailyProfitDate?: string
   },
 ): IntegratedDashboardChartData {
   const referenceField = options.referenceField ?? 'cost'
@@ -263,7 +278,7 @@ export function buildIntegratedDashboardChartData(
     const confirmedChange = currentProfit !== null && previousProfit !== null
       ? currentProfit - previousProfit
       : null
-    const change = index === orderedSelectedRows.length - 1 && options.liveDailyProfit !== undefined
+    const change = row.snapshot_date === options.liveDailyProfitDate && options.liveDailyProfit !== undefined
       ? options.liveDailyProfit
       : confirmedChange
     if (change === null) {
@@ -410,6 +425,7 @@ function DashboardPortfolioChart({
       includeComposition,
       referenceField,
       liveDailyProfit: selectedMerge.liveDailyProfit,
+      liveDailyProfitDate: selectedMerge.liveDailyProfitDate,
     }),
     [includeComposition, mergedCompositionRows, referenceField, selectedMerge],
   )
@@ -458,6 +474,7 @@ function DashboardPortfolioChart({
         leftPriceScale: {
           visible: true,
           borderColor: '#e5e7eb',
+          minimumWidth: 96,
           scaleMargins: { top: 0.05, bottom: 0.05 },
         },
         rightPriceScale: { visible: false },
@@ -481,6 +498,7 @@ function DashboardPortfolioChart({
         leftPriceScale: {
           visible: true,
           borderColor: '#e5e7eb',
+          minimumWidth: 96,
           scaleMargins: { top: 0.1, bottom: 0.1 },
         },
         rightPriceScale: { visible: false },

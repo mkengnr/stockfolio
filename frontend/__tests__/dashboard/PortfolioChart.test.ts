@@ -128,22 +128,21 @@ describe('mergeDashboardLivePoint', () => {
     expect(totalRows).toEqual(originalRows)
   })
 
-  it('replaces a same-date history point without creating a duplicate', () => {
+  it('ignores a live point dated before the latest confirmed snapshot', () => {
     const result = mergeDashboardLivePoint(totalRows, {
-      snapshotDate: '2026-06-02',
+      snapshotDate: '2026-06-01',
       groupKind: 'total',
       groupId: null,
       groupName: '전체',
       summary: liveSummary,
     })
 
-    expect(result.rows).toHaveLength(2)
-    expect(result.rows.filter((row) => row.snapshot_date === '2026-06-02')).toEqual([
-      expect.objectContaining({ total_value: '805000', total_profit_loss: '180000' }),
-    ])
+    expect(result.rows).toBe(totalRows)
+    expect(result.liveDailyProfit).toBeUndefined()
+    expect(result.liveDailyProfitDate).toBeUndefined()
   })
 
-  it('preserves other groups when replacing a same-date live point', () => {
+  it('leaves sibling groups intact when a stale same-date live point is ignored', () => {
     const sourceRow = rows.find(
       (row) => row.group_kind === 'source' && row.snapshot_date === '2026-06-02',
     )!
@@ -157,8 +156,11 @@ describe('mergeDashboardLivePoint', () => {
       summary: liveSummary,
     })
 
-    expect(result.rows).toContain(sourceRow)
-    expect(result.rows.filter((row) => row.snapshot_date === '2026-06-02')).toHaveLength(2)
+    expect(result.rows).toBe(mixedRows)
+    expect(result.rows.filter((row) => row.snapshot_date === '2026-06-02')).toEqual([
+      expect.objectContaining({ group_kind: 'total', total_value: '780000' }),
+      sourceRow,
+    ])
   })
 
   it.each([
@@ -193,6 +195,7 @@ describe('mergeDashboardLivePoint', () => {
     const data = buildIntegratedDashboardChartData(rows, merged.rows, {
       includeComposition: false,
       liveDailyProfit: merged.liveDailyProfit,
+      liveDailyProfitDate: merged.liveDailyProfitDate,
     })
 
     expect(data.dailyProfitChange).toEqual([
@@ -213,12 +216,41 @@ describe('mergeDashboardLivePoint', () => {
     const data = buildIntegratedDashboardChartData(rows, merged.rows, {
       includeComposition: false,
       liveDailyProfit: merged.liveDailyProfit,
+      liveDailyProfitDate: merged.liveDailyProfitDate,
     })
 
     expect(data.dailyProfitChange).toEqual([
       { time: '2026-06-01' },
       { time: '2026-06-02', value: 15000, color: '#dc2626' },
       { time: '2026-06-03' },
+    ])
+  })
+
+  it('keeps the confirmed close-to-close profit when the live point only restates the latest closed day', () => {
+    // Pre-open scenario: the latest price date is still the last confirmed close (e.g. KRX before
+    // 09:00), so the live point's date collides with that confirmed snapshot and its 당일손익 is a
+    // stale 0. The confirmed close-to-close change must win, not be overwritten by the live 0.
+    const merged = mergeDashboardLivePoint(totalRows, {
+      snapshotDate: '2026-06-02',
+      groupKind: 'total',
+      groupId: null,
+      groupName: '전체',
+      summary: { ...liveSummary, total_current_value_change: '0' },
+    })
+
+    expect(merged.rows).toBe(totalRows)
+    expect(merged.liveDailyProfit).toBeUndefined()
+    expect(merged.liveDailyProfitDate).toBeUndefined()
+
+    const data = buildIntegratedDashboardChartData(totalRows, merged.rows, {
+      includeComposition: false,
+      liveDailyProfit: merged.liveDailyProfit,
+      liveDailyProfitDate: merged.liveDailyProfitDate,
+    })
+
+    expect(data.dailyProfitChange).toEqual([
+      { time: '2026-06-01' },
+      { time: '2026-06-02', value: 15000, color: '#dc2626' },
     ])
   })
 
@@ -452,6 +484,7 @@ describe('buildIntegratedDashboardChartData', () => {
     const data = buildIntegratedDashboardChartData(rows, selectedRows, {
       includeComposition: false,
       liveDailyProfit: -25000,
+      liveDailyProfitDate: '2026-06-03',
     })
 
     expect(data.dailyProfitChange).toEqual([
@@ -475,6 +508,7 @@ describe('buildIntegratedDashboardChartData', () => {
     const data = buildIntegratedDashboardChartData(rows, selectedRows, {
       includeComposition: false,
       liveDailyProfit: null,
+      liveDailyProfitDate: '2026-06-03',
     })
 
     expect(data.dailyProfitChange).toEqual([
@@ -514,6 +548,29 @@ describe('buildIntegratedDashboardChartData', () => {
       { time: '2026-06-03' },
       { time: '2026-06-04' },
       { time: '2026-06-05', value: -5000, color: '#2563eb' },
+    ])
+  })
+
+  it('applies live daily profit to its own date when a newer confirmed row exists', () => {
+    const selectedRows = [
+      ...rows.filter((row) => row.group_kind === 'total'),
+      {
+        ...rows.find((row) => row.group_kind === 'total' && row.snapshot_date === '2026-06-02')!,
+        snapshot_date: '2026-06-03',
+        total_profit_loss: '190000',
+      },
+    ]
+
+    const data = buildIntegratedDashboardChartData(rows, selectedRows, {
+      includeComposition: false,
+      liveDailyProfit: -25000,
+      liveDailyProfitDate: '2026-06-02',
+    })
+
+    expect(data.dailyProfitChange).toEqual([
+      { time: '2026-06-01' },
+      { time: '2026-06-02', value: -25000, color: '#2563eb' },
+      { time: '2026-06-03', value: 25000, color: '#dc2626' },
     ])
   })
 

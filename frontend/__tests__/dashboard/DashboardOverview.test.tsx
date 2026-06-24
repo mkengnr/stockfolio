@@ -325,6 +325,30 @@ describe('DashboardOverview', () => {
     expect(screen.getByText(/당일손익 기준/)).toHaveTextContent('한국 2026-06-05 vs 2026-06-04')
   })
 
+  it('places the current chart point on the latest market date for mixed markets', () => {
+    render(
+      <DashboardOverview
+        dashboard={{
+          ...dashboard,
+          current_price_as_of: '2026-06-04',
+          price_dates_by_market: { US: '2026-06-04', KRX: '2026-06-05' },
+        }}
+        displayCurrency="KRW"
+        onDisplayCurrencyChange={jest.fn()}
+        onRefresh={jest.fn()}
+        isRefreshing={false}
+        lastUpdated={new Date('2026-06-05T09:00:00Z')}
+      />,
+    )
+
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent(
+      'live:2026-06-05:900000:50000:total:null:전체',
+    )
+    expect(screen.getByTestId('portfolio-chart')).toHaveTextContent(
+      'live-composition:2026-06-05:580000:source:source-1:모음통장',
+    )
+  })
+
   it('uses three months as the default chart range and can show all history', () => {
     render(
       <DashboardOverview
