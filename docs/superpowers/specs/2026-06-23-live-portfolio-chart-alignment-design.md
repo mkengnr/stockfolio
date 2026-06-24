@@ -84,8 +84,8 @@
 - 평가금액·원금·현재가를 포함한 선택 범위의 날짜 목록을 하나 만든다.
 - 하단 일별손익 데이터에도 모든 날짜를 넣는다.
 - 손익을 계산할 수 없는 첫 날짜나 누락 날짜는 Lightweight Charts의 whitespace 데이터 `{ time }`로 넣는다.
-- 이렇게 하면 두 차트 모두 같은 날짜 수와 같은 논리 인덱스를 가진다.
-- 화면 이동과 확대·축소 동기화는 `subscribeVisibleTimeRangeChange`와 `setVisibleRange`를 사용해 날짜 범위로 전달한다. `LogicalRange` 기반 동기화는 제거한다.
+- 상단 차트의 평가금액·원금 선은 값이 없는 날짜를 건너뛰므로, 상단 차트에도 하단과 동일한 전체 날짜를 whitespace 전용 선 시리즈(date spine)로 추가해 두 차트가 같은 날짜 수와 같은 논리 인덱스를 갖게 한다.
+- 화면 이동과 확대·축소 동기화는 `subscribeVisibleLogicalRangeChange`와 `setVisibleLogicalRange`를 사용해 논리 인덱스로 전달한다. 날짜 범위(`setVisibleRange`)는 막대 경계로 반올림되어 두 차트가 미세하게 어긋나므로 동기화에는 쓰지 않는다(초기 위치 지정에만 사용). 공통 date spine 덕분에 논리 인덱스 동기화가 차트를 늘이지 않는다.
 - `rightOffset`은 두 차트에 동일하게 유지한다.
 - 숫자 자릿수 차이로 플롯 시작점이 달라지지 않도록 두 차트의 왼쪽 가격축에 동일한 충분한 `minimumWidth`를 적용한다.
 

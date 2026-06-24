@@ -437,8 +437,8 @@ function DashboardPortfolioChart({
     let mainChart: ReturnType<typeof import('lightweight-charts')['createChart']> | null = null
     let profitChart: ReturnType<typeof import('lightweight-charts')['createChart']> | null = null
     let handleResize: (() => void) | null = null
-    let mainVisibleTimeRangeHandler: import('lightweight-charts').TimeRangeChangeEventHandler<import('lightweight-charts').Time> | null = null
-    let profitVisibleTimeRangeHandler: import('lightweight-charts').TimeRangeChangeEventHandler<import('lightweight-charts').Time> | null = null
+    let mainLogicalRangeHandler: import('lightweight-charts').LogicalRangeChangeEventHandler | null = null
+    let profitLogicalRangeHandler: import('lightweight-charts').LogicalRangeChangeEventHandler | null = null
 
     import('lightweight-charts').then(({ createChart, ColorType, LineStyle }) => {
       if (cancelled || !mainContainerRef.current || !profitContainerRef.current) return
@@ -563,36 +563,54 @@ function DashboardPortfolioChart({
         ...('value' in point ? { value: point.value, color: point.color } : {}),
       })))
 
+      // Anchor the main chart to the exact same date spine as the profit chart. The profit
+      // histogram already spans every date (as data or whitespace), but the 평가금액/원금 lines skip
+      // dates with no value, so without this spine the two charts could hold a different number of
+      // bars and the same logical index would point at different dates. A whitespace-only line series
+      // renders nothing yet forces both time scales to share identical logical indices.
+      const dateSpine = chartData.dailyProfitChange.map((point) => ({
+        time: point.time as import('lightweight-charts').Time,
+      }))
+      const spineSeries = mainChart.addLineSeries({
+        priceScaleId: 'left',
+        lastValueVisible: false,
+        priceLineVisible: false,
+      })
+      spineSeries.setData(dateSpine)
+
       applyChartVisibleRange(mainChart)
       applyChartVisibleRange(profitChart)
-      const ignoredMainTimeRanges = new Set<string>()
-      const ignoredProfitTimeRanges = new Set<string>()
-      const syncRange = (
+      // Synchronize by logical bar index (pixel-exact) rather than by time range (which rounds to
+      // bar edges and drifts). The shared spine above guarantees both charts have matching indices,
+      // so forwarding a logical range never stretches the target.
+      const ignoredMainRanges = new Set<string>()
+      const ignoredProfitRanges = new Set<string>()
+      const syncLogicalRange = (
         target: ReturnType<typeof import('lightweight-charts')['createChart']>,
         sourceIgnoredRanges: Set<string>,
         targetIgnoredRanges: Set<string>,
-        range: import('lightweight-charts').Range<import('lightweight-charts').Time> | null,
+        range: import('lightweight-charts').LogicalRange | null,
       ) => {
         if (!range) return
         const rangeKey = JSON.stringify(range)
         if (sourceIgnoredRanges.delete(rangeKey)) return
         targetIgnoredRanges.add(rangeKey)
-        target.timeScale().setVisibleRange(range)
+        target.timeScale().setVisibleLogicalRange(range)
       }
-      mainVisibleTimeRangeHandler = (range) => syncRange(
+      mainLogicalRangeHandler = (range) => syncLogicalRange(
         profitChart!,
-        ignoredMainTimeRanges,
-        ignoredProfitTimeRanges,
+        ignoredMainRanges,
+        ignoredProfitRanges,
         range,
       )
-      profitVisibleTimeRangeHandler = (range) => syncRange(
+      profitLogicalRangeHandler = (range) => syncLogicalRange(
         mainChart!,
-        ignoredProfitTimeRanges,
-        ignoredMainTimeRanges,
+        ignoredProfitRanges,
+        ignoredMainRanges,
         range,
       )
-      mainChart.timeScale().subscribeVisibleTimeRangeChange(mainVisibleTimeRangeHandler)
-      profitChart.timeScale().subscribeVisibleTimeRangeChange(profitVisibleTimeRangeHandler)
+      mainChart.timeScale().subscribeVisibleLogicalRangeChange(mainLogicalRangeHandler)
+      profitChart.timeScale().subscribeVisibleLogicalRangeChange(profitLogicalRangeHandler)
 
       handleResize = () => {
         if (mainContainerRef.current && mainChart) {
@@ -610,11 +628,11 @@ function DashboardPortfolioChart({
     return () => {
       cancelled = true
       if (handleResize) window.removeEventListener('resize', handleResize)
-      if (mainChart && mainVisibleTimeRangeHandler) {
-        mainChart.timeScale().unsubscribeVisibleTimeRangeChange(mainVisibleTimeRangeHandler)
+      if (mainChart && mainLogicalRangeHandler) {
+        mainChart.timeScale().unsubscribeVisibleLogicalRangeChange(mainLogicalRangeHandler)
       }
-      if (profitChart && profitVisibleTimeRangeHandler) {
-        profitChart.timeScale().unsubscribeVisibleTimeRangeChange(profitVisibleTimeRangeHandler)
+      if (profitChart && profitLogicalRangeHandler) {
+        profitChart.timeScale().unsubscribeVisibleLogicalRangeChange(profitLogicalRangeHandler)
       }
       mainChart?.remove()
       profitChart?.remove()
