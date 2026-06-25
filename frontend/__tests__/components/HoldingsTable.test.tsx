@@ -294,4 +294,19 @@ describe('HoldingsTable', () => {
     fireEvent.click(screen.getByRole('button', { name: /당일손익/ }))
     expect(visibleRowNames()).toEqual(['삼성전자', '카카오'])
   })
+
+  it('does not vertically stick the native header (the floating clone owns the sticky offset) while keeping the first column horizontally sticky', () => {
+    render(<HoldingsTable holdings={[makeHolding()]} />)
+
+    const nameHeader = screen.getByRole('button', { name: /종목/ }).closest('th')
+    const quantityHeader = screen.getByRole('button', { name: /수량/ }).closest('th')
+
+    // The native <thead> must not vertically stick at top:0 — that header hides under
+    // the sticky page toolbar and collides with the JS clone (which parks at stickyTop),
+    // producing a doubled/peeking header during scroll. The clone is the only vertical sticky.
+    expect(nameHeader).not.toHaveClass('top-0')
+    expect(quantityHeader).not.toHaveClass('top-0')
+    // The first column must still pin horizontally so 종목 stays visible during horizontal scroll.
+    expect(nameHeader).toHaveClass('left-0')
+  })
 })

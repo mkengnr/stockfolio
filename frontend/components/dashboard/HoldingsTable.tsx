@@ -18,6 +18,7 @@ const holdingNameColumnClass = 'w-[9rem] min-w-[9rem] max-w-[9rem] px-3 sm:w-[12
 interface Props {
   holdings: TableHolding[]
   displayCurrency?: DisplayCurrency
+  stickyTop?: number
 }
 
 interface Row {
@@ -124,7 +125,7 @@ const initialSortDir: Record<SortKey, SortDir> = {
   profitPct: 'desc',
 }
 
-export function HoldingsTable({ holdings, displayCurrency }: Props) {
+export function HoldingsTable({ holdings, displayCurrency, stickyTop }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('profitPct')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
@@ -161,7 +162,7 @@ export function HoldingsTable({ holdings, displayCurrency }: Props) {
   }
 
   return (
-    <StickyScrollTable className="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <StickyScrollTable stickyTop={stickyTop} className="rounded-xl border border-gray-200 bg-white shadow-sm">
       <table className="min-w-[1220px] text-sm">
         <thead>
             <tr className="border-b border-gray-100">
@@ -330,9 +331,13 @@ function SortableHeading({ label, align = 'right', sticky = false, onClick, chil
   return (
     <th
       className={cn(
-        'sticky top-0 z-10 bg-gray-50 px-4 py-3 font-medium text-gray-500',
+        'bg-gray-50 px-4 py-3 font-medium text-gray-500',
         align === 'left' ? 'text-left' : 'text-right',
-        sticky && ['left-0 z-20 border-r border-gray-100', holdingNameColumnClass],
+        // Only the first column sticks — horizontally (left-0), so it stays visible while the table
+        // scrolls sideways. The header does NOT vertically stick at top:0; the floating clone in
+        // StickyScrollTable owns the vertical sticky at the stickyTop offset. A native top:0 sticky
+        // would hide under the page's sticky toolbar and collide with the clone, doubling the header.
+        sticky && ['sticky left-0 z-20 border-r border-gray-100', holdingNameColumnClass],
       )}
     >
       <button

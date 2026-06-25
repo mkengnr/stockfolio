@@ -17,6 +17,8 @@ import { toDashboardHistoryRow, toDashboardHolding } from '@/lib/shareAdapters'
 import { formatCurrency, formatPercent, profitColor } from '@/lib/utils'
 import type { SharedGroup, SharedTag } from '@/lib/types'
 
+const shareHoldingsTableStickyTop = 70
+
 function SharedGroupView({
   group,
   onRefresh,
@@ -156,7 +158,11 @@ function SharedGroupView({
         <div className="border-b border-gray-100 px-6 py-4">
           <h2 className="font-semibold text-gray-900">보유 종목</h2>
         </div>
-        <HoldingsTable holdings={selectedHoldings} displayCurrency={group.dashboard.display_currency} />
+        <HoldingsTable
+          holdings={selectedHoldings}
+          displayCurrency={group.dashboard.display_currency}
+          stickyTop={shareHoldingsTableStickyTop}
+        />
       </Card>
     </SharedLayout>
   )

@@ -51,6 +51,25 @@ jest.mock('@/components/dashboard/PortfolioChart', () => ({
   ),
 }))
 
+jest.mock('@/components/dashboard/HoldingsTable', () => ({
+  HoldingsTable: ({
+    holdings,
+    stickyTop,
+  }: {
+    holdings: Array<{ name: string; quantity?: string; remaining_quantity?: string }>
+    stickyTop?: number
+  }) => (
+    <div data-testid="holdings-table" data-sticky-top={stickyTop ?? 'default'}>
+      {holdings.map((holding) => (
+        <div key={holding.name}>
+          <span>{holding.name}</span>
+          <span>{holding.quantity ?? holding.remaining_quantity}</span>
+        </div>
+      ))}
+    </div>
+  ),
+}))
+
 const mockedShareApi = shareApi as jest.Mocked<typeof shareApi>
 
 const sharedGroup: SharedGroup = {
@@ -315,6 +334,15 @@ describe('SharePage', () => {
 
     const refreshButton = screen.getByRole('button', { name: '새로고침' })
     expect(refreshButton.closest('[data-testid="share-sticky-toolbar"]')).not.toBeNull()
+  })
+
+  it('parks the shared holdings table header below the sticky share toolbar', async () => {
+    mockedShareApi.getGroup.mockResolvedValue(sharedGroup)
+    render(<SharePage params={{ token: 'token-1' }} />)
+
+    const table = await screen.findByTestId('holdings-table')
+
+    expect(table).toHaveAttribute('data-sticky-top', '70')
   })
 
   it('shows the sticky refresh toolbar even when there is no group filter', async () => {

@@ -28,12 +28,18 @@ export function StickyScrollTable({ children, stickyTop = 112, className = '' }:
     const thead = table?.querySelector('thead')
     if (!table || !thead) return
 
+    const theadEl = thead as HTMLElement
+
     function buildClone() {
       if (!float || !table || !thead) return
       float.innerHTML = ''
       const tableClone = table.cloneNode(false) as HTMLTableElement
       tableClone.style.width = `${table.offsetWidth}px`
-      tableClone.appendChild(thead.cloneNode(true))
+      const theadClone = thead.cloneNode(true) as HTMLElement
+      // The clone is the visible sticky header — keep it shown even while we hide the
+      // in-flow <thead> below, and don't inherit that hidden state via cloneNode.
+      theadClone.style.visibility = 'visible'
+      tableClone.appendChild(theadClone)
       float.appendChild(tableClone)
     }
 
@@ -52,8 +58,13 @@ export function StickyScrollTable({ children, stickyTop = 112, className = '' }:
         float.style.left = `${rect.left}px`
         float.style.width = `${rect.width}px`
         syncHorizontal()
+        // Hide the in-flow header while the clone stands in for it. Otherwise the real
+        // <thead>, still scrolling through the band between the page toolbar and the clone,
+        // peeks out as a ghost duplicate of the floating header.
+        theadEl.style.visibility = 'hidden'
       } else {
         float.style.display = 'none'
+        theadEl.style.visibility = ''
       }
     }
 
@@ -74,6 +85,7 @@ export function StickyScrollTable({ children, stickyTop = 112, className = '' }:
       window.removeEventListener('resize', rebuild)
       scroller.removeEventListener('scroll', syncHorizontal)
       observer.disconnect()
+      theadEl.style.visibility = ''
     }
   }, [stickyTop])
 
