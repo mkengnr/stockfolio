@@ -376,6 +376,66 @@ function parseNullableNumber(value: string | null) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+export function toIsoDateKey(time: unknown): string | null {
+  if (typeof time === 'string') return time
+  if (
+    time !== null
+    && typeof time === 'object'
+    && 'year' in time
+    && 'month' in time
+    && 'day' in time
+  ) {
+    const { year, month, day } = time as { year: number; month: number; day: number }
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  }
+  return null
+}
+
+export function formatTooltipPercent(value: number | null): string {
+  if (value === null) return '-'
+  return `${value.toFixed(2)}%`
+}
+
+export interface TooltipDatum {
+  date: string
+  value: number | null
+  profit: number | null
+  rate: number | null
+  daily: number | null
+  principal: number | null
+  principalLabel: string
+}
+
+export function buildTooltipData(
+  rows: DashboardHistoryRow[],
+  dailyProfitChange: Array<ColoredChartPoint | ChartWhitespacePoint>,
+  referenceField: ChartReferenceField,
+): Map<string, TooltipDatum> {
+  const principalField = referenceRowField[referenceField]
+  const label = referenceFieldLabel[referenceField]
+  const dailyByDate = new Map<string, number | null>(
+    dailyProfitChange.map((point) => [point.time, 'value' in point ? point.value : null]),
+  )
+  const map = new Map<string, TooltipDatum>()
+  for (const row of rows) {
+    const profit = parseNullableNumber(row.total_profit_loss)
+    const principal = parseNullableNumber(row[principalField])
+    const rate = profit !== null && principal !== null && principal !== 0
+      ? (profit / principal) * 100
+      : null
+    map.set(row.snapshot_date, {
+      date: row.snapshot_date,
+      value: parseNullableNumber(row.total_value),
+      profit,
+      rate,
+      daily: dailyByDate.has(row.snapshot_date) ? dailyByDate.get(row.snapshot_date)! : null,
+      principal,
+      principalLabel: label,
+    })
+  }
+  return map
+}
+
 export function PortfolioChart(props: Props) {
   if (props.historyRows !== undefined) {
     return (
