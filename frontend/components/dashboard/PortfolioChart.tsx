@@ -9,6 +9,9 @@ import type {
   DisplayCurrency,
   ScopedPortfolioHistory,
 } from '@/lib/types'
+import { toIsoDateKey } from '@/lib/chartTime'
+
+export { toIsoDateKey }
 
 type LegacyMeasure = 'value' | 'cost' | 'profit'
 type DashboardChartMetric = 'value' | 'principal' | 'profit'
@@ -374,21 +377,6 @@ function parseNullableNumber(value: string | null) {
   if (value === null) return null
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : null
-}
-
-export function toIsoDateKey(time: unknown): string | null {
-  if (typeof time === 'string') return time
-  if (
-    time !== null
-    && typeof time === 'object'
-    && 'year' in time
-    && 'month' in time
-    && 'day' in time
-  ) {
-    const { year, month, day } = time as { year: number; month: number; day: number }
-    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-  }
-  return null
 }
 
 export function formatTooltipPercent(value: number | null): string {
