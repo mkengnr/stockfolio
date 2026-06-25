@@ -37,6 +37,8 @@ const createChart = jest.fn(() => {
       return series
     }),
     timeScale: jest.fn(() => timeScaleApi),
+    subscribeCrosshairMove: jest.fn(),
+    unsubscribeCrosshairMove: jest.fn(),
     applyOptions: jest.fn(),
     remove: jest.fn(),
   }
@@ -190,6 +192,32 @@ describe('DashboardPortfolioChart legend', () => {
 
     expect(timeScaleApis[0].unsubscribeVisibleLogicalRangeChange).toHaveBeenCalledWith(handlers[0])
     expect(timeScaleApis[1].unsubscribeVisibleLogicalRangeChange).toHaveBeenCalledWith(handlers[1])
+  })
+
+  it('configures ISO date labels and a crosshair subscription with cleanup', async () => {
+    const { unmount } = render(
+      <PortfolioChart
+        historyRows={totalRows}
+        compositionRows={totalRows}
+        includeComposition
+        displayCurrency="KRW"
+        visibleRange={null}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(createChart).toHaveBeenCalledTimes(2)
+    })
+    expect(createChart.mock.calls[0][1].localization.dateFormat).toBe('yyyy-MM-dd')
+
+    const mainChart = createChart.mock.results[0].value
+    await waitFor(() => {
+      expect(mainChart.subscribeCrosshairMove).toHaveBeenCalledTimes(1)
+    })
+    const handler = mainChart.subscribeCrosshairMove.mock.calls[0][0]
+
+    unmount()
+    expect(mainChart.unsubscribeCrosshairMove).toHaveBeenCalledWith(handler)
   })
 
   it('applies the selected range as the visible time window without dropping earlier data', async () => {

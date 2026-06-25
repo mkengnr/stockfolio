@@ -478,6 +478,7 @@ function DashboardPortfolioChart({
 }) {
   const mainContainerRef = useRef<HTMLDivElement>(null)
   const profitContainerRef = useRef<HTMLDivElement>(null)
+  const tooltipRef = useRef<HTMLDivElement>(null)
   const [referenceOverride, setReferenceOverride] = useState<ChartReferenceField | null>(null)
   const selectedMerge = useMemo(() => mergeDashboardLivePoint(rows, livePoint), [livePoint, rows])
   const mergedCompositionRows = useMemo(
@@ -506,6 +507,8 @@ function DashboardPortfolioChart({
     let handleResize: (() => void) | null = null
     let mainLogicalRangeHandler: import('lightweight-charts').LogicalRangeChangeEventHandler | null = null
     let profitLogicalRangeHandler: import('lightweight-charts').LogicalRangeChangeEventHandler | null = null
+    let crosshairHandler: import('lightweight-charts').MouseEventHandler<import('lightweight-charts').Time> | null = null
+    const tooltipData = buildTooltipData(selectedMerge.rows, chartData.dailyProfitChange, referenceField)
 
     import('lightweight-charts').then(({ createChart, ColorType, LineStyle }) => {
       if (cancelled || !mainContainerRef.current || !profitContainerRef.current) return
@@ -537,7 +540,7 @@ function DashboardPortfolioChart({
           ...commonLayout,
         },
         grid: commonGrid,
-        localization: { priceFormatter: formatDashboardMoney },
+        localization: { priceFormatter: formatDashboardMoney, dateFormat: 'yyyy-MM-dd' },
         leftPriceScale: {
           visible: true,
           borderColor: '#e5e7eb',
@@ -561,7 +564,7 @@ function DashboardPortfolioChart({
           ...commonLayout,
         },
         grid: commonGrid,
-        localization: { priceFormatter: formatDashboardMoney },
+        localization: { priceFormatter: formatDashboardMoney, dateFormat: 'yyyy-MM-dd' },
         leftPriceScale: {
           visible: true,
           borderColor: '#e5e7eb',
@@ -679,6 +682,44 @@ function DashboardPortfolioChart({
       mainChart.timeScale().subscribeVisibleLogicalRangeChange(mainLogicalRangeHandler)
       profitChart.timeScale().subscribeVisibleLogicalRangeChange(profitLogicalRangeHandler)
 
+      const tooltipEl = tooltipRef.current
+      const profitColor = (v: number | null) => (v === null ? '#6b7280' : v >= 0 ? '#dc2626' : '#2563eb')
+      const money = (v: number | null) => (v === null ? '-' : formatDashboardMoney(v))
+      crosshairHandler = (param) => {
+        if (!tooltipEl) return
+        const key = param.time !== undefined ? toIsoDateKey(param.time) : null
+        const datum = key ? tooltipData.get(key) : undefined
+        if (!param.point || !datum) {
+          tooltipEl.style.display = 'none'
+          return
+        }
+        tooltipEl.innerHTML = [
+          `<div class="mb-1 font-semibold text-gray-700">${datum.date}</div>`,
+          `<div class="flex justify-between gap-4"><span class="text-gray-500">평가금액</span><span class="font-medium text-gray-800">${money(datum.value)}</span></div>`,
+          `<div class="flex justify-between gap-4"><span class="text-gray-500">총손익</span><span class="font-medium" style="color:${profitColor(datum.profit)}">${money(datum.profit)}</span></div>`,
+          `<div class="flex justify-between gap-4"><span class="text-gray-500">총손익율</span><span class="font-medium" style="color:${profitColor(datum.rate)}">${formatTooltipPercent(datum.rate)}</span></div>`,
+          `<div class="flex justify-between gap-4"><span class="text-gray-500">일별손익</span><span class="font-medium" style="color:${profitColor(datum.daily)}">${money(datum.daily)}</span></div>`,
+          `<div class="flex justify-between gap-4"><span class="text-gray-500">${datum.principalLabel}</span><span class="font-medium text-gray-800">${money(datum.principal)}</span></div>`,
+        ].join('')
+        tooltipEl.style.display = 'block'
+        const container = mainContainerRef.current
+        const boxWidth = tooltipEl.offsetWidth
+        const boxHeight = tooltipEl.offsetHeight
+        const margin = 12
+        const width = container?.clientWidth ?? 0
+        let left = param.point.x + margin
+        if (left + boxWidth > width) left = param.point.x - boxWidth - margin
+        if (left < 0) left = 0
+        let top = param.point.y + margin
+        if (top + boxHeight > getDashboardChartLayout().mainHeight) {
+          top = param.point.y - boxHeight - margin
+        }
+        if (top < 0) top = 0
+        tooltipEl.style.left = `${left}px`
+        tooltipEl.style.top = `${top}px`
+      }
+      mainChart.subscribeCrosshairMove(crosshairHandler)
+
       handleResize = () => {
         if (mainContainerRef.current && mainChart) {
           mainChart.applyOptions({ width: mainContainerRef.current.clientWidth })
@@ -701,10 +742,13 @@ function DashboardPortfolioChart({
       if (profitChart && profitLogicalRangeHandler) {
         profitChart.timeScale().unsubscribeVisibleLogicalRangeChange(profitLogicalRangeHandler)
       }
+      if (mainChart && crosshairHandler) {
+        mainChart.unsubscribeCrosshairMove(crosshairHandler)
+      }
       mainChart?.remove()
       profitChart?.remove()
     }
-  }, [chartData, hasData, visibleRange, showGainLossBand])
+  }, [chartData, hasData, visibleRange, showGainLossBand, referenceField, selectedMerge])
 
   if (!hasData) {
     return <div className="flex h-60 items-center justify-center text-sm text-gray-400">차트 데이터가 없습니다.</div>
@@ -725,7 +769,13 @@ function DashboardPortfolioChart({
         ))}
       </div>
       <div className="text-xs font-medium text-gray-500">평가금액 · 그룹 구성</div>
-      <div ref={mainContainerRef} className="w-full" />
+      <div className="relative w-full">
+        <div ref={mainContainerRef} className="w-full" />
+        <div
+          ref={tooltipRef}
+          className="pointer-events-none absolute left-0 top-0 z-10 hidden min-w-[160px] rounded-md border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg"
+        />
+      </div>
       <div className="mt-2 border-t border-gray-100 pt-2 text-xs font-medium text-gray-500">일별손익</div>
       <div ref={profitContainerRef} className="w-full" />
     </div>
