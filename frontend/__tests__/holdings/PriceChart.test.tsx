@@ -12,13 +12,15 @@ import type { Snapshot, Transaction } from '@/lib/types'
 const remove = jest.fn()
 const applyOptions = jest.fn()
 const fitContent = jest.fn()
+const getVisibleLogicalRange = jest.fn(() => ({ from: 0, to: 100 }))
+const setVisibleLogicalRange = jest.fn()
 const setData = jest.fn()
 const setMarkers = jest.fn()
 const subscribeCrosshairMove = jest.fn()
 const unsubscribeCrosshairMove = jest.fn()
 const createChart = jest.fn(() => ({
   addAreaSeries: jest.fn(() => ({ setData, setMarkers })),
-  timeScale: jest.fn(() => ({ fitContent })),
+  timeScale: jest.fn(() => ({ fitContent, getVisibleLogicalRange, setVisibleLogicalRange })),
   subscribeCrosshairMove,
   unsubscribeCrosshairMove,
   applyOptions,
@@ -171,5 +173,22 @@ describe('PriceChart', () => {
     const handler = subscribeCrosshairMove.mock.calls[0][0]
     unmount()
     expect(unsubscribeCrosshairMove).toHaveBeenCalledWith(handler)
+  })
+
+  it('pads the visible range so edge markers are not clipped', async () => {
+    render(
+      <PriceChart snapshots={snapshots} currency="KRW" currentPrice={null} transactions={[]} />,
+    )
+
+    await waitFor(() => expect(createChart).toHaveBeenCalledTimes(1))
+    // Pinning the first/last points to the exact edges clips a marker drawn on them.
+    expect(createChart.mock.calls[0][1].timeScale.fixLeftEdge).toBe(false)
+    expect(createChart.mock.calls[0][1].timeScale.fixRightEdge).toBe(false)
+    // The visible logical range is set directly from the point count, padded outward on both sides
+    // so first/last markers have room (n=1 here → from < 0, to > the last index 0).
+    await waitFor(() => expect(setVisibleLogicalRange).toHaveBeenCalledTimes(1))
+    const range = setVisibleLogicalRange.mock.calls[0][0]
+    expect(range.from).toBeLessThan(0)
+    expect(range.to).toBeGreaterThan(0)
   })
 })

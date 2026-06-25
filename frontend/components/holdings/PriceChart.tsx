@@ -134,7 +134,7 @@ export function PriceChart({ snapshots, currency, currentPrice, transactions }: 
           borderColor: '#e5e7eb',
           scaleMargins: { top: 0.1, bottom: 0.1 },
         },
-        timeScale: { borderColor: '#e5e7eb', fixLeftEdge: true, fixRightEdge: true },
+        timeScale: { borderColor: '#e5e7eb', fixLeftEdge: false, fixRightEdge: false },
         localization: {
           dateFormat: 'yyyy-MM-dd',
           priceFormatter: formatPrice,
@@ -208,7 +208,17 @@ export function PriceChart({ snapshots, currency, currentPrice, transactions }: 
       }
       chart.subscribeCrosshairMove(crosshairHandler)
 
-      chart.timeScale().fitContent()
+      // Show every point with a margin on both sides so a marker drawn on the first or last point
+      // (e.g. the earliest 매수) keeps its arrow/label inside the plot instead of being clipped at the
+      // edge. lightweight-charts has no left offset, so we set the logical range directly from the
+      // known point count — reading getVisibleLogicalRange right after fitContent() returns a stale
+      // pre-fit range, which would crop the data.
+      if (points.length > 0) {
+        const pad = Math.max(1, points.length * 0.05)
+        chart.timeScale().setVisibleLogicalRange({ from: -pad, to: (points.length - 1) + pad })
+      } else {
+        chart.timeScale().fitContent()
+      }
 
       handleResize = () => {
         if (containerRef.current && chart) {
