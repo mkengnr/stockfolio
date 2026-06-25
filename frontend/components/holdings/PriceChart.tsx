@@ -101,8 +101,9 @@ function toLocalDateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
-export function PriceChart({ snapshots, currency }: Props) {
+export function PriceChart({ snapshots, currency, currentPrice, transactions }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const tooltipRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!containerRef.current || snapshots.length === 0) return
@@ -110,6 +111,9 @@ export function PriceChart({ snapshots, currency }: Props) {
     let cancelled = false
     let chart: ReturnType<typeof import('lightweight-charts')['createChart']> | null = null
     let handleResize: (() => void) | null = null
+    let crosshairHandler: import('lightweight-charts').MouseEventHandler<import('lightweight-charts').Time> | null = null
+    const formatPrice = (price: number) =>
+      currency === 'KRW' ? `₩${Math.round(price).toLocaleString('ko-KR')}` : `$${price.toFixed(2)}`
 
     import('lightweight-charts').then(({ createChart, ColorType }) => {
       if (cancelled || !containerRef.current) return
@@ -132,10 +136,8 @@ export function PriceChart({ snapshots, currency }: Props) {
         },
         timeScale: { borderColor: '#e5e7eb', fixLeftEdge: true, fixRightEdge: true },
         localization: {
-          priceFormatter: (price: number) => {
-            if (currency === 'KRW') return `₩${Math.round(price).toLocaleString('ko-KR')}`
-            return `$${price.toFixed(2)}`
-          },
+          dateFormat: 'yyyy-MM-dd',
+          priceFormatter: formatPrice,
         },
       })
 
@@ -148,12 +150,54 @@ export function PriceChart({ snapshots, currency }: Props) {
         priceLineColor: '#6366f180',
       })
 
-      areaSeries.setData(
-        snapshots.map((s) => ({
-          time: s.snapshot_date as import('lightweight-charts').Time,
-          value: parseFloat(s.close_price),
-        })),
-      )
+      const todayKey = toLocalDateKey(new Date())
+      const points = buildPricePoints(snapshots, currentPrice, todayKey)
+      areaSeries.setData(points.map((p) => ({
+        time: p.time as import('lightweight-charts').Time,
+        value: p.value,
+      })))
+
+      const range = points.length > 0
+        ? { from: points[0].time, to: points[points.length - 1].time }
+        : null
+      const markers = buildTransactionMarkers(transactions, range)
+      areaSeries.setMarkers(markers as Parameters<typeof areaSeries.setMarkers>[0])
+
+      const tooltipData = buildPriceTooltipData(snapshots, transactions, currentPrice, todayKey)
+      const tooltipEl = tooltipRef.current
+      crosshairHandler = (param) => {
+        if (!tooltipEl) return
+        const key = param.time !== undefined ? toIsoDateKey(param.time) : null
+        const datum = key ? tooltipData.get(key) : undefined
+        if (!param.point || !datum) {
+          tooltipEl.style.display = 'none'
+          return
+        }
+        const priceText = datum.price === null ? '-' : formatPrice(datum.price)
+        const txRows = datum.txs.map((t) => {
+          const label = t.type === 'BUY' ? '매수' : '매도'
+          const color = t.type === 'BUY' ? '#dc2626' : '#2563eb'
+          return `<div class="flex justify-between gap-4"><span style="color:${color}">${label} ${formatMarkerQuantity(t.quantity)}</span><span class="text-gray-500">@${formatPrice(parseFloat(t.price))}</span></div>`
+        }).join('')
+        tooltipEl.innerHTML = [
+          `<div class="mb-1 font-semibold text-gray-700">${datum.date}</div>`,
+          `<div class="flex justify-between gap-4"><span class="text-gray-500">가격</span><span class="font-medium text-gray-800">${priceText}</span></div>`,
+          txRows,
+        ].join('')
+        tooltipEl.style.display = 'block'
+        const boxWidth = tooltipEl.offsetWidth
+        const margin = 12
+        const width = containerRef.current?.clientWidth ?? 0
+        let left = param.point.x + margin
+        if (left + boxWidth > width) left = param.point.x - boxWidth - margin
+        if (left < 0) left = 0
+        let top = param.point.y + margin
+        if (top + tooltipEl.offsetHeight > 280) top = param.point.y - tooltipEl.offsetHeight - margin
+        if (top < 0) top = 0
+        tooltipEl.style.left = `${left}px`
+        tooltipEl.style.top = `${top}px`
+      }
+      chart.subscribeCrosshairMove(crosshairHandler)
 
       chart.timeScale().fitContent()
 
@@ -168,9 +212,10 @@ export function PriceChart({ snapshots, currency }: Props) {
     return () => {
       cancelled = true
       if (handleResize) window.removeEventListener('resize', handleResize)
+      if (chart && crosshairHandler) chart.unsubscribeCrosshairMove(crosshairHandler)
       chart?.remove()
     }
-  }, [snapshots, currency])
+  }, [snapshots, currency, currentPrice, transactions])
 
   if (snapshots.length === 0) {
     return (
@@ -180,5 +225,13 @@ export function PriceChart({ snapshots, currency }: Props) {
     )
   }
 
-  return <div ref={containerRef} className="w-full" />
+  return (
+    <div className="relative w-full">
+      <div ref={containerRef} className="w-full" />
+      <div
+        ref={tooltipRef}
+        className="pointer-events-none absolute left-0 top-0 z-10 hidden min-w-[160px] rounded-md border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg"
+      />
+    </div>
+  )
 }

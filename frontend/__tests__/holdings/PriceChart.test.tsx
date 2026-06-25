@@ -163,7 +163,7 @@ describe('PriceChart', () => {
     )
 
     await waitFor(() => expect(createChart).toHaveBeenCalledTimes(1))
-    expect(createChart.mock.calls[0][0].localization.dateFormat).toBe('yyyy-MM-dd')
+    expect(createChart.mock.calls[0][1].localization.dateFormat).toBe('yyyy-MM-dd')
     expect(setMarkers).toHaveBeenCalledWith([
       { time: '2026-06-01', position: 'belowBar', shape: 'arrowUp', color: '#dc2626', text: '매수 10' },
     ])

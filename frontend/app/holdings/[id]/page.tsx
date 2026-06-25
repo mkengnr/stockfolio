@@ -76,7 +76,12 @@ function HoldingDetailContent({ id }: { id: string }) {
       {/* Price chart */}
       <Card>
         <h2 className="mb-4 font-semibold text-gray-900">가격 차트</h2>
-        <PriceChart snapshots={holding.snapshots} currency={holding.currency} />
+        <PriceChart
+          snapshots={holding.snapshots}
+          currency={holding.currency}
+          currentPrice={holding.current_price}
+          transactions={holding.transactions}
+        />
       </Card>
 
       <HoldingGroupBreakdownTable holding={holding} />
