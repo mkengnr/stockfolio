@@ -685,6 +685,11 @@ function DashboardPortfolioChart({
       const tooltipEl = tooltipRef.current
       const profitColor = (v: number | null) => (v === null ? '#6b7280' : v >= 0 ? '#dc2626' : '#2563eb')
       const money = (v: number | null) => (v === null ? '-' : formatDashboardMoney(v))
+      // Rebuild the tooltip markup and re-measure only when the hovered date changes; same-date pixel
+      // moves just reposition with the cached size, avoiding a forced reflow on every mouse move.
+      let renderedKey: string | null = null
+      let boxWidth = 0
+      let boxHeight = 0
       crosshairHandler = (param) => {
         if (!tooltipEl) return
         const key = param.time !== undefined ? toIsoDateKey(param.time) : null
@@ -693,18 +698,21 @@ function DashboardPortfolioChart({
           tooltipEl.style.display = 'none'
           return
         }
-        tooltipEl.innerHTML = [
-          `<div class="mb-1 font-semibold text-gray-700">${datum.date}</div>`,
-          `<div class="flex justify-between gap-4"><span class="text-gray-500">평가금액</span><span class="font-medium text-gray-800">${money(datum.value)}</span></div>`,
-          `<div class="flex justify-between gap-4"><span class="text-gray-500">총손익</span><span class="font-medium" style="color:${profitColor(datum.profit)}">${money(datum.profit)}</span></div>`,
-          `<div class="flex justify-between gap-4"><span class="text-gray-500">총손익율</span><span class="font-medium" style="color:${profitColor(datum.rate)}">${formatTooltipPercent(datum.rate)}</span></div>`,
-          `<div class="flex justify-between gap-4"><span class="text-gray-500">일별손익</span><span class="font-medium" style="color:${profitColor(datum.daily)}">${money(datum.daily)}</span></div>`,
-          `<div class="flex justify-between gap-4"><span class="text-gray-500">${datum.principalLabel}</span><span class="font-medium text-gray-800">${money(datum.principal)}</span></div>`,
-        ].join('')
         tooltipEl.style.display = 'block'
+        if (key !== renderedKey) {
+          tooltipEl.innerHTML = [
+            `<div class="mb-1 font-semibold text-gray-700">${datum.date}</div>`,
+            `<div class="flex justify-between gap-4"><span class="text-gray-500">평가금액</span><span class="font-medium text-gray-800">${money(datum.value)}</span></div>`,
+            `<div class="flex justify-between gap-4"><span class="text-gray-500">총손익</span><span class="font-medium" style="color:${profitColor(datum.profit)}">${money(datum.profit)}</span></div>`,
+            `<div class="flex justify-between gap-4"><span class="text-gray-500">총손익율</span><span class="font-medium" style="color:${profitColor(datum.rate)}">${formatTooltipPercent(datum.rate)}</span></div>`,
+            `<div class="flex justify-between gap-4"><span class="text-gray-500">일별손익</span><span class="font-medium" style="color:${profitColor(datum.daily)}">${money(datum.daily)}</span></div>`,
+            `<div class="flex justify-between gap-4"><span class="text-gray-500">${datum.principalLabel}</span><span class="font-medium text-gray-800">${money(datum.principal)}</span></div>`,
+          ].join('')
+          renderedKey = key
+          boxWidth = tooltipEl.offsetWidth
+          boxHeight = tooltipEl.offsetHeight
+        }
         const container = mainContainerRef.current
-        const boxWidth = tooltipEl.offsetWidth
-        const boxHeight = tooltipEl.offsetHeight
         const margin = 12
         const width = container?.clientWidth ?? 0
         let left = param.point.x + margin

@@ -78,6 +78,32 @@ describe('buildTooltipData', () => {
     expect(day2?.rate).toBeCloseTo((60000 / 700000) * 100, 6)
   })
 
+  it('returns null metrics when row fields are null', () => {
+    const nullRows: DashboardHistoryRow[] = [{
+      group_kind: 'total', group_id: null, group_name: '전체',
+      snapshot_date: '2026-06-01',
+      total_value: null, total_invested_principal: null,
+      total_cost_basis: null, total_profit_loss: null,
+    }]
+    const map = buildTooltipData(nullRows, [{ time: '2026-06-01' }], 'invested')
+    const day1 = map.get('2026-06-01')
+    expect(day1).toEqual({
+      date: '2026-06-01',
+      value: null,
+      profit: null,
+      rate: null,
+      daily: null,
+      principal: null,
+      principalLabel: '투자원금',
+    })
+  })
+
+  it('returns null daily when the date is absent from dailyProfitChange', () => {
+    const map = buildTooltipData(rows, [], 'invested')
+    expect(map.get('2026-06-01')?.daily).toBeNull()
+    expect(map.get('2026-06-02')?.daily).toBeNull()
+  })
+
   it('returns null daily for whitespace dates and null rate when principal is 0', () => {
     const zeroRows: DashboardHistoryRow[] = [{
       group_kind: 'total', group_id: null, group_name: '전체',
