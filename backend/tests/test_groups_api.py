@@ -745,3 +745,31 @@ def test_main_app_registers_group_router():
     paths = {route.path for route in app.routes}
     assert "/api/groups/sources" in paths
     assert "/api/groups/share/{token}" in paths
+
+
+@pytest.fixture
+def source(user, db):
+    s = _source(user.id)
+    db.queue(_Result(one=s))
+    return s
+
+
+def test_enable_share_persists_show_transactions(client, db, source):
+    response = client.post(
+        f"/api/groups/sources/{source.id}/share",
+        json={"requires_auth": False, "show_transactions": True},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["share_token"]
+    assert body["share_show_transactions"] is True
+    assert source.share_show_transactions is True
+
+
+def test_enable_share_defaults_show_transactions_false(client, db, source):
+    response = client.post(
+        f"/api/groups/sources/{source.id}/share",
+        json={"requires_auth": False},
+    )
+    assert response.status_code == 200
+    assert response.json()["share_show_transactions"] is False

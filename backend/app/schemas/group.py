@@ -106,6 +106,7 @@ class RollupGroupUpdateIn(GroupMetadataUpdateIn):
 
 class ShareUpdateIn(BaseModel):
     requires_auth: bool = True
+    show_transactions: bool = False
 
     model_config = {"extra": "forbid"}
 

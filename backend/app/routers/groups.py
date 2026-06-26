@@ -489,6 +489,7 @@ async def enable_share(
     entity = await _get_owned_entity(db, kind, entity_id, current_user.id)
     entity.share_token = str(uuid.uuid4())
     entity.share_requires_auth = body.requires_auth
+    entity.share_show_transactions = body.show_transactions
     return _entity_to_out(entity)
 
 
