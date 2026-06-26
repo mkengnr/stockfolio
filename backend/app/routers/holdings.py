@@ -271,7 +271,7 @@ def _holding_performance(
     scope: PortfolioScope = PortfolioScope("all"),
 ) -> tuple[HoldingPerformanceOut | None, list[HoldingGroupBreakdownOut]]:
     transactions = [_to_accounting_transaction(holding, transaction) for transaction in holding.transactions]
-    replay_result = replay(transactions)
+    replay_result = replay(transactions, scope)
     if replay_result.accounting_status == "requires_review":
         return None, []
     invested_principal = _scope_invested_principal(transactions, holding, scope)
