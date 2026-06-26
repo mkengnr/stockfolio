@@ -19,6 +19,9 @@ class SourceGroup(Base):
     share_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     share_token: Mapped[str | None] = mapped_column(String(36), nullable=True, unique=True, index=True)
     share_requires_auth: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    share_show_transactions: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -47,6 +50,9 @@ class RollupGroup(Base):
     share_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     share_token: Mapped[str | None] = mapped_column(String(36), nullable=True, unique=True, index=True)
     share_requires_auth: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    share_show_transactions: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -83,6 +89,9 @@ class Label(Base):
     share_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     share_token: Mapped[str | None] = mapped_column(String(36), nullable=True, unique=True, index=True)
     share_requires_auth: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    share_show_transactions: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

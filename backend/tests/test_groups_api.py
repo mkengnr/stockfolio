@@ -109,6 +109,7 @@ def _source(user_id, *, name="월급", source_id=None):
         color="#6366f1",
         description=None,
         share_requires_auth=True,
+        share_show_transactions=False,
         created_at=NOW,
     )
     source.share_description = None
@@ -123,6 +124,7 @@ def _label(user_id, *, name="장기", label_id=None):
         color="#6366f1",
         description=None,
         share_requires_auth=True,
+        share_show_transactions=False,
         created_at=NOW,
     )
     label.share_description = None
@@ -137,6 +139,7 @@ def _rollup(user_id, *sources, name="가족", rollup_id=None):
         color="#6366f1",
         description=None,
         share_requires_auth=True,
+        share_show_transactions=False,
         created_at=NOW,
         members=[RollupGroupMember(source_group_id=source.id) for source in sources],
     )
@@ -431,6 +434,7 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
     db.queue(*lookup_results, _Result(one=entity))
     scope = object()
     calls = []
+    holding_id = uuid.uuid4()
 
     async def _resolve_portfolio_scope(actual_db, user_id, scope_kind, scope_id):
         calls.append(("scope", actual_db, user_id, scope_kind, scope_id))
@@ -491,7 +495,7 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
         },
         "holdings": [
             {
-                "holding_id": str(uuid.uuid4()),
+                "holding_id": str(holding_id),
                 "ticker": "AAPL",
                 "name": "Apple",
                 "market": "US",
@@ -597,6 +601,7 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
             },
             "holdings": [
                 {
+                    "holding_id": str(holding_id),
                     "ticker": "AAPL",
                     "name": "Apple",
                     "market": "US",
@@ -742,3 +747,58 @@ def test_main_app_registers_group_router():
     paths = {route.path for route in app.routes}
     assert "/api/groups/sources" in paths
     assert "/api/groups/share/{token}" in paths
+
+
+@pytest.fixture
+def source(user, db):
+    s = _source(user.id)
+    db.queue(_Result(one=s))
+    return s
+
+
+def test_enable_share_persists_show_transactions(client, db, source):
+    response = client.post(
+        f"/api/groups/sources/{source.id}/share",
+        json={"requires_auth": False, "show_transactions": True},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["share_token"]
+    assert body["share_show_transactions"] is True
+    assert source.share_show_transactions is True
+
+
+def test_enable_share_defaults_show_transactions_false(client, db, source):
+    response = client.post(
+        f"/api/groups/sources/{source.id}/share",
+        json={"requires_auth": False},
+    )
+    assert response.status_code == 200
+    assert response.json()["share_show_transactions"] is False
+
+
+def test_update_share_settings_toggles_show_transactions(client, db, source):
+    # source fixture already queued one result for the POST; queue a second for the PATCH
+    db.queue(_Result(one=source))
+
+    assert client.post(f"/api/groups/sources/{source.id}/share", json={"requires_auth": True}).status_code == 200
+    token_before = source.share_token
+
+    response = client.patch(
+        f"/api/groups/sources/{source.id}/share",
+        json={"show_transactions": True},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["share_show_transactions"] is True
+    assert body["share_requires_auth"] is True  # unspecified field unchanged
+    assert body["share_token"] == token_before    # token not regenerated
+
+
+def test_update_share_settings_rejects_unshared_group(client, db, source):
+    # source fixture queued one result; source has no share_token by default
+    response = client.patch(
+        f"/api/groups/sources/{source.id}/share",
+        json={"show_transactions": True},
+    )
+    assert response.status_code == 409

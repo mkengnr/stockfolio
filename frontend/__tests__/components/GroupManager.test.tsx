@@ -18,6 +18,7 @@ jest.mock('@/lib/api', () => ({
     update: jest.fn(),
     delete: jest.fn(),
     enableShare: jest.fn(),
+    updateShareSettings: jest.fn(),
     disableShare: jest.fn(),
   },
 }))
@@ -28,6 +29,7 @@ const metadata = {
   share_description: null,
   share_token: null,
   share_requires_auth: true,
+  share_show_transactions: false,
   created_at: '2026-06-02T00:00:00Z',
 }
 
@@ -169,6 +171,47 @@ describe('GroupManager', () => {
       fireEvent.click(screen.getByRole('button', { name: '월급 공유 중지' }))
     })
     expect(mockedGroupsApi.disableShare).toHaveBeenCalledWith('sources', 'source-1')
+  })
+
+  it('enables sharing with the 거래내역 공개 option for a not-yet-shared group', async () => {
+    mockedGroupsApi.enableShare.mockResolvedValue({ ...source, share_token: 'share-token' })
+    render(<GroupManager />)
+
+    const card = screen.getByText('월급').closest('[data-testid="group-card"]') as HTMLElement
+    fireEvent.click(within(card).getByLabelText('거래내역 공개'))
+    await act(async () => {
+      fireEvent.click(within(card).getByRole('button', { name: '공유 링크 만들기' }))
+    })
+
+    expect(mockedGroupsApi.enableShare).toHaveBeenCalledWith('sources', 'source-1', true, true)
+  })
+
+  it('toggles 거래내역 공개 in place for an active share via updateShareSettings', async () => {
+    mockedGroupsApi.updateShareSettings.mockResolvedValue({
+      ...source,
+      share_token: 'share-token',
+      share_show_transactions: true,
+    })
+    mockedUseSWR.mockImplementation((key: string) => ({
+      '/api/groups/sources': {
+        data: [{ ...source, share_token: 'share-token', share_show_transactions: false }],
+        isLoading: false,
+        mutate: mutateSources,
+      },
+      '/api/groups/rollups': { data: [rollup], isLoading: false, mutate: mutateRollups },
+      '/api/groups/labels': { data: [label], isLoading: false, mutate: mutateLabels },
+    })[key])
+    render(<GroupManager />)
+
+    const card = screen.getByText('월급').closest('[data-testid="group-card"]') as HTMLElement
+    await act(async () => {
+      fireEvent.click(within(card).getByLabelText('거래내역 공개'))
+    })
+
+    expect(mockedGroupsApi.updateShareSettings).toHaveBeenCalledWith('sources', 'source-1', {
+      show_transactions: true,
+    })
+    expect(mutateSources).toHaveBeenCalled()
   })
 
   it('shows a section fetch failure and retries only that section', async () => {

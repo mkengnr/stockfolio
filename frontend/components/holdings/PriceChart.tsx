@@ -1,14 +1,14 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import type { Snapshot, Transaction } from '@/lib/types'
+import type { TxType } from '@/lib/types'
 import { toIsoDateKey } from '@/lib/chartTime'
 
 interface Props {
-  snapshots: Snapshot[]
+  snapshots: { snapshot_date: string; close_price: string }[]
   currency: 'KRW' | 'USD'
   currentPrice: string | null
-  transactions: Transaction[]
+  transactions: { transaction_date: string; type: TxType; quantity: string; price: string }[]
 }
 
 export interface PricePoint {
@@ -17,7 +17,7 @@ export interface PricePoint {
 }
 
 export function buildPricePoints(
-  snapshots: Snapshot[],
+  snapshots: { snapshot_date: string; close_price: string }[],
   currentPrice: string | null,
   todayKey: string,
 ): PricePoint[] {
@@ -47,7 +47,7 @@ export function formatMarkerQuantity(quantity: string): string {
 }
 
 export function buildTransactionMarkers(
-  transactions: Transaction[],
+  transactions: { transaction_date: string; type: TxType; quantity: string }[],
   range: { from: string; to: string } | null,
 ): PriceMarker[] {
   const inRange = (date: string) => !range || (date >= range.from && date <= range.to)
@@ -67,7 +67,7 @@ export function buildTransactionMarkers(
 }
 
 export interface PriceTxInfo {
-  type: Transaction['type']
+  type: TxType
   quantity: string
   price: string
 }
@@ -79,8 +79,8 @@ export interface PriceTooltipDatum {
 }
 
 export function buildPriceTooltipData(
-  snapshots: Snapshot[],
-  transactions: Transaction[],
+  snapshots: { snapshot_date: string; close_price: string }[],
+  transactions: { transaction_date: string; type: TxType; quantity: string; price: string }[],
   currentPrice: string | null,
   todayKey: string,
 ): Map<string, PriceTooltipDatum> {

@@ -295,6 +295,16 @@ describe('HoldingsTable', () => {
     expect(visibleRowNames()).toEqual(['삼성전자', '카카오'])
   })
 
+  it('uses custom holdingHref when provided', () => {
+    const holdings = [{
+      holding_id: 'abc', ticker: '005930', name: '삼성전자', market: 'KRX', currency: 'KRW',
+      quantity: '10', remaining_cost_basis: '1000', current_price: '150',
+      current_value: '1500', unrealized_profit_loss: '500', groups: [],
+    }]
+    render(<HoldingsTable holdings={holdings as any} holdingHref={(id) => `/share/T/holdings/${id}`} />)
+    expect(screen.getByText('삼성전자').closest('a')).toHaveAttribute('href', '/share/T/holdings/abc')
+  })
+
   it('does not vertically stick the native header (the floating clone owns the sticky offset) while keeping the first column horizontally sticky', () => {
     render(<HoldingsTable holdings={[makeHolding()]} />)
 

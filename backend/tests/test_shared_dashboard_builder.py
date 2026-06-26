@@ -214,7 +214,14 @@ async def test_public_rollup_payload_contains_no_internal_uuids(shared_fixture):
     )
 
     public = _public_shared_dashboard(dashboard)
-    serialized = json.dumps(public.model_dump(mode="json"), ensure_ascii=False)
+    # Strip intentionally-exposed holding_ids before checking for leaked internals.
+    data = public.model_dump(mode="json")
+    for h in data.get("holdings", []):
+        h.pop("holding_id", None)
+    for g in data.get("groups", []):
+        for h in g.get("holdings", []):
+            h.pop("holding_id", None)
+    serialized = json.dumps(data, ensure_ascii=False)
     assert not UUID_PATTERN.search(serialized)
     assert [group.key for group in public.groups] == ["group-1", "group-2"]
     assert {row.group_key for row in public.history.rows} == {
@@ -226,3 +233,18 @@ async def test_public_rollup_payload_contains_no_internal_uuids(shared_fixture):
         badge.name for holding in public.holdings for badge in holding.groups
     }
     assert badge_names == {"모음통장", "긴급통장"}
+
+
+@pytest.mark.asyncio
+async def test_public_holding_exposes_holding_id(shared_fixture):
+    dashboard = await build_shared_portfolio_dashboard(
+        SimpleNamespace(),
+        shared_fixture.user_id,
+        _rollup_scope(shared_fixture),
+    )
+
+    shared = _public_shared_dashboard(dashboard)
+    assert shared.holdings  # non-empty
+    assert all(h.holding_id is not None for h in shared.holdings)
+    for group in shared.groups:
+        assert all(h.holding_id is not None for h in group.holdings)

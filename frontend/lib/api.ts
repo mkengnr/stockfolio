@@ -1,6 +1,6 @@
 import type {
   BuyLot, DashboardResponse, DisplayCurrency, GroupKind, Holding, HoldingDetail, Label, PortfolioScope, PortfolioSummary, PrincipalFlow,
-  RollupGroup, ScopedPortfolioHistory, ScopedPortfolioHoldings, SharedGroup, SharedTag,
+  RollupGroup, ScopedPortfolioHistory, ScopedPortfolioHoldings, SharedGroup, SharedHoldingDetail, SharedTag,
   SourceGroup, StockSearchResult, Tag, TagDetail, Transaction, TransactionFilters, TransactionListItem, TransactionListPayload,
   TransactionUpdatePayload, User,
 } from './types'
@@ -181,10 +181,16 @@ export const groupsApi = {
   delete: (kind: GroupKind, id: string) =>
     request(`/api/groups/${kind}/${id}`, { method: 'DELETE' }),
 
-  enableShare: (kind: GroupKind, id: string, requiresAuth: boolean) =>
+  enableShare: (kind: GroupKind, id: string, requiresAuth: boolean, showTransactions = false) =>
     request<SourceGroup | RollupGroup | Label>(`/api/groups/${kind}/${id}/share`, {
       method: 'POST',
-      body: JSON.stringify({ requires_auth: requiresAuth }),
+      body: JSON.stringify({ requires_auth: requiresAuth, show_transactions: showTransactions }),
+    }),
+
+  updateShareSettings: (kind: GroupKind, id: string, body: { requires_auth?: boolean; show_transactions?: boolean }) =>
+    request<SourceGroup | RollupGroup | Label>(`/api/groups/${kind}/${id}/share`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
     }),
 
   disableShare: (kind: GroupKind, id: string) =>
@@ -259,6 +265,8 @@ export const tagsApi = {
 export const shareApi = {
   getGroup: (token: string) => request<SharedGroup>(`/api/groups/share/${token}`),
   getLegacy: (token: string) => request<SharedTag>(`/api/share/${token}`),
+  getHolding: (token: string, holdingId: string) =>
+    request<SharedHoldingDetail>(`/api/groups/share/${token}/holdings/${holdingId}`),
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────

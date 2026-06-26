@@ -1,5 +1,6 @@
 import re
 import uuid
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -17,9 +18,16 @@ from app.models.group import (
     SourceGroup,
     TransactionLabel,
 )
-from app.models.holding import Transaction
+from app.models.holding import Holding, Transaction
 from app.models.user import User
 from app.routers.deps import get_current_user, get_current_user_optional
+from app.routers.holdings import (
+    _holding_load_options,
+    _holding_performance,
+    _load_holding_source_groups,
+    _to_accounting_transaction,
+    _transaction_sort_key,
+)
 from app.routers.portfolio import (
     build_shared_portfolio_dashboard,
     resolve_portfolio_scope,
@@ -32,6 +40,7 @@ from app.schemas.group import (
     RollupGroupCreateIn,
     RollupGroupOut,
     RollupGroupUpdateIn,
+    ShareSettingsUpdateIn,
     ShareUpdateIn,
     SharedDashboardGroupOut,
     SharedDashboardHistoryOut,
@@ -40,11 +49,18 @@ from app.schemas.group import (
     SharedDashboardHoldingOut,
     SharedDashboardOut,
     SharedGroupOut,
+    SharedHoldingDetailOut,
+    SharedHoldingGroupBreakdownOut,
+    SharedHoldingPerformanceOut,
+    SharedHoldingSnapshotOut,
+    SharedHoldingTransactionOut,
     SourceGroupCreateIn,
     SourceGroupOut,
     SourceGroupUpdateIn,
 )
 from app.schemas.dashboard import DashboardResponse
+from app.services.lot_accounting import lot_matches_scope, replay
+from app.services.price_cache import get_price
 
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
@@ -125,6 +141,7 @@ def _rollup_to_out(
         share_description=rollup.share_description,
         share_token=rollup.share_token,
         share_requires_auth=rollup.share_requires_auth,
+        share_show_transactions=rollup.share_show_transactions,
         source_group_ids=sorted(source_group_ids, key=str),
         created_at=rollup.created_at,
     )
@@ -140,6 +157,7 @@ def _entity_to_out(entity: GroupEntity) -> GroupOut:
 
 def _public_dashboard_holding(holding, allowed_group_names: set[str]) -> SharedDashboardHoldingOut:
     return SharedDashboardHoldingOut(
+        holding_id=holding.holding_id,
         ticker=holding.ticker,
         name=holding.name,
         market=holding.market,
@@ -301,7 +319,7 @@ async def create_source_group(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    source = SourceGroup(user_id=current_user.id, share_requires_auth=True, **body.model_dump())
+    source = SourceGroup(user_id=current_user.id, share_requires_auth=True, share_show_transactions=False, **body.model_dump())
     db.add(source)
     await db.flush()
     return source
@@ -345,7 +363,7 @@ async def create_label(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    label = Label(user_id=current_user.id, share_requires_auth=True, **body.model_dump())
+    label = Label(user_id=current_user.id, share_requires_auth=True, share_show_transactions=False, **body.model_dump())
     db.add(label)
     await db.flush()
     return label
@@ -400,6 +418,7 @@ async def create_rollup_group(
         description=body.description,
         share_description=body.share_description,
         share_requires_auth=True,
+        share_show_transactions=False,
     )
     db.add(rollup)
     await db.flush()
@@ -487,6 +506,29 @@ async def enable_share(
     entity = await _get_owned_entity(db, kind, entity_id, current_user.id)
     entity.share_token = str(uuid.uuid4())
     entity.share_requires_auth = body.requires_auth
+    entity.share_show_transactions = body.show_transactions
+    return _entity_to_out(entity)
+
+
+@router.patch("/{kind}/{entity_id}/share", response_model=GroupOut)
+async def update_share_settings(
+    kind: GroupKind,
+    entity_id: uuid.UUID,
+    body: ShareSettingsUpdateIn,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    entity = await _get_owned_entity(db, kind, entity_id, current_user.id)
+    if entity.share_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Share is not enabled for this group",
+        )
+    # Only fields explicitly present are updated; an explicit null is treated as "no change" (these columns are NOT NULL).
+    if "requires_auth" in body.model_fields_set and body.requires_auth is not None:
+        entity.share_requires_auth = body.requires_auth
+    if "show_transactions" in body.model_fields_set and body.show_transactions is not None:
+        entity.share_show_transactions = body.show_transactions
     return _entity_to_out(entity)
 
 
@@ -501,24 +543,29 @@ async def disable_share(
     entity.share_token = None
 
 
+async def _resolve_shared_entity(token: uuid.UUID, current_user, db):
+    """Resolve a share token to (entity, public_kind), applying the requires_auth gate.
+
+    Raises 404 if no entity matches the token, 401 if it requires auth and the
+    caller is anonymous.
+    """
+    for model, kind in ((SourceGroup, "source"), (RollupGroup, "rollup"), (Label, "label")):
+        result = await db.execute(select(model).where(model.share_token == str(token)))
+        entity = result.scalar_one_or_none()
+        if entity is not None:
+            if entity.share_requires_auth and current_user is None:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+            return entity, kind
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share link not found")
+
+
 @router.get("/share/{token}", response_model=SharedGroupOut)
 async def get_shared_group(
     token: uuid.UUID,
     current_user: User | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
-    entity = None
-    public_kind = None
-    for model, kind in ((SourceGroup, "source"), (RollupGroup, "rollup"), (Label, "label")):
-        result = await db.execute(select(model).where(model.share_token == str(token)))
-        entity = result.scalar_one_or_none()
-        if entity is not None:
-            public_kind = kind
-            break
-    if entity is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share link not found")
-    if entity.share_requires_auth and current_user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    entity, public_kind = await _resolve_shared_entity(token, current_user, db)
     scope = await resolve_portfolio_scope(db, entity.user_id, public_kind, entity.id)
     dashboard = await build_shared_portfolio_dashboard(db, entity.user_id, scope)
     return SharedGroupOut(
@@ -528,4 +575,111 @@ async def get_shared_group(
         description=entity.description,
         share_description=entity.share_description,
         dashboard=_public_shared_dashboard(dashboard),
+    )
+
+
+def _shared_holding_in_scope(holding, scope) -> bool:
+    """True if the holding has any replayed lot within the shared scope.
+
+    Guards against leaking the owner's holdings that fall outside the share.
+    """
+    replay_result = replay(
+        [_to_accounting_transaction(holding, t) for t in holding.transactions], scope
+    )
+    return any(lot_matches_scope(lot, scope) for lot in replay_result.lots.values())
+
+
+def _transaction_in_scope(tx, scope) -> bool:
+    if scope.kind == "all":
+        return True
+    if scope.kind == "source":
+        return tx.source_group_id == scope.id
+    if scope.kind == "unclassified":
+        return tx.source_group_id is None
+    if scope.kind == "rollup":
+        return tx.source_group_id in scope.resolved_source_group_ids
+    if scope.kind == "label":
+        return scope.id in {tl.label_id for tl in tx.transaction_labels}
+    return False
+
+
+def _scoped_shared_transactions(holding, scope) -> list[SharedHoldingTransactionOut]:
+    out = []
+    for tx in sorted(holding.transactions, key=_transaction_sort_key):
+        if not _transaction_in_scope(tx, scope):
+            continue
+        out.append(
+            SharedHoldingTransactionOut(
+                type=tx.type.value,
+                transaction_date=tx.transaction_date,
+                quantity=tx.quantity,
+                price=tx.price,
+            )
+        )
+    return out
+
+
+@router.get("/share/{token}/holdings/{holding_id}", response_model=SharedHoldingDetailOut)
+async def get_shared_holding_detail(
+    token: uuid.UUID,
+    holding_id: uuid.UUID,
+    current_user: User | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
+):
+    entity, public_kind = await _resolve_shared_entity(token, current_user, db)
+    scope = await resolve_portfolio_scope(db, entity.user_id, public_kind, entity.id)
+
+    result = await db.execute(
+        select(Holding)
+        .where(Holding.id == holding_id)
+        .where(Holding.user_id == entity.user_id)
+        .options(*_holding_load_options(), selectinload(Holding.snapshots))
+    )
+    holding = result.scalar_one_or_none()
+    if holding is None or not holding.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Holding not found")
+    if not _shared_holding_in_scope(holding, scope):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Holding not found")
+
+    try:
+        price_result = await get_price(holding.ticker)
+        current_price = price_result.price
+    except Exception:
+        current_price = None
+
+    source_groups = await _load_holding_source_groups(db, entity.user_id, holding)
+    performance, group_breakdown = _holding_performance(holding, current_price, source_groups, scope)
+    remaining_quantity = sum((b.remaining_quantity for b in group_breakdown), Decimal(0))
+
+    return SharedHoldingDetailOut(
+        ticker=holding.ticker,
+        name=holding.name,
+        market=holding.market,
+        currency=holding.currency,
+        remaining_quantity=remaining_quantity,
+        current_price=current_price,
+        show_transactions=entity.share_show_transactions,
+        performance=(SharedHoldingPerformanceOut(**performance.model_dump()) if performance else None),
+        group_breakdown=[
+            SharedHoldingGroupBreakdownOut(
+                name=b.name,
+                color=b.color,
+                remaining_quantity=b.remaining_quantity,
+                invested_principal=b.invested_principal,
+                remaining_cost_basis=b.remaining_cost_basis,
+                current_value=b.current_value,
+                profit_loss=b.profit_loss,
+                profit_loss_pct=b.profit_loss_pct,
+            )
+            for b in group_breakdown
+        ],
+        # Only close_price (market data) is exposed; snapshot.total_value is the whole-holding
+        # value and is intentionally omitted to avoid leaking unscoped value.
+        snapshots=[
+            SharedHoldingSnapshotOut(snapshot_date=s.snapshot_date, close_price=s.close_price)
+            for s in sorted(holding.snapshots, key=lambda x: x.snapshot_date)
+        ],
+        transactions=(
+            _scoped_shared_transactions(holding, scope) if entity.share_show_transactions else []
+        ),
     )

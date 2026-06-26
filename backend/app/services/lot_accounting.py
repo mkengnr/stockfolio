@@ -200,6 +200,11 @@ def _lot_matches_scope(lot: BuyLotState, scope: PortfolioScope) -> bool:
     raise ValueError(f"Unsupported portfolio scope: {scope.kind}")
 
 
+def lot_matches_scope(lot: BuyLotState, scope: PortfolioScope) -> bool:
+    """Public wrapper so routers can filter replayed lots by portfolio scope."""
+    return _lot_matches_scope(lot, scope)
+
+
 def _transaction_matches_principal_scope(transaction: Transaction, scope: PortfolioScope) -> bool:
     if scope.kind == "all":
         return True

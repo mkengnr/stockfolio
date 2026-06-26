@@ -106,6 +106,14 @@ class RollupGroupUpdateIn(GroupMetadataUpdateIn):
 
 class ShareUpdateIn(BaseModel):
     requires_auth: bool = True
+    show_transactions: bool = False
+
+    model_config = {"extra": "forbid"}
+
+
+class ShareSettingsUpdateIn(BaseModel):
+    requires_auth: bool | None = None
+    show_transactions: bool | None = None
 
     model_config = {"extra": "forbid"}
 
@@ -118,6 +126,7 @@ class GroupMetadataOut(BaseModel):
     share_description: str | None
     share_token: str | None
     share_requires_auth: bool
+    share_show_transactions: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -153,6 +162,7 @@ class SharedDashboardHoldingGroupBadgeOut(BaseModel):
 
 
 class SharedDashboardHoldingOut(BaseModel):
+    holding_id: uuid.UUID | None = None
     ticker: str
     name: str | None
     market: Market
@@ -200,3 +210,48 @@ class SharedDashboardOut(BaseModel):
     groups: list[SharedDashboardGroupOut]
     history: SharedDashboardHistoryOut
     holdings: list[SharedDashboardHoldingOut]
+
+
+class SharedHoldingTransactionOut(BaseModel):
+    type: Literal["BUY", "SELL"]
+    transaction_date: date
+    quantity: Decimal
+    price: Decimal
+
+
+class SharedHoldingSnapshotOut(BaseModel):
+    snapshot_date: date
+    close_price: Decimal
+
+
+class SharedHoldingPerformanceOut(BaseModel):
+    total_invested_principal: Decimal
+    remaining_cost_basis: Decimal
+    current_value: Decimal | None
+    profit_loss: Decimal | None
+    profit_loss_pct: Decimal | None
+
+
+class SharedHoldingGroupBreakdownOut(BaseModel):
+    name: str
+    color: str | None
+    remaining_quantity: Decimal
+    invested_principal: Decimal
+    remaining_cost_basis: Decimal
+    current_value: Decimal | None
+    profit_loss: Decimal | None
+    profit_loss_pct: Decimal | None
+
+
+class SharedHoldingDetailOut(BaseModel):
+    ticker: str
+    name: str
+    market: Market
+    currency: Currency
+    remaining_quantity: Decimal
+    current_price: Decimal | None
+    show_transactions: bool
+    performance: SharedHoldingPerformanceOut | None
+    group_breakdown: list[SharedHoldingGroupBreakdownOut]
+    snapshots: list[SharedHoldingSnapshotOut]
+    transactions: list[SharedHoldingTransactionOut]

@@ -20,6 +20,7 @@ const sourceGroups: SourceGroup[] = [
     description: null,
     share_token: null,
     share_requires_auth: true,
+    share_show_transactions: false,
     created_at: '2026-06-01T00:00:00Z',
   },
 ]
@@ -32,6 +33,7 @@ const labels: Label[] = [
     description: null,
     share_token: null,
     share_requires_auth: true,
+    share_show_transactions: false,
     created_at: '2026-06-01T00:00:00Z',
   },
 ]

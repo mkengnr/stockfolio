@@ -33,6 +33,7 @@ from app.services.lot_accounting import (
     SellAllocationInput,
     Transaction as AccountingTransaction,
     invested_principal_by_currency,
+    lot_matches_scope,
     replay,
 )
 from app.services.price_cache import get_price
@@ -267,21 +268,25 @@ def _holding_performance(
     holding: Holding,
     current_price: Decimal | None,
     source_groups: list[SourceGroup],
+    scope: PortfolioScope = PortfolioScope("all"),
 ) -> tuple[HoldingPerformanceOut | None, list[HoldingGroupBreakdownOut]]:
     transactions = [_to_accounting_transaction(holding, transaction) for transaction in holding.transactions]
-    replay_result = replay(transactions)
+    replay_result = replay(transactions, scope)
     if replay_result.accounting_status == "requires_review":
         return None, []
-    invested_principal = _scope_invested_principal(transactions, holding, PortfolioScope("all"))
+    invested_principal = _scope_invested_principal(transactions, holding, scope)
+    scoped_lots = [
+        lot for lot in replay_result.lots.values() if lot_matches_scope(lot, scope)
+    ]
     remaining_cost_basis = sum(
-        (lot.remaining_quantity * lot.unit_price for lot in replay_result.lots.values()),
+        (lot.remaining_quantity * lot.unit_price for lot in scoped_lots),
         ZERO,
     )
     # Derive the valued quantity from lots, not holding.quantity: the
     # moving-average mirror must never disagree with the lot ledger that
     # produced remaining_cost_basis.
     remaining_quantity = sum(
-        (lot.remaining_quantity for lot in replay_result.lots.values()),
+        (lot.remaining_quantity for lot in scoped_lots),
         ZERO,
     )
     current_value = remaining_quantity * current_price if current_price is not None else None
@@ -296,7 +301,7 @@ def _holding_performance(
 
     source_by_id = {source_group.id: source_group for source_group in source_groups}
     lot_totals: dict[uuid.UUID | None, tuple[Decimal, Decimal]] = {}
-    for lot in replay_result.lots.values():
+    for lot in scoped_lots:
         if lot.remaining_quantity <= ZERO:
             continue
         quantity, cost_basis = lot_totals.get(lot.source_group_id, (ZERO, ZERO))
@@ -315,12 +320,12 @@ def _holding_performance(
         ),
     ):
         source_group = source_by_id.get(source_group_id) if source_group_id is not None else None
-        scope = (
+        group_scope = (
             PortfolioScope("source", source_group_id)
             if source_group_id is not None
             else PortfolioScope("unclassified")
         )
-        group_invested_principal = _scope_invested_principal(transactions, holding, scope)
+        group_invested_principal = _scope_invested_principal(transactions, holding, group_scope)
         group_current_value = (
             remaining_quantity * current_price if current_price is not None else None
         )

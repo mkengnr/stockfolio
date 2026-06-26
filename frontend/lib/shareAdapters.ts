@@ -20,7 +20,7 @@ export function toDashboardHistoryRow(row: SharedDashboardHistoryRow): Dashboard
 
 export function toDashboardHolding(holding: SharedDashboardHolding): DashboardHoldingRow {
   return {
-    holding_id: null,
+    holding_id: holding.holding_id,
     ticker: holding.ticker,
     name: holding.name,
     market: holding.market,
