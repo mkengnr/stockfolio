@@ -117,15 +117,29 @@ export function GroupManager() {
     }
   }
 
-  async function handleEnableShare(groupKind: GroupKind, group: Group, requiresAuth: boolean) {
+  async function handleEnableShare(groupKind: GroupKind, group: Group, requiresAuth: boolean, showTransactions: boolean) {
     const action = `share:${groupKind}:${group.id}`
     setPendingAction(action)
     setError('')
     try {
-      await groupsApi.enableShare(groupKind, group.id, requiresAuth)
+      await groupsApi.enableShare(groupKind, group.id, requiresAuth, showTransactions)
       await refresh(groupKind)
     } catch (err) {
       setError(err instanceof Error ? err.message : '공유를 설정하지 못했습니다.')
+    } finally {
+      setPendingAction('')
+    }
+  }
+
+  async function handleUpdateShareSettings(groupKind: GroupKind, group: Group, body: { requires_auth?: boolean; show_transactions?: boolean }) {
+    const action = `settings:${groupKind}:${group.id}`
+    setPendingAction(action)
+    setError('')
+    try {
+      await groupsApi.updateShareSettings(groupKind, group.id, body)
+      await refresh(groupKind)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '공유 옵션을 변경하지 못했습니다.')
     } finally {
       setPendingAction('')
     }
@@ -203,6 +217,7 @@ export function GroupManager() {
           onDelete={handleDelete}
           onEnableShare={handleEnableShare}
           onDisableShare={handleDisableShare}
+          onUpdateShareSettings={handleUpdateShareSettings}
         />
       ))}
     </div>
@@ -302,6 +317,7 @@ function GroupSection({
   onDelete,
   onEnableShare,
   onDisableShare,
+  onUpdateShareSettings,
 }: {
   kind: GroupKind
   groups: Group[]
@@ -313,8 +329,9 @@ function GroupSection({
   pendingAction: string
   onSave: (groupKind: GroupKind, group: Group, payload: { name: string; description: string; share_description: string | null; color: string; member_ids: string[] }) => Promise<string | null>
   onDelete: (kind: GroupKind, group: Group) => void
-  onEnableShare: (kind: GroupKind, group: Group, requiresAuth: boolean) => void
+  onEnableShare: (kind: GroupKind, group: Group, requiresAuth: boolean, showTransactions: boolean) => void
   onDisableShare: (kind: GroupKind, group: Group) => void
+  onUpdateShareSettings: (kind: GroupKind, group: Group, body: { requires_auth?: boolean; show_transactions?: boolean }) => void
 }) {
   return (
     <section>
@@ -347,6 +364,7 @@ function GroupSection({
               onDelete={onDelete}
               onEnableShare={onEnableShare}
               onDisableShare={onDisableShare}
+              onUpdateShareSettings={onUpdateShareSettings}
             />
           ))}
         </div>
@@ -365,6 +383,7 @@ function GroupCard({
   onDelete,
   onEnableShare,
   onDisableShare,
+  onUpdateShareSettings,
 }: {
   kind: GroupKind
   group: Group
@@ -373,8 +392,9 @@ function GroupCard({
   pendingAction: string
   onSave: (groupKind: GroupKind, group: Group, payload: { name: string; description: string; share_description: string | null; color: string; member_ids: string[] }) => Promise<string | null>
   onDelete: (kind: GroupKind, group: Group) => void
-  onEnableShare: (kind: GroupKind, group: Group, requiresAuth: boolean) => void
+  onEnableShare: (kind: GroupKind, group: Group, requiresAuth: boolean, showTransactions: boolean) => void
   onDisableShare: (kind: GroupKind, group: Group) => void
+  onUpdateShareSettings: (kind: GroupKind, group: Group, body: { requires_auth?: boolean; show_transactions?: boolean }) => void
 }) {
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState('')
@@ -383,10 +403,12 @@ function GroupCard({
   const [editColor, setEditColor] = useState(DEFAULT_COLOR)
   const [editMemberIds, setEditMemberIds] = useState<string[]>([])
   const [requiresAuth, setRequiresAuth] = useState(group.share_requires_auth)
+  const [showTransactions, setShowTransactions] = useState(group.share_show_transactions)
   const [saveError, setSaveError] = useState('')
   const [saving, setSaving] = useState(false)
 
   const sharePending = pendingAction === `share:${kind}:${group.id}`
+  const settingsPending = pendingAction === `settings:${kind}:${group.id}`
   const deletePending = pendingAction === `delete:${kind}:${group.id}`
   const shareUrl = group.share_token && typeof window !== 'undefined'
     ? `${window.location.origin}/share/${group.share_token}`
@@ -466,6 +488,15 @@ function GroupCard({
           <p className="mt-2 text-gray-400">
             {group.share_requires_auth ? '로그인 필요' : '누구나 접근 가능'}
           </p>
+          <label className="mt-2 flex items-center gap-2 text-gray-500">
+            <input
+              type="checkbox"
+              checked={group.share_show_transactions}
+              disabled={settingsPending}
+              onChange={(event) => onUpdateShareSettings(kind, group, { show_transactions: event.target.checked })}
+            />
+            거래내역 공개
+          </label>
           <p className="mt-1 text-gray-400">
             공유 문구: {group.share_description || '없음'}
           </p>
@@ -499,7 +530,11 @@ function GroupCard({
             <input type="checkbox" checked={requiresAuth} onChange={(event) => setRequiresAuth(event.target.checked)} />
             로그인한 사용자만 열기
           </label>
-          <Button variant="secondary" size="sm" loading={sharePending} onClick={() => onEnableShare(kind, group, requiresAuth)}>
+          <label className="flex items-center gap-2 text-xs text-gray-600">
+            <input type="checkbox" checked={showTransactions} onChange={(event) => setShowTransactions(event.target.checked)} />
+            거래내역 공개
+          </label>
+          <Button variant="secondary" size="sm" loading={sharePending} onClick={() => onEnableShare(kind, group, requiresAuth, showTransactions)}>
             공유 링크 만들기
           </Button>
         </div>

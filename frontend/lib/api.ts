@@ -181,10 +181,16 @@ export const groupsApi = {
   delete: (kind: GroupKind, id: string) =>
     request(`/api/groups/${kind}/${id}`, { method: 'DELETE' }),
 
-  enableShare: (kind: GroupKind, id: string, requiresAuth: boolean) =>
+  enableShare: (kind: GroupKind, id: string, requiresAuth: boolean, showTransactions = false) =>
     request<SourceGroup | RollupGroup | Label>(`/api/groups/${kind}/${id}/share`, {
       method: 'POST',
-      body: JSON.stringify({ requires_auth: requiresAuth }),
+      body: JSON.stringify({ requires_auth: requiresAuth, show_transactions: showTransactions }),
+    }),
+
+  updateShareSettings: (kind: GroupKind, id: string, body: { requires_auth?: boolean; show_transactions?: boolean }) =>
+    request<SourceGroup | RollupGroup | Label>(`/api/groups/${kind}/${id}/share`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
     }),
 
   disableShare: (kind: GroupKind, id: string) =>
