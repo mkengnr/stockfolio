@@ -508,6 +508,7 @@ async def update_share_settings(
             status_code=status.HTTP_409_CONFLICT,
             detail="Share is not enabled for this group",
         )
+    # Only fields explicitly present are updated; an explicit null is treated as "no change" (these columns are NOT NULL).
     if "requires_auth" in body.model_fields_set and body.requires_auth is not None:
         entity.share_requires_auth = body.requires_auth
     if "show_transactions" in body.model_fields_set and body.show_transactions is not None:

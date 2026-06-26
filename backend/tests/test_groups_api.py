@@ -779,7 +779,7 @@ def test_update_share_settings_toggles_show_transactions(client, db, source):
     # source fixture already queued one result for the POST; queue a second for the PATCH
     db.queue(_Result(one=source))
 
-    client.post(f"/api/groups/sources/{source.id}/share", json={"requires_auth": True})
+    assert client.post(f"/api/groups/sources/{source.id}/share", json={"requires_auth": True}).status_code == 200
     token_before = source.share_token
 
     response = client.patch(
