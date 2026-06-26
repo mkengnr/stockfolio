@@ -2,6 +2,7 @@ import { toDashboardHolding, toDashboardHistoryRow } from '@/lib/shareAdapters'
 import type { SharedDashboardHistoryRow, SharedDashboardHolding } from '@/lib/types'
 
 const sharedHolding: SharedDashboardHolding = {
+  holding_id: 'holding-1',
   ticker: 'AAPL',
   name: 'Apple',
   market: 'US',
@@ -16,10 +17,10 @@ const sharedHolding: SharedDashboardHolding = {
 }
 
 describe('toDashboardHolding', () => {
-  it('maps a public holding without fabricating an internal id', () => {
+  it('passes the holding id through so shared rows can link to the detail page', () => {
     const row = toDashboardHolding(sharedHolding)
 
-    expect(row.holding_id).toBeNull()
+    expect(row.holding_id).toBe('holding-1')
     expect(row.ticker).toBe('AAPL')
     expect(row.current_value_change).toBe('10')
     expect(row.groups).toEqual([
