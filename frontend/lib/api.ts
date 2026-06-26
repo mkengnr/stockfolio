@@ -1,6 +1,6 @@
 import type {
   BuyLot, DashboardResponse, DisplayCurrency, GroupKind, Holding, HoldingDetail, Label, PortfolioScope, PortfolioSummary, PrincipalFlow,
-  RollupGroup, ScopedPortfolioHistory, ScopedPortfolioHoldings, SharedGroup, SharedTag,
+  RollupGroup, ScopedPortfolioHistory, ScopedPortfolioHoldings, SharedGroup, SharedHoldingDetail, SharedTag,
   SourceGroup, StockSearchResult, Tag, TagDetail, Transaction, TransactionFilters, TransactionListItem, TransactionListPayload,
   TransactionUpdatePayload, User,
 } from './types'
@@ -259,6 +259,8 @@ export const tagsApi = {
 export const shareApi = {
   getGroup: (token: string) => request<SharedGroup>(`/api/groups/share/${token}`),
   getLegacy: (token: string) => request<SharedTag>(`/api/share/${token}`),
+  getHolding: (token: string, holdingId: string) =>
+    request<SharedHoldingDetail>(`/api/groups/share/${token}/holdings/${holdingId}`),
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
