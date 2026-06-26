@@ -118,6 +118,7 @@ class GroupMetadataOut(BaseModel):
     share_description: str | None
     share_token: str | None
     share_requires_auth: bool
+    share_show_transactions: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -109,6 +109,7 @@ def _source(user_id, *, name="월급", source_id=None):
         color="#6366f1",
         description=None,
         share_requires_auth=True,
+        share_show_transactions=False,
         created_at=NOW,
     )
     source.share_description = None
@@ -123,6 +124,7 @@ def _label(user_id, *, name="장기", label_id=None):
         color="#6366f1",
         description=None,
         share_requires_auth=True,
+        share_show_transactions=False,
         created_at=NOW,
     )
     label.share_description = None
@@ -137,6 +139,7 @@ def _rollup(user_id, *sources, name="가족", rollup_id=None):
         color="#6366f1",
         description=None,
         share_requires_auth=True,
+        share_show_transactions=False,
         created_at=NOW,
         members=[RollupGroupMember(source_group_id=source.id) for source in sources],
     )

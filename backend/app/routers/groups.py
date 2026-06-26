@@ -125,6 +125,7 @@ def _rollup_to_out(
         share_description=rollup.share_description,
         share_token=rollup.share_token,
         share_requires_auth=rollup.share_requires_auth,
+        share_show_transactions=rollup.share_show_transactions,
         source_group_ids=sorted(source_group_ids, key=str),
         created_at=rollup.created_at,
     )
@@ -301,7 +302,7 @@ async def create_source_group(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    source = SourceGroup(user_id=current_user.id, share_requires_auth=True, **body.model_dump())
+    source = SourceGroup(user_id=current_user.id, share_requires_auth=True, share_show_transactions=False, **body.model_dump())
     db.add(source)
     await db.flush()
     return source
@@ -345,7 +346,7 @@ async def create_label(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    label = Label(user_id=current_user.id, share_requires_auth=True, **body.model_dump())
+    label = Label(user_id=current_user.id, share_requires_auth=True, share_show_transactions=False, **body.model_dump())
     db.add(label)
     await db.flush()
     return label
@@ -400,6 +401,7 @@ async def create_rollup_group(
         description=body.description,
         share_description=body.share_description,
         share_requires_auth=True,
+        share_show_transactions=False,
     )
     db.add(rollup)
     await db.flush()
