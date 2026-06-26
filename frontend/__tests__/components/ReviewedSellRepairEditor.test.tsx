@@ -29,6 +29,7 @@ const sourceGroups: SourceGroup[] = [{
   description: null,
   share_token: null,
   share_requires_auth: true,
+  share_show_transactions: false,
   created_at: '2024-01-01T00:00:00Z',
 }]
 const labels: Label[] = []

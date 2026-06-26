@@ -19,7 +19,10 @@ interface Props {
   holdings: TableHolding[]
   displayCurrency?: DisplayCurrency
   stickyTop?: number
+  holdingHref?: (id: string) => string
 }
+
+const defaultHoldingHref = (id: string) => `/holdings/${id}`
 
 interface Row {
   key: string
@@ -125,7 +128,7 @@ const initialSortDir: Record<SortKey, SortDir> = {
   profitPct: 'desc',
 }
 
-export function HoldingsTable({ holdings, displayCurrency, stickyTop }: Props) {
+export function HoldingsTable({ holdings, displayCurrency, stickyTop, holdingHref }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('profitPct')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
@@ -182,7 +185,7 @@ export function HoldingsTable({ holdings, displayCurrency, stickyTop }: Props) {
           {sorted.map((row) => (
             <tr key={row.key} className="group/row transition-colors hover:bg-gray-50">
               <td className={cn('sticky left-0 z-10 border-r border-gray-100 bg-white py-3 group-hover/row:bg-gray-50', holdingNameColumnClass)}>
-                {row.id ? <HoldingName row={row} linked /> : <HoldingName row={row} />}
+                {row.id ? <HoldingName row={row} href={(holdingHref ?? defaultHoldingHref)(row.id)} /> : <HoldingName row={row} />}
               </td>
               <td className="px-4 py-3"><GroupBadges groups={row.groups} /></td>
               <td className="px-4 py-3 text-right tabular-nums text-gray-700">{formatShareQuantity(row.quantity)}</td>
@@ -354,14 +357,14 @@ function SortableHeading({ label, align = 'right', sticky = false, onClick, chil
   )
 }
 
-function HoldingName({ row, linked }: { row: Row; linked?: boolean }) {
+function HoldingName({ row, href }: { row: Row; href?: string }) {
   const content = (
     <>
       <span className="truncate font-medium text-gray-900 group-hover:text-brand-600">{row.name}</span>
       <span className="truncate text-xs text-gray-400">{row.subtitle}</span>
     </>
   )
-  return linked
-    ? <Link href={`/holdings/${row.id}`} className="group flex min-w-0 max-w-full flex-col">{content}</Link>
+  return href
+    ? <Link href={href} className="group flex min-w-0 max-w-full flex-col">{content}</Link>
     : <div className="flex min-w-0 max-w-full flex-col">{content}</div>
 }

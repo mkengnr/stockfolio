@@ -21,11 +21,13 @@ const shareHoldingsTableStickyTop = 70
 
 function SharedGroupView({
   group,
+  token,
   onRefresh,
   isRefreshing,
   lastUpdated,
 }: {
   group: SharedGroup
+  token: string
   onRefresh: () => void
   isRefreshing: boolean
   lastUpdated: Date | null
@@ -162,6 +164,7 @@ function SharedGroupView({
           holdings={selectedHoldings}
           displayCurrency={group.dashboard.display_currency}
           stickyTop={shareHoldingsTableStickyTop}
+          holdingHref={(id) => `/share/${token}/holdings/${id}`}
         />
       </Card>
     </SharedLayout>
@@ -326,7 +329,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
       </div>
     )
   }
-  if (group) return <SharedGroupView group={group} onRefresh={() => void load(false)} isRefreshing={refreshing} lastUpdated={lastUpdated} />
+  if (group) return <SharedGroupView group={group} token={params.token} onRefresh={() => void load(false)} isRefreshing={refreshing} lastUpdated={lastUpdated} />
   if (legacyTag) return <LegacySharedTagView tag={legacyTag} onRefresh={() => void load(false)} isRefreshing={refreshing} lastUpdated={lastUpdated} />
   return null
 }
