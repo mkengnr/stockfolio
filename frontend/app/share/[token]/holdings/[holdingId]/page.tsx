@@ -14,6 +14,7 @@ import type { SharedHoldingDetail } from '@/lib/types'
 
 export default function SharedHoldingPage({ params }: { params: { token: string; holdingId: string } }) {
   const [holding, setHolding] = useState<SharedHoldingDetail | null>(null)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
@@ -24,6 +25,7 @@ export default function SharedHoldingPage({ params }: { params: { token: string;
     setError(''); setLoginRequired(false)
     try {
       setHolding(await shareApi.getHolding(params.token, params.holdingId))
+      setLastUpdated(new Date())
     } catch (err) {
       const statusCode = (err as Error & { status?: number }).status
       if (statusCode === 401) { setError('로그인이 필요한 공유 링크입니다.'); setLoginRequired(true) }
@@ -63,7 +65,10 @@ export default function SharedHoldingPage({ params }: { params: { token: string;
             <h1 className="mt-1 text-xl font-semibold text-gray-900">{holding.name}</h1>
             <p className="text-sm text-gray-400">{holding.ticker} · {holding.market} · {holding.currency}</p>
           </div>
-          <Button variant="secondary" size="sm" loading={refreshing} onClick={() => void load(false)}>새로고침</Button>
+          <div className="flex items-center gap-3">
+            <span className="hidden text-xs text-gray-400 sm:inline">화면 갱신: {formatLastUpdated(lastUpdated)}</span>
+            <Button variant="secondary" size="sm" loading={refreshing} onClick={() => void load(false)}>새로고침</Button>
+          </div>
         </div>
       </div>
 
@@ -85,4 +90,9 @@ export default function SharedHoldingPage({ params }: { params: { token: string;
       <p className="mt-8 text-center text-xs text-gray-300">powered by realchoi</p>
     </div>
   )
+}
+
+function formatLastUpdated(value: Date | null) {
+  if (!value) return '아직 없음'
+  return new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(value)
 }

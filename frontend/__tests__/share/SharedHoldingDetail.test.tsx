@@ -12,6 +12,10 @@ const base = {
   performance: null, group_breakdown: [], snapshots: [],
 }
 
+function apiError(status: number) {
+  return Object.assign(new Error('failed'), { status })
+}
+
 it('renders read-only detail without delete or add-transaction controls', async () => {
   ;(shareApi.getHolding as jest.Mock).mockResolvedValue({ ...base, show_transactions: false, transactions: [] })
   render(<SharedHoldingPage params={{ token: 'T', holdingId: 'H' }} />)
@@ -29,4 +33,17 @@ it('shows transactions section when show_transactions is true', async () => {
   render(<SharedHoldingPage params={{ token: 'T', holdingId: 'H' }} />)
   await screen.findByText('거래 내역')
   expect(screen.getByText('매수')).toBeInTheDocument()
+})
+
+it('shows a login link when the shared link requires authentication (401)', async () => {
+  ;(shareApi.getHolding as jest.Mock).mockRejectedValue(apiError(401))
+  render(<SharedHoldingPage params={{ token: 'T', holdingId: 'H' }} />)
+  const link = await screen.findByText('로그인')
+  expect(link).toHaveAttribute('href', expect.stringContaining('/auth?returnTo='))
+})
+
+it('shows a not-found message when the holding is missing (404)', async () => {
+  ;(shareApi.getHolding as jest.Mock).mockRejectedValue(apiError(404))
+  render(<SharedHoldingPage params={{ token: 'T', holdingId: 'H' }} />)
+  expect(await screen.findByText('종목을 찾을 수 없습니다.')).toBeInTheDocument()
 })
