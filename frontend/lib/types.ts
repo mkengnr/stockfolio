@@ -399,6 +399,17 @@ export interface SharedHoldingTransaction {
   price: string
 }
 
+export interface SharedHoldingGroupBreakdown {
+  name: string
+  color: string | null
+  remaining_quantity: string
+  invested_principal: string
+  remaining_cost_basis: string
+  current_value: string | null
+  profit_loss: string | null
+  profit_loss_pct: string | null
+}
+
 export interface SharedHoldingDetail {
   ticker: string
   name: string
@@ -408,7 +419,7 @@ export interface SharedHoldingDetail {
   current_price: string | null
   show_transactions: boolean
   performance: HoldingPerformance | null
-  group_breakdown: HoldingGroupBreakdown[]
+  group_breakdown: SharedHoldingGroupBreakdown[]
   snapshots: { snapshot_date: string; close_price: string }[]
   transactions: SharedHoldingTransaction[]
 }
