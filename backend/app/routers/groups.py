@@ -32,6 +32,7 @@ from app.schemas.group import (
     RollupGroupCreateIn,
     RollupGroupOut,
     RollupGroupUpdateIn,
+    ShareSettingsUpdateIn,
     ShareUpdateIn,
     SharedDashboardGroupOut,
     SharedDashboardHistoryOut,
@@ -490,6 +491,27 @@ async def enable_share(
     entity.share_token = str(uuid.uuid4())
     entity.share_requires_auth = body.requires_auth
     entity.share_show_transactions = body.show_transactions
+    return _entity_to_out(entity)
+
+
+@router.patch("/{kind}/{entity_id}/share", response_model=GroupOut)
+async def update_share_settings(
+    kind: GroupKind,
+    entity_id: uuid.UUID,
+    body: ShareSettingsUpdateIn,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    entity = await _get_owned_entity(db, kind, entity_id, current_user.id)
+    if entity.share_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Share is not enabled for this group",
+        )
+    if "requires_auth" in body.model_fields_set and body.requires_auth is not None:
+        entity.share_requires_auth = body.requires_auth
+    if "show_transactions" in body.model_fields_set and body.show_transactions is not None:
+        entity.share_show_transactions = body.show_transactions
     return _entity_to_out(entity)
 
 

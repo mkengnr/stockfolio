@@ -773,3 +773,30 @@ def test_enable_share_defaults_show_transactions_false(client, db, source):
     )
     assert response.status_code == 200
     assert response.json()["share_show_transactions"] is False
+
+
+def test_update_share_settings_toggles_show_transactions(client, db, source):
+    # source fixture already queued one result for the POST; queue a second for the PATCH
+    db.queue(_Result(one=source))
+
+    client.post(f"/api/groups/sources/{source.id}/share", json={"requires_auth": True})
+    token_before = source.share_token
+
+    response = client.patch(
+        f"/api/groups/sources/{source.id}/share",
+        json={"show_transactions": True},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["share_show_transactions"] is True
+    assert body["share_requires_auth"] is True  # unspecified field unchanged
+    assert body["share_token"] == token_before    # token not regenerated
+
+
+def test_update_share_settings_rejects_unshared_group(client, db, source):
+    # source fixture queued one result; source has no share_token by default
+    response = client.patch(
+        f"/api/groups/sources/{source.id}/share",
+        json={"show_transactions": True},
+    )
+    assert response.status_code == 409

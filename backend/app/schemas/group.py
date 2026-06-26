@@ -111,6 +111,13 @@ class ShareUpdateIn(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class ShareSettingsUpdateIn(BaseModel):
+    requires_auth: bool | None = None
+    show_transactions: bool | None = None
+
+    model_config = {"extra": "forbid"}
+
+
 class GroupMetadataOut(BaseModel):
     id: uuid.UUID
     name: str
