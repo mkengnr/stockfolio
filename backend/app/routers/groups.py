@@ -26,6 +26,7 @@ from app.routers.holdings import (
     _holding_performance,
     _load_holding_source_groups,
     _to_accounting_transaction,
+    _transaction_sort_key,
 )
 from app.routers.portfolio import (
     build_shared_portfolio_dashboard,
@@ -542,24 +543,29 @@ async def disable_share(
     entity.share_token = None
 
 
+async def _resolve_shared_entity(token: uuid.UUID, current_user, db):
+    """Resolve a share token to (entity, public_kind), applying the requires_auth gate.
+
+    Raises 404 if no entity matches the token, 401 if it requires auth and the
+    caller is anonymous.
+    """
+    for model, kind in ((SourceGroup, "source"), (RollupGroup, "rollup"), (Label, "label")):
+        result = await db.execute(select(model).where(model.share_token == str(token)))
+        entity = result.scalar_one_or_none()
+        if entity is not None:
+            if entity.share_requires_auth and current_user is None:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+            return entity, kind
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share link not found")
+
+
 @router.get("/share/{token}", response_model=SharedGroupOut)
 async def get_shared_group(
     token: uuid.UUID,
     current_user: User | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
-    entity = None
-    public_kind = None
-    for model, kind in ((SourceGroup, "source"), (RollupGroup, "rollup"), (Label, "label")):
-        result = await db.execute(select(model).where(model.share_token == str(token)))
-        entity = result.scalar_one_or_none()
-        if entity is not None:
-            public_kind = kind
-            break
-    if entity is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share link not found")
-    if entity.share_requires_auth and current_user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    entity, public_kind = await _resolve_shared_entity(token, current_user, db)
     scope = await resolve_portfolio_scope(db, entity.user_id, public_kind, entity.id)
     dashboard = await build_shared_portfolio_dashboard(db, entity.user_id, scope)
     return SharedGroupOut(
@@ -599,12 +605,12 @@ def _transaction_in_scope(tx, scope) -> bool:
 
 def _scoped_shared_transactions(holding, scope) -> list[SharedHoldingTransactionOut]:
     out = []
-    for tx in sorted(holding.transactions, key=lambda t: (t.transaction_date, str(t.id))):
+    for tx in sorted(holding.transactions, key=_transaction_sort_key):
         if not _transaction_in_scope(tx, scope):
             continue
         out.append(
             SharedHoldingTransactionOut(
-                type=tx.type.value if hasattr(tx.type, "value") else tx.type,
+                type=tx.type.value,
                 transaction_date=tx.transaction_date,
                 quantity=tx.quantity,
                 price=tx.price,
@@ -620,19 +626,7 @@ async def get_shared_holding_detail(
     current_user: User | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
-    entity = None
-    public_kind = None
-    for model, kind in ((SourceGroup, "source"), (RollupGroup, "rollup"), (Label, "label")):
-        result = await db.execute(select(model).where(model.share_token == str(token)))
-        entity = result.scalar_one_or_none()
-        if entity is not None:
-            public_kind = kind
-            break
-    if entity is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share link not found")
-    if entity.share_requires_auth and current_user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
-
+    entity, public_kind = await _resolve_shared_entity(token, current_user, db)
     scope = await resolve_portfolio_scope(db, entity.user_id, public_kind, entity.id)
 
     result = await db.execute(
