@@ -31,8 +31,8 @@ export function HoldingGroupBreakdownTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {groupBreakdown.map((group) => (
-              <tr key={group.name} className="hover:bg-gray-50">
+            {groupBreakdown.map((group, index) => (
+              <tr key={`${index}-${group.name}`} className="hover:bg-gray-50">
                 <td className="px-3 py-3">
                   <span className="inline-flex items-center gap-2 font-medium text-gray-900">
                     <span
