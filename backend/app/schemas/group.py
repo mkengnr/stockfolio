@@ -162,6 +162,7 @@ class SharedDashboardHoldingGroupBadgeOut(BaseModel):
 
 
 class SharedDashboardHoldingOut(BaseModel):
+    holding_id: uuid.UUID | None = None
     ticker: str
     name: str | None
     market: Market
@@ -209,3 +210,48 @@ class SharedDashboardOut(BaseModel):
     groups: list[SharedDashboardGroupOut]
     history: SharedDashboardHistoryOut
     holdings: list[SharedDashboardHoldingOut]
+
+
+class SharedHoldingTransactionOut(BaseModel):
+    type: Literal["BUY", "SELL"]
+    transaction_date: date
+    quantity: Decimal
+    price: Decimal
+
+
+class SharedHoldingSnapshotOut(BaseModel):
+    snapshot_date: date
+    close_price: Decimal
+
+
+class SharedHoldingPerformanceOut(BaseModel):
+    total_invested_principal: Decimal
+    remaining_cost_basis: Decimal
+    current_value: Decimal | None
+    profit_loss: Decimal | None
+    profit_loss_pct: Decimal | None
+
+
+class SharedHoldingGroupBreakdownOut(BaseModel):
+    name: str
+    color: str | None
+    remaining_quantity: Decimal
+    invested_principal: Decimal
+    remaining_cost_basis: Decimal
+    current_value: Decimal | None
+    profit_loss: Decimal | None
+    profit_loss_pct: Decimal | None
+
+
+class SharedHoldingDetailOut(BaseModel):
+    ticker: str
+    name: str
+    market: Market
+    currency: Currency
+    remaining_quantity: Decimal
+    current_price: Decimal | None
+    show_transactions: bool
+    performance: SharedHoldingPerformanceOut | None
+    group_breakdown: list[SharedHoldingGroupBreakdownOut]
+    snapshots: list[SharedHoldingSnapshotOut]
+    transactions: list[SharedHoldingTransactionOut]

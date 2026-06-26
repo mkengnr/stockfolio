@@ -434,6 +434,7 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
     db.queue(*lookup_results, _Result(one=entity))
     scope = object()
     calls = []
+    holding_id = uuid.uuid4()
 
     async def _resolve_portfolio_scope(actual_db, user_id, scope_kind, scope_id):
         calls.append(("scope", actual_db, user_id, scope_kind, scope_id))
@@ -494,7 +495,7 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
         },
         "holdings": [
             {
-                "holding_id": str(uuid.uuid4()),
+                "holding_id": str(holding_id),
                 "ticker": "AAPL",
                 "name": "Apple",
                 "market": "US",
@@ -600,6 +601,7 @@ def test_anonymous_public_share_returns_scoped_dashboard_without_internal_ids(
             },
             "holdings": [
                 {
+                    "holding_id": str(holding_id),
                     "ticker": "AAPL",
                     "name": "Apple",
                     "market": "US",

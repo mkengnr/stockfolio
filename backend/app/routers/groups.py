@@ -142,6 +142,7 @@ def _entity_to_out(entity: GroupEntity) -> GroupOut:
 
 def _public_dashboard_holding(holding, allowed_group_names: set[str]) -> SharedDashboardHoldingOut:
     return SharedDashboardHoldingOut(
+        holding_id=holding.holding_id,
         ticker=holding.ticker,
         name=holding.name,
         market=holding.market,
